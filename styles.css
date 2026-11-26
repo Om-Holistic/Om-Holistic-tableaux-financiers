@@ -149,7 +149,8 @@ details.fold > summary { font-size: 14px; }
 .hero .split span { font-size: 12px; opacity: .75; }
 .share { display: flex; height: 8px; border-radius: 99px; overflow: hidden; background: rgba(255, 255, 255, .15); }
 .share i { display: block; }
-.kpis { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.kpi { min-width: 0; }
 .kpi { background: var(--surface); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; }
 .kpi small { color: var(--ink-soft); font-size: 12px; }
 .kpi b { font-family: var(--display); font-size: 1.3rem; font-variant-numeric: tabular-nums; }
@@ -729,3 +730,15 @@ html, body { overscroll-behavior-y: none; }
   }
   #page > details.hero.banner[open]:first-child { max-height: 60vh; overflow-y: auto; }
 }
+
+/* Téléphone : la page ne bouge jamais en largeur. Seuls les tableaux larges défilent dans leur cadre.
+   Champs à 16 px : en dessous, l'iPhone zoome quand on touche un champ et la page se décale. */
+/* « clip » et non « hidden » : hidden casserait les bandeaux fixes. */
+html, body { max-width: 100%; overflow-x: clip; }
+main, #page, .card { min-width: 0; max-width: 100%; }
+@media (max-width: 767px) {
+  input, select, textarea, .pal-in, table.real-t input.real { font-size: 16px; }
+  .toolbar select { font-size: 14px; }
+  .toolbar .appsel select { font-size: 16px; }
+}
+.g-t { flex-wrap: wrap; } .g-t .gap { white-space: normal; }
