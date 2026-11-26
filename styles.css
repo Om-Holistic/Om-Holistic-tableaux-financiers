@@ -561,3 +561,18 @@ table.traj td.lv.low, #r-traj .legend i.lv-low { background: #fbe1dc; color: #b2
 .raise-v { margin: 12px 0; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
 .raise-v.good { background: #dff4ea; } .raise-v.ok { background: #fdf0d3; } .raise-v.bad { background: #fbe1dc; }
 #r-raise details.sec { margin-bottom: 10px; }
+/* Dossier de levée */
+.uses { display: flex; flex-direction: column; gap: 10px; }
+.use { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; font-size: 14px; }
+.use small { display: block; font-size: 12px; color: var(--ink-soft); }
+.use b { white-space: nowrap; }
+.use .meter { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.use .meter i { display: block; height: 100%; border-radius: 99px; }
+.uses-t { margin: 12px 0 4px; padding: 10px 12px; border-radius: 12px; background: var(--ground); }
+table.cmp td.pl-n { color: var(--ink-soft); font-size: 11px; text-align: left; padding-inline: 4px; }
+table.cmp tr.c-a td { font-weight: 700; color: var(--ink); }
+table.cmp tr.c-s td { color: var(--ink-soft); }
+table.cmp tr.c-a td, table.cmp tr.c-a th { border-bottom: 1px solid var(--line); }
+.gauge.stage .z.fill { background: var(--clay); border-radius: 3px 0 0 3px; } .gauge.stage .z.rest { background: var(--line); border-radius: 0 3px 3px 0; }
+.gauge.stage .gap { color: var(--ink-soft); font-weight: 600; }
+table.traj small.stg { display: block; font-size: 10.5px; color: var(--ink-soft); font-weight: 500; }

@@ -50,7 +50,7 @@ function program(name, start, prices, duration) {
 
 function application(name) {
   return {
-    name, restrict: false, waitlist: false, payMissing: true,
+    name, restrict: false, waitlist: false, payMissing: true, raisePlan: defaultRaisePlan(),
     // Canaux de vente : part du chiffre d'affaires encaissée par l'App Store / Google Play et leur commission.
     channels: { store: 0, storeRate: 15 },
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
@@ -229,6 +229,8 @@ function defaultImplantation() {
       note: 'Cotisations et impôt (versement libératoire) calculés sur le chiffre d\'affaires, sans déduire les charges. Plafond d\'environ 77 700 € de CA par an pour les services. Taux à vérifier selon l\'activité.' }),
     sc('fr-sasu', 'France · SASU à l\'impôt sur les sociétés', { taxRate: 15, distRate: 30,
       note: 'Impôt sur les sociétés à 15 % jusqu\'à 42 500 € de bénéfice (25 % au-delà), puis prélèvement forfaitaire de 30 % sur les dividendes versés. Sans salaire de la dirigeante.' }),
+    sc('fr-sas', 'France · SAS avec investisseurs', { taxRate: 15, taxLimit: 42500, taxRate2: 25,
+      note: 'Le statut attendu par les investisseurs (actions de préférence, BSA AIR, pacte d\'associés). Impôt sur les sociétés à 15 % jusqu\'à 42 500 € de bénéfice par an, 25 % au-delà ; le bénéfice reste dans la société. Ta rémunération est un salaire (charges comprises dans le plan avec levée). Taux à valider avec ton expert-comptable.' }),
     sc('llc-fr', 'LLC Wyoming · tu vis en France', { fixedYear: 700, socialRate: 40, taxRate: 11,
       note: 'Une LLC à associée unique est en général transparente : le bénéfice est imposé en France, avec cotisations sociales. Frais : rapport annuel et agent enregistré au Wyoming, déclaration américaine (formulaire 5472). Risque de requalification : à valider absolument.' }),
     sc('llc-bz', 'LLC Wyoming · tu vis au Belize', { fixedYear: 700,
@@ -258,15 +260,31 @@ function defaultBench() {
 function defaultRaise() {
   return {
     runway: 18,                       // mois d'autonomie à financer après la levée
-    dilMin: 15, dilMax: 25,           // part du capital cédée à chaque tour
+    dilMin: 10, dilMax: 20,           // part du capital cédée (pré-amorçage : 10 à 20 %)
     multMin: 4, multMax: 8,           // valorisation = ARR × multiple (abonnements)
-    preMin: 1000000, preMax: 3000000  // valorisation avant levée en pré-amorçage, quand l'ARR est encore faible
+    preMin: 800000, preMax: 2500000,  // valorisation avant levée en pré-amorçage, quand l'ARR est encore faible
+    roundMin: 100000, roundMax: 500000 // montant habituel d'une levée de pré-amorçage en France
+  };
+}
+
+// Plan « avec levée » d'une application : ce que la levée finance (dès la date de levée de l'appli).
+function defaultRaisePlan(on = false) {
+  return {
+    on,
+    salary: 6000,   // ta rémunération nette, € par mois
+    social: 80,     // cotisations et charges sur ce salaire, % du net (dirigeante assimilée salariée en France : environ 80 %)
+    target: 1000,   // nouvelles abonnées visées par an
+    cac: 60,        // coût d'acquisition d'une abonnée payante par la publicité, €
+    ramp: 6,        // mois pour atteindre le plein budget de communication
+    extra: 0,       // autres dépenses financées par la levée (freelances, contenus…), € par mois
+    implant: 'fr-sas', // statut de la société une fois la levée faite
+    amount: 250000     // montant que tu comptes lever (0 = juste ce que le plan demande)
   };
 }
 
 function defaultState() {
   return {
-    version: 17,
+    version: 18,
     bench: defaultBench(),
     raise: defaultRaise(),
     vat: { ttc: false, rate: 20 },
@@ -275,7 +293,7 @@ function defaultState() {
     cash: { start: 0, payGoal: 2000, payFrom: '' },
     shared: defaultShared(),
     implantation: defaultImplantation(),
-    apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
+    apps: [Object.assign(chrysalisApp(), { raisePlan: defaultRaisePlan(true) }), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
   };
 }
 
@@ -463,7 +481,16 @@ function migrate(state) {
   for (const [k, v] of Object.entries(defaultBench())) if (!state.bench[k]) state.bench[k] = v;
   if (!state.raise) state.raise = defaultRaise();
   for (const [k, v] of Object.entries(defaultRaise())) if (state.raise[k] === undefined) state.raise[k] = v;
-  state.version = 17;
+  if (state.implantation && !state.implantation.scenarios.some(x => x.id === 'fr-sas')) {
+    const sas = defaultImplantation().scenarios.find(x => x.id === 'fr-sas');
+    const k = state.implantation.scenarios.findIndex(x => x.id === 'fr-sasu');
+    state.implantation.scenarios.splice(k < 0 ? state.implantation.scenarios.length : k + 1, 0, sas);
+  }
+  for (const a of state.apps) {
+    if (!a.raisePlan) a.raisePlan = defaultRaisePlan(/chrysalis/i.test(a.name || ''));
+    for (const [k, v] of Object.entries(defaultRaisePlan())) if (a.raisePlan[k] === undefined) a.raisePlan[k] = v;
+  }
+  state.version = 18;
   return state;
 }
 
@@ -471,4 +498,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

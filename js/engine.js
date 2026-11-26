@@ -42,6 +42,7 @@ function weeklyRate(p, w) {
 // Taux de survie mensuel d'un abonnement : résiliation mensuelle = 1 / durée moyenne.
 const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 1;
 
+const monthsBetween = (from, to) => { const [y1, m1] = from.split('-').map(Number), [y2, m2] = to.split('-').map(Number); return (y2 - y1) * 12 + m2 - m1; };
 // Dernière année des prévisions (au moins 5 ans après le lancement de l'appli).
 const HORIZON_END = 2034;
 
@@ -49,7 +50,7 @@ function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
     newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
-    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0, extraHours: 0
+    paidNew: 0, products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0, extraHours: 0
   };
 }
 
@@ -158,6 +159,14 @@ function simulate(a, soloStock) {
       const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
       credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
       if (trial > 0) credit(d, (mm, share) => { mm.trials += weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * share; });
+    }
+    // Plan avec levée : abonnées payantes apportées par la publicité, montée en charge sur quelques mois.
+    const paid = a.paid;
+    if (subStart && d >= subStart && paid && pos(paid.perMonth) > 0 && paid.from && d >= firstMonday(monthDate(paid.from))) {
+      const since = monthsBetween(paid.from, monthKey(d)), ramp = Math.max(1, pos(paid.ramp, 1));
+      const count = pos(paid.perMonth) * 12 / 52 * Math.min(1, (since + 1) / ramp);
+      const phase = phaseAt(a.sub.directPricing, monthKey(d)).index;
+      credit(d, (mm, share) => { mm.newDirect[phase] += count * share; mm.paidNew += count * share; });
     }
   }
 

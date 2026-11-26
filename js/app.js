@@ -34,6 +34,7 @@ function backupDue() {
 
 const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0, cashFrom: '', cashTo: '' };
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
+view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
 const PAGES = ['synthese', 'previsionnel', 'resultat', 'tresorerie', 'charges', 'produits', 'reglages'];
 const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
@@ -386,15 +387,15 @@ function capacityCard(a, p) {
 
 function implantSection() {
   const im = state.implantation;
-  const cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  const cur = im.scenarios.find(x => x.id === curImplant()) || im.scenarios[0];
   const bases = [['result', 'du bénéfice'], ['ca', 'du chiffre d\'affaires']];
   return section('st-implant', 'cal', 'Implantation de la société', esc(cur ? cur.name : '—'), `
-    <div class="grid">${select('Implantation retenue', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="grid">${select('Implantation retenue', implantPath(), curImplant(), im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <p class="warn">Taux indicatifs à faire valider par un conseiller. Ils servent à comparer les scénarios dans l'onglet Résultat.</p>
-    ${im.scenarios.map((sc, k) => { const t = 'implantation.scenarios.' + k, id = 'imp-' + sc.id; return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(sc.name)}<br><span class="sum-sub">frais ${money(+sc.fixedYear || 0)} / an · cotisations ${num(+sc.socialRate || 0)} % · impôt ${num(+sc.taxRate || 0)} %${+sc.distRate ? ` · dividendes ${num(+sc.distRate)} %` : ''}</span></span></summary>
+    ${im.scenarios.map((sc, k) => { const t = 'implantation.scenarios.' + k, id = 'imp-' + sc.id; return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(sc.name)}<br><span class="sum-sub">frais ${money(+sc.fixedYear || 0)} / an · cotisations ${num(+sc.socialRate || 0)} % · impôt ${num(+sc.taxRate || 0)} %${+sc.taxLimit ? ` puis ${num(+sc.taxRate2 || 0)} %` : ''}${+sc.distRate ? ` · dividendes ${num(+sc.distRate)} %` : ''}</span></span></summary>
       ${fields(sc, t, [['name', 'Nom du scénario', 'text']])}
       <div class="grid">${field('Frais de structure (€ / an)', t + '.fixedYear', sc.fixedYear)}${field('Cotisations sociales (%)', t + '.socialRate', sc.socialRate)}${select('Calculées sur', t + '.socialBase', sc.socialBase, bases)}
-        ${field('Impôt (%)', t + '.taxRate', sc.taxRate)}${select('Calculé sur', t + '.taxBase', sc.taxBase, bases)}${field('Impôt sur les dividendes (%)', t + '.distRate', sc.distRate)}${field('Plafond de CA (€ / an, 0 = aucun)', t + '.caLimit', sc.caLimit || 0)}</div>
+        ${field(+sc.taxLimit ? 'Impôt, taux réduit (%)' : 'Impôt (%)', t + '.taxRate', sc.taxRate)}${+sc.taxLimit ? field('Bénéfice au taux réduit (€ / an)', t + '.taxLimit', sc.taxLimit) + field('Impôt au-delà (%)', t + '.taxRate2', sc.taxRate2 || 0) : ''}${select('Calculé sur', t + '.taxBase', sc.taxBase, bases)}${field('Impôt sur les dividendes (%)', t + '.distRate', sc.distRate)}${field('Plafond de CA (€ / an, 0 = aucun)', t + '.caLimit', sc.caLimit || 0)}</div>
       ${fields(sc, t, [['note', 'Remarques', 'text']])}
       ${sc.note ? `<p class="muted">${esc(sc.note)}</p>` : ''}
       <div class="row"><button class="danger" data-remove="${t}">Supprimer ce scénario</button></div></details>`; }).join('')}
@@ -420,7 +421,7 @@ function syncStrip() {
   if (s.state === 'error') return `<a class="sync-strip" href="#reglages" data-goto="reglages" data-open="st-sync" data-anchor="st-sync">${esc(s.msg)} ›</a>`;
   return '';
 }
-const BENCH_ROWS = [['arr', 'ARR (€)', true], ['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['ebitda', 'Marge EBITDA (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
+const BENCH_ROWS = [['arr', 'ARR (€) : amorçage à partir de « correct », série A à partir de « bon »', true], ['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['ebitda', 'Marge EBITDA (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
 function benchSection() {
   const B = state.bench || defaultBench();
   return section('st-bench', 'promo', 'Repères investisseurs', 'seuils bon et correct des indicateurs clés', `
@@ -444,7 +445,7 @@ function settingsPage(a, i) {
   const vat = state.vat.ttc ? `prix saisis TTC · TVA ${num(state.vat.rate)} %` : 'prix saisis HT';
   let lastExport = null; try { lastExport = localStorage.getItem('om-last-export'); } catch { /* stockage indisponible */ }
   const days = lastExport ? Math.floor((Date.now() - new Date(lastExport)) / 86400000) : null;
-  const im = state.implantation, cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  const im = state.implantation, cur = im.scenarios.find(x => x.id === curImplant()) || im.scenarios[0];
   return `${banner({ label: 'Réglages', big: `${state.apps.length} application${state.apps.length > 1 ? 's' : ''}`,
       note: state.apps.map(x => esc(x.name)).join(' · '),
       tiles: [
@@ -502,7 +503,8 @@ const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 // Scénario affiché partout (Résultat, Chiffre d'affaires, Trésorerie, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
 const currentScenario = () => (state.scenarios?.list || []).find(x => x.id === state.scenarios.current);
 function results(sc = currentScenario()) {
-  const st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
+  let st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
+  if (view.plan === 'avec' && view.app !== 'all') st = applyRaisePlan(st, +view.app);
   const all = st.apps.map((a, i) => ({ a, i, ...simulate(a) }));
   const pnl = buildPnl(st, all);
   // Charges et résultat de chaque mois, à partir du compte d'exploitation.
@@ -648,8 +650,8 @@ function cashBuckets(months, step) {
   for (const m of months) {
     const k = bucketOf(m.month, step);
     let b = out.at(-1);
-    if (!b || b.key !== k) out.push(b = { key: k, from: m.month, to: m.month, open: m.balance - (m.inflow - m.charges - m.taxes - m.pay), inflow: 0, charges: 0, taxes: 0, pay: 0, low: m.balance });
-    b.to = m.month; b.inflow += m.inflow; b.charges += m.charges; b.taxes += m.taxes; b.pay += m.pay;
+    if (!b || b.key !== k) out.push(b = { key: k, from: m.month, to: m.month, open: m.balance - (m.inflow - m.charges - m.taxes - m.pay), inflow: 0, raised: 0, charges: 0, taxes: 0, pay: 0, low: m.balance });
+    b.to = m.month; b.inflow += m.inflow; b.raised += m.raised || 0; b.charges += m.charges; b.taxes += m.taxes; b.pay += m.pay;
     b.balance = m.balance; b.low = Math.min(b.low, m.balance);
   }
   out.forEach(b => { b.flow = b.balance - b.open; });
@@ -1201,16 +1203,16 @@ function implantCalc(r) {
   const allowed = res.filter(x => !over(x));
   const pool = allowed.length ? allowed : res;
   const best = pool.reduce((b, x) => x.net > b.net ? x : b, pool[0]);
-  const cur = res.find(x => x.sc.id === im.current) || res[0];
+  const cur = res.find(x => x.sc.id === curImplant()) || res[0];
   const own = view.app !== 'all' ? r.summary(r.scope[0]).total : null;
   return { im, ca: own ? own.ca : ca, result: own ? own.result : result, months, res, yearCa, over, best, cur, share, appName, totalResult: result };
 }
 // Bandeau en tête du Résultat : l'implantation choisie et son effet immédiat sur le net.
 // Choix de l'implantation là où les impôts et cotisations changent les chiffres (Trésorerie).
 function implantPick(id, what) {
-  const im = state.implantation, cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  const im = state.implantation, cur = im.scenarios.find(x => x.id === curImplant()) || im.scenarios[0];
   return `<details class="card implant-bar" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Implantation : ${esc(cur ? cur.name : '—')}<br><span class="sum-sub">${what}</span></span></summary>
-    <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="grid">${select('Implantation de la société', implantPath(), curImplant(), im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <p class="muted">Frais de structure, cotisations sociales et impôts de chaque implantation : <a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Réglages › Implantation de la société</a>. Comparaison des implantations : <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Résultat › Résultat net selon l'implantation</a>.</p></details>`;
 }
 
@@ -1218,7 +1220,7 @@ function implantBar(r) {
   const { im, ca, result, cur, best, over, appName, share } = implantCalc(r);
   const gap = best.net - cur.net;
   return `<details class="card implant-bar" id="r-imp" ${view.open.has('r-imp') ? 'open' : ''}><summary><span>Implantation : ${esc(cur.sc.name)}<br><span class="sum-sub">Net pour toi ${money(cur.net)} · frais, cotisations et impôts ${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</span></span></summary>
-    <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="grid">${select('Implantation de la société', implantPath(), curImplant(), im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="net-split"><div><span>Résultat d'exploitation${appName ? ' de ' + esc(appName) : ''}</span><b>${money(result)}</b></div><div><span>Frais, cotisations et impôts</span><b>${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b>${money(cur.net)}</b></div></div>
     <p class="muted">${over(cur) ? '<b class="neg">Plafond de chiffre d\'affaires dépassé pour ce statut.</b> ' : ''}${gap > 0.5 ? `Le scénario « ${esc(best.sc.name)} » donnerait ${money(gap)} de plus.` : 'C\'est le scénario le plus favorable avec les taux saisis.'} ${appName ? `Impôts et cotisations calculés sur toute la société, puis répartis : part de ${esc(appName)} ${Math.round(share * 100)} %. ` : ''}Taux indicatifs à valider. <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Comparer les implantations</a></p>
   </details>`;
@@ -1226,10 +1228,10 @@ function implantBar(r) {
 
 function implantCard(r) {
   const { im, ca, result, res, yearCa, over, best, cur, appName, share } = implantCalc(r);
-  const row = x => [`${x.sc.id === im.current ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === im.current ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
+  const row = x => [`${x.sc.id === curImplant() ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === curImplant() ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
     signed(-x.fixed || 0), signed(-x.social || 0), signed(-(x.tax + x.dist) || 0), `<b>${signed(x.net)}</b>`, ca ? `${(x.net / ca * 100).toFixed(0)} %` : '—'];
   return `<details class="card" id="r-implant" ${view.open.has('r-implant') || !view.open.size ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
-    <div class="grid">${select('Implantation retenue', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="grid">${select('Implantation retenue', implantPath(), curImplant(), im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="net-split"><div><span>Résultat d'exploitation</span><b>${money(result)}</b></div><div><span>Frais de structure</span><b>${money(-cur.fixed || 0)}</b></div><div><span>Cotisations sociales</span><b>${money(-cur.social || 0)}</b></div><div><span>Impôts</span><b>${money(-(cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b class="${cur.net < 0 ? 'neg' : ''}">${money(cur.net)}</b></div></div>
     ${over(cur) ? `<p class="warn">Le chiffre d'affaires de la société, toutes applications (environ ${money(yearCa)} par an), dépasse le plafond de ${money(+cur.sc.caLimit)} de ce statut.</p>` : ''}
     <h4>Comparaison des implantations</h4>
@@ -1283,7 +1285,7 @@ function kpiValues(r, tr = scopeTreasury(r)) {
   const ebitda = t.result;
   const need = tr.low.balance < 0 ? -tr.low.balance : 0;
   const tm = tr.months.filter(m => inPeriod(m.month)), endCash = tm.at(-1)?.balance ?? 0;
-  const flows = tm.map((m, k) => m.balance - (k ? tm[k - 1].balance : m.balance - (m.inflow - m.charges - m.taxes - m.pay)));
+  const flows = tm.map((m, k) => m.balance - (k ? tm[k - 1].balance : m.balance - (m.inflow - m.charges - m.taxes - m.pay)) - (m.raised || 0));
   const burn = flows.length ? -flows.reduce((a, v) => a + v, 0) / flows.length : 0;
   const runway = burn > 0 ? endCash / burn : null;
   const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
@@ -1297,6 +1299,18 @@ function benchLevel(k, v, up = true) {
   if (v === null || v === undefined || Number.isNaN(v) || (!isFinite(v) && v !== Infinity) || !B[k]) return '';
   const { good, ok } = B[k];
   return up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
+}
+
+// ARR : pas de bon ou mauvais dans l'absolu, un stade (pré-amorçage, amorçage, série A) et la progression vers le palier suivant.
+function arrStage(v) {
+  const B = (state.bench || defaultBench()).arr;
+  return v >= B.good ? { name: 'série A', next: null } : v >= B.ok ? { name: 'amorçage', next: ['série A', B.good] } : { name: 'pré-amorçage', next: ['amorçage', B.ok] };
+}
+function arrMark(v) {
+  if (v === null || !isFinite(v)) return '';
+  const st = arrStage(v), pct = st.next ? Math.max(0, Math.min(100, v / st.next[1] * 100)) : 100;
+  return `<div class="gauge stage"><div class="g-track"><i class="z fill" style="width:${pct.toFixed(1)}%"></i><i class="z rest" style="width:${(100 - pct).toFixed(1)}%"></i></div>
+    <div class="g-t"><span class="tgt">stade : ${st.name}</span><span class="gap">${st.next ? `${fmtN(pct)} % du palier ${st.next[0]} (${short(st.next[1])})` : 'palier série A atteint'}</span></div></div>`;
 }
 
 // Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
@@ -1323,7 +1337,7 @@ function kpiCard(r) {
   return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
-      kpi('ARR', short(mrr * 12), 'MRR × 12 · environ 1 M€ attendu pour une série A', '', mark('arr', mrr * 12, '', true, short)),
+      kpi('ARR', short(mrr * 12), 'revenu annuel récurrent : tes abonnements du mois × 12', '', arrMark(mrr * 12)),
       kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' %')),
       kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
     ${group('Économie unitaire', [
@@ -1345,7 +1359,7 @@ function kpiCard(r) {
       kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
       kpi('Autonomie (runway)', runway === null ? 'illimitée' : f(runway, 0) + ' mois', runway === null ? 'la trésorerie ne baisse pas sur la période' : 'au rythme de consommation actuel', '', mark('runway', runway === null ? Infinity : runway, ' mois')),
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
-    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
+    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === curImplant()) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
     <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 %, marge EBITDA de 20 % et règle des 40 (références courantes du logiciel par abonnement) ; ARR d'environ 1 M€ pour une série A ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
 }
 
@@ -1365,7 +1379,7 @@ function yearlyKpis(r) {
 const TRAJ_ROWS = [
   ['Chiffre d\'affaires HT', K => short(K.t.ca)],
   ['Croissance du CA', (K, P) => P && P.t.ca > 0 ? (K.t.ca >= P.t.ca ? '+' : '−') + fmtN(Math.abs(K.t.ca / P.t.ca - 1) * 100) + ' %' : '—', null, 'sur un an'],
-  ['ARR fin d\'année', K => short(K.mrr * 12), K => ['arr', K.mrr * 12]],
+  ['ARR fin d\'année', K => short(K.mrr * 12), null, K => arrStage(K.mrr * 12).name],
   ['Croissance du MRR', K => K.cmgr === null ? '—' : fmtN(K.cmgr, 1) + ' %', K => ['growth', K.cmgr], 'par mois'],
   ['Abonnées fin d\'année', K => num(K.last.direct + K.last.post)],
   ['Churn mensuel', K => K.base ? fmtN(K.churn * 100, 1) + ' %' : '—', K => K.base ? ['churn', K.churn * 100, false] : null],
@@ -1388,15 +1402,56 @@ function trajectoryCard(r) {
       const L = lvl && lvl(o.K), c = L ? benchLevel(L[0], L[1], L[2] !== false) : '';
       return `<td class="${c ? 'lv ' + c : ''}">${val(o.K, j ? ys[j - 1].K : null)}</td>`;
     }).join('');
-    return `<tr><th>${label}${sub ? `<small>${sub}</small>` : ''}</th><td class="rep">${probe ? rep(probe[0], probe[2]) : ''}</td>${cells}</tr>`;
+    const arrRow = typeof sub === 'function';
+    return `<tr><th>${label}${sub && !arrRow ? `<small>${sub}</small>` : ''}</th><td class="rep">${arrRow ? 'stade' : probe ? rep(probe[0], probe[2]) : ''}</td>${arrRow ? ys.map(o => `<td>${short(o.K.mrr * 12)}<small class="stg">${sub(o.K)}</small></td>`).join('') : cells}</tr>`;
   }).join('');
   // Première année où chaque repère clé est atteint.
   const first = (k, f, up = true) => { const o = ys.find(x => benchLevel(k, f(x.K), up) === 'good'); return o ? o.y : null; };
-  const miles = [['marge EBITDA', first('ebitda', K => K.ebitdaPct)], ['LTV / CAC', first('ltvcac', K => K.ratio)], ['ARR 1 M€', first('arr', K => K.mrr * 12)]]
+  const miles = [['marge EBITDA', first('ebitda', K => K.ebitdaPct)], ['LTV / CAC', first('ltvcac', K => K.ratio)], [`ARR d'amorçage (${short((state.bench || defaultBench()).arr.ok)})`, (ys.find(o => o.K.mrr * 12 >= (state.bench || defaultBench()).arr.ok) || {}).y]]
     .map(([n, y]) => `${n} ${y ? 'dès ' + y : 'non atteint'}`).join(' · ');
   return `<details class="card" id="r-traj" ${view.open.has('r-traj') ? 'open' : ''}><summary><span>Trajectoire ${ys[0].y} → ${ys.at(-1).y}<br><span class="sum-sub">${miles}</span></span></summary>
     <div class="scroll"><table class="traj"><thead><tr><th></th><th class="rep">Repère</th>${ys.map(o => `<th>${o.y}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
     <div class="legend"><span><i class="lv-good"></i>bon</span><span><i class="lv-ok"></i>correct</span><span><i class="lv-low"></i>faible</span></div></details>`;
+}
+
+// ---------- Plan avec levée ----------
+// Implantation affichée et modifiée : celle du plan avec levée quand il est choisi, sinon celle de la société.
+const planApp = () => view.plan === 'avec' && view.app !== 'all' ? state.apps[+view.app] : null;
+const curImplant = () => { const a = planApp(), id = a?.raisePlan?.implant; return id && state.implantation.scenarios.some(x => x.id === id) ? id : state.implantation.current; };
+const implantPath = () => planApp() ? `apps.${view.app}.raisePlan.implant` : 'implantation.current';
+// Copie de l'état où l'application i lève des fonds : ta rémunération, un budget de communication
+// calculé pour atteindre l'objectif d'abonnées (au coût d'acquisition choisi), d'autres dépenses,
+// le statut de société choisi, et le montant à lever pour couvrir l'autonomie visée.
+const raiseDefaultDate = a => a.raiseDate || appDates([a]).launch || appStart(a);
+// Nouvelles abonnées d'un mois : directes et clientes d'un programme qui s'abonnent ensuite.
+const newSubs = (a, m) => m.newDirect.reduce((t, v) => t + v, 0) + m.products.reduce((t, q, j) => t + q.finishedNew * Math.min(100, +a.programs[j]?.toSolo || 0) / 100, 0);
+function applyRaisePlan(st, i) {
+  const s = st === state ? JSON.parse(JSON.stringify(st)) : st, a = s.apps[i];
+  if (!a || !a.raisePlan?.on) return s;
+  const P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(s.raise || {}) };
+  const date = raiseDefaultDate(a), ramp = Math.max(1, Math.round(+P.ramp || 1));
+  // Nouvelles abonnées sans publicité supplémentaire, en moyenne sur l'année qui suit la levée.
+  const base = simulate(a).months, k0 = Math.max(0, base.findIndex(m => m.month >= date));
+  const yr = base.slice(k0, k0 + 12), organic = yr.length ? yr.reduce((t, m) => t + newSubs(a, m), 0) / yr.length : 0;
+  const perMonth = Math.max(0, (+P.target || 0) / 12 - organic), budget = perMonth * Math.max(0, +P.cac || 0);
+  a.paid = { from: date, perMonth, ramp };
+  const extra = { scope: 'app', anchor: 'date', start: date, estimate: false, plan: true };
+  a.charges = [...(a.charges || []),
+    charge('Ta rémunération (plan avec levée)', 'fixe', Math.round((+P.salary || 0) * (1 + (+P.social || 0) / 100)), 'app', date, '', { ...extra, category: 'personnel' }),
+    charge('Communication et publicité (plan avec levée)', 'fixe', Math.round(budget / ramp), 'app', date, '', { ...extra, category: 'marketing',
+      steps: Array.from({ length: ramp - 1 }, (_, j) => ({ after: j + 1, amount: Math.round(budget * (j + 2) / ramp) })) }),
+    ...(+P.extra > 0 ? [charge('Autres dépenses (plan avec levée)', 'fixe', +P.extra, 'app', date, '', { ...extra, category: 'autre' })] : [])];
+  if (P.implant && s.implantation.scenarios.some(x => x.id === P.implant)) s.implantation.current = P.implant;
+  // Montant à lever : ce qui manque pour que la trésorerie de l'appli reste positive pendant l'autonomie visée.
+  a.funding = null;
+  const all = s.apps.map((ap, k) => ({ a: ap, i: k, ...simulate(ap) })), pnl = buildPnl(s, all);
+  all.forEach((x, k) => { x.pnl = pnl[k]; });
+  const ms = treasury(s, [all[i]], true).months, k = Math.max(0, ms.findIndex(m => m.month >= date));
+  // Au moins l'autonomie visée, et jusqu'au bout des prévisions : la trésorerie ne doit plus repasser sous zéro ensuite.
+  const low = ms.slice(k).reduce((l, m) => Math.min(l, m.balance), 0);
+  const need = Math.ceil(-low / 10000) * 10000;
+  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic };
+  return s;
 }
 
 // ---------- Levée de fonds : ce qu'il est raisonnable de demander ----------
@@ -1408,11 +1463,11 @@ function raiseValues(r) {
   const ht = v => state.vat?.ttc ? v / (1 + (+state.vat.rate || 0) / 100) : v;
   const firstNeg = ms.find(m => m.balance < 0);
   const auto = firstNeg ? firstNeg.month : (appDates([a]).launch || appStart(a));
-  const date = a.raiseDate && ms.some(m => m.month === a.raiseDate) ? a.raiseDate : auto;
+  const date = a.funding ? a.funding.month : a.raiseDate && ms.some(m => m.month === a.raiseDate) ? a.raiseDate : auto;
   const k = Math.max(0, ms.findIndex(m => m.month >= date));
   const win = ms.slice(k, k + Math.max(1, +R.runway || 18));
   const low = win.reduce((l, m) => Math.min(l, m.balance), Infinity);
-  const need = Math.max(0, -low);
+  const need = a.funding ? a.funding.amount : Math.max(0, -low);
   const ask = need ? Math.ceil(need / 10000) * 10000 : 0;
   // Revenus au moment de la levée : abonnements (récurrents) et programmes des 12 derniers mois.
   const sm = x.months.findIndex(m => m.month >= date), m0 = x.months[sm] || x.months.at(-1);
@@ -1431,6 +1486,7 @@ function raiseCard(r) {
   const id = 'r-raise', open = view.open.has(id) ? 'open' : '';
   if (view.app === 'all') return `<details class="card" id="${id}" ${open}><summary><span>Levée de fonds<br><span class="sum-sub">par application : choisis-en une en haut</span></span></summary>
     <p class="muted">Chaque application lève pour elle-même, comme une société à part. Choisis CHRYSALISS, Bujo ou Doodle Studio dans la liste en haut de page.</p></details>`;
+  if (view.plan === 'avec') return dossierCard(r);
   const v = raiseValues(r), R = v.R;
   const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
   const msg = {
@@ -1448,6 +1504,7 @@ function raiseCard(r) {
       ${kpi('Stade', esc(v.stage), `ARR de ${short(v.arr)} en ${monthName(v.date)}`, 'txt')}
     </div>
     <p class="raise-v ${lvl}">${msg}</p>
+    ${v.a.raisePlan?.on ? `<p class="muted">Ton dossier de levée (rémunération, communication, montant, jalons) : choisis « ${esc(v.a.name)} · avec levée » en haut de page.</p>` : ''}
     ${section('r-raise-h', 'promo', 'Hypothèses de la levée', `${v.isAuto ? 'date : premier besoin' : monthName(v.date)} · ${num(R.runway)} mois · ARR × ${fmtN(R.multMin)}–${fmtN(R.multMax)}`, `
       <div class="grid">${monthField('Date de la levée', `apps.${v.i}.raiseDate`, v.a.raiseDate || '', 'Au premier besoin')}
       ${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
@@ -1455,7 +1512,72 @@ function raiseCard(r) {
       ${field('Multiple de l\'ARR, bas', 'raise.multMin', R.multMin)}${field('Multiple de l\'ARR, haut', 'raise.multMax', R.multMax)}
       ${field('Valorisation pré-amorçage, basse (€)', 'raise.preMin', R.preMin)}${field('Valorisation pré-amorçage, haute (€)', 'raise.preMax', R.preMax)}</div>
       <div class="row"><button id="raiseReset">Revenir aux valeurs par défaut</button></div>`)}
-    <p class="muted">Ordres de grandeur, pas une offre : la valorisation se négocie avec chaque investisseur. Sources : 15 à 25 % du capital cédé par tour (Carta, State of Pre-Seed et State of Seed 2025) ; valorisation des sociétés d'abonnement non cotées autour de 4 à 8 fois l'ARR (SaaS Capital, Private SaaS Company Valuations) ; stades fixés par l'ARR des Repères investisseurs (Réglages).</p></details>`;
+    <p class="muted">Ordres de grandeur, pas une offre : la valorisation se négocie avec chaque investisseur. Sources : 10 à 20 % du capital cédé en pré-amorçage (Carta, State of Pre-Seed 2025) ; valorisation des sociétés d'abonnement non cotées autour de 4 à 8 fois l'ARR (SaaS Capital, Private SaaS Company Valuations) ; stades fixés par l'ARR des Repères investisseurs (Réglages).</p></details>`;
+}
+
+// Dossier de levée : le plan avec levée de l'application, comparé au plan sans levée.
+function dossierCard(r) {
+  const id = 'r-raise', x = r.scope[0], a = x.a, F = a.funding;
+  if (!F) return '';
+  const P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r), n = Math.max(1, +R.runway || 18);
+  const tr = scopeTreasury(r), k = Math.max(0, tr.months.findIndex(m => m.month >= F.month)), win = tr.months.slice(k, k + n);
+  const winSet = new Set(win.map(m => m.month)), lines = sumPnl(x.pnl.filter(e => winSet.has(e.month))).lines || {};
+  const planCost = cat => a.charges.filter(c => c.plan && c.category === cat).reduce((t, c) => t + (lines[c.id] || 0), 0);
+  const sal = planCost('personnel'), com = planCost('marketing'), ext = planCost('autre');
+  const tot = f => win.reduce((t, m) => t + (m[f] || 0), 0), charges = tot('charges'), taxes = tot('taxes'), sales = tot('inflow') - tot('raised');
+  const run = Math.max(0, charges - sal - com - ext), endCash = win.at(-1)?.balance ?? 0;
+  const uses = [['Ta rémunération', sal, `${money(+P.salary)} net par mois, charges comprises`], ['Communication et publicité', com, `${num(Math.round(F.perMonth))} abonnées payantes par mois à ${money(+P.cac)} l'une`],
+    ...(ext ? [['Autres dépenses', ext, `${money(+P.extra)} par mois`]] : []), ['Fonctionnement de l\'appli', run, 'charges du plan sans levée'], ['Impôts et cotisations', taxes, '']].filter(u => u[1] > 0.5);
+  const useMax = Math.max(1, ...uses.map(u => u[1]));
+  // Jalons : objectif d'abonnées (sur 12 mois glissants), ARR et abonnées à la fin de l'autonomie, point mort.
+  const ms = x.months, roll = ms.map((m, j) => ms.slice(Math.max(0, j - 11), j + 1).reduce((t, mm) => t + newSubs(a, mm), 0));
+  const hit = ms.find((m, j) => j >= 11 && m.month >= F.month && roll[j] >= (+P.target || 0) * 0.995);
+  const endM = ms.find(m => m.month === win.at(-1)?.month) || ms.at(-1);
+  const ht = v2 => state.vat?.ttc ? v2 / (1 + (+state.vat.rate || 0) / 100) : v2, arrEnd = ht(endM.directCA + endM.postCA) * 12;
+  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
+  // Comparaison des deux plans, année par année.
+  const keep = view.plan; view.plan = 'sans';
+  let ysS; try { ysS = yearlyKpis(results()); } finally { view.plan = keep; }
+  const y0 = +F.month.slice(0, 4), ysA = yearlyKpis(r).filter(o => o.y >= y0), byS = new Map(ysS.map(o => [o.y, o.K]));
+  const cmp = [['Chiffre d\'affaires HT', K => short(K.t.ca)], ['EBITDA', K => `<span class="${K.ebitda < 0 ? 'neg' : ''}">${short(K.ebitda)}</span>`],
+    ['Abonnées fin d\'année', K => num(K.last.direct + K.last.post)], ['ARR fin d\'année', K => short(K.mrr * 12)], ['Trésorerie fin d\'année', K => `<span class="${K.endCash < 0 ? 'neg' : ''}">${short(K.endCash)}</span>`]];
+  const cmpRows = cmp.map(([label, f]) => `<tr class="c-s"><th rowspan="2">${label}</th><td class="pl-n">sans</td>${ysA.map(o => `<td>${byS.has(o.y) ? f(byS.get(o.y)) : '—'}</td>`).join('')}</tr>
+    <tr class="c-a"><td class="pl-n">avec</td>${ysA.map(o => `<td>${f(o.K)}</td>`).join('')}</tr>`).join('');
+  const lvl = { none: 'good', ok: 'good', low: 'good', high: 'bad' }[v.verdict];
+  const msg = v.verdict === 'high' ? `${short(F.amount)}, c'est plus que ce que ta valorisation permet en ${monthName(F.month)} (environ ${fmtN(v.dil)} % du capital). Pistes : lever en deux tours, réduire le budget de communication ou la rémunération au début, ou décaler la levée pour arriver avec plus d'abonnées.`
+    : `${short(F.amount)} reste dans ce que ta valorisation permet : environ ${fmtN(v.dil)} % du capital, pour ${short(v.vLo)} à ${short(v.vHi)} de valorisation avant levée.`;
+  const round = F.amount > +R.roundMax ? ` C'est au-dessus d'une levée de pré-amorçage habituelle en France (${short(+R.roundMin)} à ${short(+R.roundMax)}) : réduis le budget ou découpe en deux tours.`
+    : F.amount < +R.roundMin ? ` C'est sous une levée de pré-amorçage habituelle (${short(+R.roundMin)} à ${short(+R.roundMax)}) : des proches, un prêt d'honneur ou la BPI peuvent suffire.`
+    : ` C'est le montant habituel d'une levée de pré-amorçage en France (${short(+R.roundMin)} à ${short(+R.roundMax)}), auprès de business angels, de proches et de la BPI.`;
+  const implants = state.implantation.scenarios.map(sc => [sc.id, sc.name]);
+  return `<details class="card" id="${id}" ${view.open.has(id) || !view.open.size ? 'open' : ''}><summary><span>Dossier de levée de ${esc(a.name)}<br><span class="sum-sub">${short(F.amount)} en ${monthName(F.month)} (le plan demande ${short(F.need)}) · ${num(n)} mois d'autonomie · ${num(+P.target)} nouvelles abonnées par an ${hit ? 'dès ' + monthName(hit.month) : 'non atteint'}</span></span></summary>
+    <div class="kpis">
+      ${kpi('Montant levé', short(F.amount), F.amount === F.need ? `en ${monthName(F.month)}, juste ce que le plan demande` : `en ${monthName(F.month)} · le plan demande ${short(F.need)} : ${F.amount >= F.need ? `${short(F.amount - F.need)} de marge` : `il manque ${short(F.need - F.amount)}`}`, F.amount >= F.need ? 'good' : 'bad')}
+      ${kpi('Ta rémunération', money(+P.salary) + ' net', `${money(Math.round(+P.salary * (1 + (+P.social || 0) / 100)))} par mois pour la société`)}
+      ${kpi('Communication', short(F.budget) + ' / mois', `à plein régime après ${num(+P.ramp)} mois · ${num(Math.round(F.organic))} abonnées par mois viennent déjà sans publicité`)}
+      ${kpi('Objectif', num(+P.target) + ' / an', hit ? `nouvelles abonnées, atteint dès ${monthName(hit.month)}` : 'nouvelles abonnées, non atteint : augmente le budget ou baisse le CAC', hit ? 'good' : 'bad')}
+    </div>
+    <p class="raise-v ${F.amount > +R.roundMax || F.amount < F.need ? 'bad' : lvl}">${F.amount < F.need ? `Avec ${short(F.amount)}, il manque ${short(F.need - F.amount)} pour tenir ce plan : la trésorerie passe sous zéro. Lève davantage, ou baisse le budget de communication ou ta rémunération au début. ` : ''}${msg}${round}</p>
+    <h4 class="kpi-h">Utilisation des fonds sur ${num(n)} mois</h4>
+    <div class="uses">${uses.map(([l, val, h]) => `<div class="use"><span>${l}${h ? `<small>${h}</small>` : ''}</span><b>${short(val)}</b><span class="meter"><i style="width:${(val / useMax * 100).toFixed(1)}%;background:var(--clay)"></i></span></div>`).join('')}</div>
+    <dl class="pl-lines uses-t"><dt>Financé par les ventes</dt><dd>${short(sales)}</dd><dt>Financé par la levée</dt><dd>${short(F.amount)}</dd><dt>Reste en caisse au bout de ${num(n)} mois</dt><dd class="${endCash < 0 ? 'neg' : ''}">${short(endCash)}</dd></dl>
+    <h4 class="kpi-h">Jalons pour les investisseurs</h4>
+    <div class="kpis">
+      ${kpi('Stade à la levée', esc(v.stage), `ARR de ${short(v.arr)} en ${monthName(F.month)}`, 'txt')}
+      ${kpi('ARR au bout de ' + num(n) + ' mois', short(arrEnd), `${num(endM.direct + endM.post)} abonnées en ${monthName(endM.month)}`, '', )}
+      ${kpi('Point mort', tr.breakEven ? monthName(tr.breakEven) : 'non atteint', 'résultat mensuel positif ensuite, rémunération comprise')}
+      ${kpi('Valorisation indicative', `${short(v.vLo)} – ${short(v.vHi)}`, 'avant levée')}
+    </div>
+    <h4 class="kpi-h">Sans levée ou avec levée</h4>
+    <div class="scroll"><table class="traj cmp"><thead><tr><th></th><th></th>${ysA.map(o => `<th>${o.y}</th>`).join('')}</tr></thead><tbody>${cmpRows}</tbody></table></div>
+    ${section('r-raise-h', 'promo', 'Hypothèses du plan avec levée', `${monthName(F.month)} · ${money(+P.salary)} net · CAC ${money(+P.cac)} · ${num(+P.target)} abonnées / an`, `
+      <div class="grid">${monthField('Date de la levée', `apps.${x.i}.raiseDate`, a.raiseDate || '', 'Au lancement')}
+      ${field('Montant que tu veux lever (€, 0 = ce que le plan demande)', `apps.${x.i}.raisePlan.amount`, P.amount)}${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
+      ${field('Ta rémunération nette (€ / mois)', `apps.${x.i}.raisePlan.salary`, P.salary)}${field('Charges sur ce salaire (% du net)', `apps.${x.i}.raisePlan.social`, P.social)}
+      ${field('Nouvelles abonnées visées par an', `apps.${x.i}.raisePlan.target`, P.target)}${field('Coût d\'acquisition d\'une abonnée payante (€)', `apps.${x.i}.raisePlan.cac`, P.cac)}
+      ${field('Montée en charge de la communication (mois)', `apps.${x.i}.raisePlan.ramp`, P.ramp)}${field('Autres dépenses (€ / mois)', `apps.${x.i}.raisePlan.extra`, P.extra)}
+      ${select('Statut de la société', `apps.${x.i}.raisePlan.implant`, P.implant, implants)}</div>`)}
+    <p class="muted">Coût d'acquisition : une application bien-être paie en général 3 à 6 $ par installation et 20 à 40 $ par essai, et 3 à 4 % des installations deviennent payantes ; compter de 40 à 120 € par abonnée payante selon les canaux (Adapty, Customer acquisition cost 2026 ; Airbridge, Cost per trial and cost per subscription ; RevenueCat, State of Subscription Apps 2025). Commence prudemment et ajuste avec tes vrais chiffres dès les premières campagnes. Ordres de grandeur, à valider avec ton expert-comptable.</p></details>`;
 }
 
 function resultatPage() {
@@ -1512,8 +1634,10 @@ function renderToolbar() {
   const settings = SETTINGS_PAGES.includes(view.page);
   if (settings && view.app === 'all') view.app = '0';
   $('app').innerHTML = (settings ? '' : '<option value="all">Om Holistic · consolidé</option>')
-    + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
-  $('app').value = view.app;
+    + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`
+      + (!settings || view.page === 'charges' ? (a.raisePlan?.on ? `<option value="${i}+">${esc(a.name)} · avec levée</option>` : '') : '')).join('');
+  if (view.plan === 'avec' && (view.app === 'all' || !state.apps[+view.app]?.raisePlan?.on || (settings && view.page !== 'charges'))) view.plan = 'sans';
+  $('app').value = view.app + (view.plan === 'avec' ? '+' : '');
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
   $('step').parentElement.hidden = view.page !== 'tresorerie';
   document.querySelector('.toolbar').classList.toggle('four', view.page === 'tresorerie');
@@ -1584,7 +1708,7 @@ document.addEventListener('change', async e => {
       render();
       if (next) document.querySelector(`[data-path="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
     }, 0);
-  } else if (t.id === 'app') { view.app = t.value; render(true); }
+  } else if (t.id === 'app') { view.plan = t.value.endsWith('+') ? 'avec' : 'sans'; view.app = t.value.replace('+', ''); render(true); }
   else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'step') {
