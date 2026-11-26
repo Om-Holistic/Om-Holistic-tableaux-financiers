@@ -427,8 +427,12 @@ function palierCard(a, ai, p, st, last) {
         : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`);
   } else if (st && st.own !== null) verdict = `<p class="pal-ok"><b>Tes heures suffisent sur tout ce palier.</b></p>`;
   else if (st) verdict = `<p class="muted">Indique tes heures par semaine pour voir à partir de quand ça bloque.</p>`;
-  return `<div class="card palier ${st && st.block ? 'blocked' : ''}" id="pal-${ai}-${p.k}">
-      <p class="pal-head">${head}</p>${datePick}
+  const id = `pal-${ai}-${p.date || 'debut'}`, bm = st && st.block ? st.block.date.slice(0, 7) : '';
+  const folded = pstats([['Besoin', `${hrs(total)} / sem.`], ['Mes heures', cap ? `${hrs(+cap.hours || 0)} / sem.` : '—'],
+    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem.${rate ? ' · ' + money(Math.round(pay * rate * wk)) + ' / mois' : ''}` : 'rien', pay > 0.05 ? 'bad' : '']]);
+  return `<details class="card palier ${st && st.block ? 'blocked' : ''}" id="${id}" ${view.open.has(id) ? 'open' : ''}>
+      <summary><span>${head}${bm ? ` <span class="tag bad">Bloque en ${MSHORT[+bm.slice(5) - 1]} ${bm.slice(0, 4)}</span>` : st && st.own !== null ? ' <span class="tag ok">Ça tient</span>' : ''}${folded}</span></summary>
+      <div class="pal-body">${datePick}
       <div class="scroll"><table class="pal-t"><thead><tr><th>Programme</th><th>Min. / cliente / sem.</th><th>Clientes</th><th>Heures / sem.</th></tr></thead>
         <tbody>${rows}<tr class="total"><td>Total</td><td></td><td>${num(people)}</td><td>${hrs(total)}</td></tr></tbody></table></div>
       <dl class="pal-sum">
@@ -438,7 +442,7 @@ function palierCard(a, ai, p, st, last) {
       <p class="muted">Chiffres de la semaine la plus chargée du palier${st ? `, en ${monthName(st.peak.date.slice(0, 7))}` : ''}.</p>
       ${verdict}
       ${last && !(st && st.block) ? `<div class="row"><button data-paladd="${ai}|${addMonths(p.from > thisMonth ? p.from : thisMonth, 6)}">Ajouter un palier</button></div>` : ''}
-    </div>`;
+    </div></details>`;
 }
 function coachingPage() {
   const r = results();
@@ -726,7 +730,7 @@ function chart(byMonth) {
     + byMonth.map((m, i) => {
       const x = left + i * bw + bw * .15, w = bw * .7, subs = m.directCA + m.postCA;
       const label = i % every === 0 ? `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${byMonth.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g data-tip="${esc(`${monthName(m.month)} : ${money(m.total)} · programmes ${money(m.sales)} · abonnements ${money(subs)}`)}">
+      return `<g data-tip="${esc(money(m.total))}">
         <rect x="${x}" y="${y(m.sales)}" width="${w}" height="${y(0) - y(m.sales)}" rx="2" fill="var(--sage)"/>
         <rect x="${x}" y="${y(m.total)}" width="${w}" height="${Math.max(0, y(m.sales) - y(m.total))}" rx="2" fill="var(--clay)"/></g>${label}`;
     }).join('') + axes(left, W, top, y(0), '€') + '</svg>';
@@ -841,12 +845,12 @@ function cashChart(bs) {
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie par période">`
     + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
     + bs.map((b, i) => { const out = b.charges + b.taxes + b.pay;
-      return `<g data-tip="${esc(`${bucketName(b.key, step)} : entrées ${money(b.inflow)} · sorties ${money(out)} · solde ${money(b.balance)}`)}">`
+      return `<g data-tip="${esc(`+${money(b.inflow)} / −${money(out)}`)}">`
         + `<rect x="${cx(i) - bw / 2}" y="${y(b.inflow)}" width="${bw}" height="${Math.max(0, y(0) - y(b.inflow))}" rx="2" fill="var(--good)" opacity=".75"/>`
         + `<rect x="${cx(i) - bw / 2}" y="${y(0)}" width="${bw}" height="${Math.max(0, y(-out) - y(0))}" rx="2" fill="var(--sage)" opacity=".6"/></g>`; }).join('')
     + axes(left, W, top, y(0), '')
     + `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(b.balance).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
-    + bs.map((b, i) => `<g class="pt" data-tip="${esc(`${bucketName(b.key, step)} : solde ${money(b.balance)}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(b.balance)}" r="12"/><circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 48 ? 2 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/></g>`).join('')
+    + bs.map((b, i) => `<g class="pt" data-tip="${esc(money(b.balance))}"><circle class="hit" cx="${cx(i)}" cy="${y(b.balance)}" r="12"/><circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 48 ? 2 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/></g>`).join('')
     + bs.map((b, i) => i % every === 0 || step === 'm' ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b)}</text>` : '').join('')
     + '</svg>';
 }
@@ -860,8 +864,14 @@ function userSeries(r) {
     out.push({ name: soloName(a), short: r.scope.length > 1 ? a.name : 'Abonnement', kind: 'abonnées', at: k => (ms[k]?.direct || 0) + (ms[k]?.post || 0) });
     a.programs.forEach((p, j) => { if (p.enabled !== false) out.push({ name: progName(a, p), short: p.name, kind: 'en programme', at: k => ms[k]?.products[j]?.active || 0 }); });
   }
-  return out.map((s, i) => ({ ...s, color: USER_COLORS[i % USER_COLORS.length] }));
+  const colored = out.map((s, i) => ({ ...s, key: s.name, color: USER_COLORS[i % USER_COLORS.length] }));
+  const progs = colored.filter(s => s.kind === 'en programme');
+  if (progs.length > 1) colored.push({ name: 'Total en programme', short: 'Total en programme', kind: 'en programme', key: ':total', color: 'var(--ink)', dash: true, at: k => progs.reduce((t, s) => t + s.at(k), 0) });
+  return colored;
 }
+// Courbes masquées sur l'écran Utilisatrices (mémorisé sur cet appareil).
+const usersHidden = (() => { try { return new Set(JSON.parse(localStorage.getItem('om-users-hidden') || '[]')); } catch { return new Set(); } })();
+const saveUsersHidden = () => { try { localStorage.setItem('om-users-hidden', JSON.stringify([...usersHidden])); } catch { /* stockage indisponible */ } };
 function usersChart(bs, series) {
   const avail = Math.max(300, ($('page')?.clientWidth || 360) - 34);
   const W = Math.max(avail, bs.length * 34), H = 236, left = 46, bottom = 24, top = 26, right = 10;
@@ -873,8 +883,8 @@ function usersChart(bs, series) {
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Utilisatrices par produit">`
     + sc.ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${num(Math.round(v))}</text>`).join('')
     + axes(left, W, top, y(0), 'nombre')
-    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>`).join('')
-    + series.map(s => bs.map((b, i) => `<g class="pt" data-tip="${esc(`${s.short} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))} ${s.kind}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(s.v[b.i])}" r="11"/><circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="${bs.length > 48 ? 2 : 3}" fill="${s.color}"/></g>`).join('')).join('')
+    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"${s.dash ? ' stroke-dasharray="6 4"' : ''}/>`).join('')
+    + series.map(s => bs.map((b, i) => `<g class="pt" data-tip="${num(Math.round(s.v[b.i]))}"><circle class="hit" cx="${cx(i)}" cy="${y(s.v[b.i])}" r="11"/><circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="${bs.length > 48 ? 2 : 3}" fill="${s.color}"/></g>`).join('')).join('')
     + bs.map((b, i) => i % every === 0 ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b) || MSHORT[+b.key.slice(5) - 1]?.replace('.', '') || ''}</text>` : '').join('')
     + '</svg>';
 }
@@ -887,17 +897,20 @@ function usersPage() {
   series.forEach(s => { s.v = {}; bs.forEach(b => { s.v[b.i] = s.at(b.i); }); });
   const last = bs.at(-1), first = bs[0];
   const end = s => last ? Math.round(s.v[last.i]) : 0;
-  const total = series.reduce((t, s) => t + end(s), 0);
+  const base = series.filter(s => s.key !== ':total'), shown = series.filter(s => !usersHidden.has(s.key));
+  const total = base.reduce((t, s) => t + end(s), 0);
   const peak = s => Math.max(0, ...bs.map(b => s.v[b.i]));
-  const legend = `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.short)}</span>`).join('')}</div>`;
-  const heads = ['Période', ...series.map(s => `<span class="dotk" style="background:${s.color}"></span>${esc(s.short)}`)];
-  const rows = bs.map(b => [bucketName(b.key, view.cashStep), ...series.map(s => num(Math.round(s.v[b.i])))]);
+  // Cases à cocher : chaque courbe, et « Tout » pour tout afficher ou tout masquer.
+  const all = shown.length === series.length;
+  const legend = `<div class="ucheck"><label class="uc"><input type="checkbox" data-userall ${all ? 'checked' : ''}><span>Tout</span></label>${series.map(s => `<label class="uc"><input type="checkbox" data-usershow="${esc(s.key)}" ${usersHidden.has(s.key) ? '' : 'checked'}><i style="background:${s.color}"></i><span>${esc(s.short)}</span></label>`).join('')}</div>`;
+  const heads = ['Période', ...shown.map(s => `<span class="dotk" style="background:${s.color}"></span>${esc(s.short)}`)];
+  const rows = bs.map(b => [bucketName(b.key, view.cashStep), ...shown.map(s => num(Math.round(s.v[b.i])))]);
   const tile = s => ({ label: esc(s.short), value: num(end(s)), hint: `${s.kind} fin ${last ? monthName(months[last.i]) : ''} · au plus haut ${num(Math.round(peak(s)))}` });
   return `${banner({ label: 'Utilisatrices', chip: periodChip(), big: num(total),
-      note: last ? `Fin ${monthName(months[last.i])} : ${series.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
-      tiles: series.slice(0, 4).map(tile) })}
+      note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
+      tiles: base.slice(0, 4).map(tile) })}
     ${bs.length ? `<details class="card" id="us-chart" open><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
-      ${legend}<div class="chart">${usersChart(bs, series)}</div></details>
+      ${legend}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
     <details class="card" id="us-table" ${view.open.has('us-table') || !view.open.has('us-table-closed') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
       <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
 }
@@ -1118,7 +1131,7 @@ function capacityChart(x) {
     + list.map((m, i) => {
       const bx = left + i * bw + bw * .18, w = bw * .64, over = m.hours > m.limit + 1e-9;
       const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g data-tip="${esc(`${monthName(m.month)} : ${(Math.round(m.hours * 10) / 10).toLocaleString('fr-FR')} h de coaching par semaine${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h disponibles`} · ${num(m.people)} clientes en même temps`)}">
+      return `<g data-tip="${(Math.round(m.hours * 10) / 10).toLocaleString('fr-FR')} h">
         <rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(0) - y(m.hours)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
     }).join('')
     + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + axes(left, W, top, y(0), 'h / sem.') + '</svg>';
@@ -1968,6 +1981,12 @@ document.addEventListener('change', async e => {
     if (t.value === '') delete cur[f]; else cur[f] = Math.max(0, +t.value || 0);
     if (!Object.keys(cur).length) delete a.actuals[month];
     save(); render();
+  } else if (t.dataset.usershow !== undefined) {
+    if (t.checked) usersHidden.delete(t.dataset.usershow); else usersHidden.add(t.dataset.usershow);
+    saveUsersHidden(); render();
+  } else if (t.dataset.userall !== undefined) {
+    if (t.checked) usersHidden.clear(); else userSeries(results()).forEach(x => usersHidden.add(x.key));
+    saveUsersHidden(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
@@ -2039,8 +2058,11 @@ document.addEventListener('click', e => {
   } else if (t.dataset.paladd) {
     const [ai, month] = t.dataset.paladd.split('|');
     addPalier(state.apps[+ai], month);
+    // Le nouveau palier s'ouvre, les autres gardent leur état.
+    const keep = [...document.querySelectorAll('#page details[open]')].map(d => d.id);
     save(); render();
-    document.querySelector(`[data-palmove="${ai}|${month}"]`)?.closest('.palier')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const nd = document.getElementById(`pal-${ai}-${month}`);
+    if (nd) { keep.forEach(k => document.getElementById(k)?.setAttribute('open', '')); nd.open = true; nd.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   } else if (t.dataset.paldel) {
     const [ai, date] = t.dataset.paldel.split('|');
     removePalier(state.apps[+ai], date);

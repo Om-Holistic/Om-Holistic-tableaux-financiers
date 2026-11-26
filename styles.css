@@ -646,7 +646,7 @@ table.coach-need tr.c-block td:first-child { box-shadow: inset 3px 0 0 var(--bad
 @media (max-width: 520px) { .cstep dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 
 /* Onglet Coaching : une carte par palier. */
-.palier { display: flex; flex-direction: column; gap: 10px; }
+details.palier { display: block; }
 .palier.blocked { border-left: 4px solid var(--bad); }
 .pal-head { margin: 0; font-size: 15px; }
 .pal-date { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 13px; color: var(--ink-soft); }
@@ -693,3 +693,18 @@ table.pal-t th { white-space: normal; }
   main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
   .savebtn { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
 }
+
+/* Utilisatrices : cases à cocher pour choisir les courbes. */
+.ucheck { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 10px; }
+.ucheck .uc { display: inline-flex; flex-direction: row; align-items: center; margin: 0; font-weight: 500; color: var(--ink); line-height: 1.2; gap: 7px; padding: 7px 12px; border: 1.5px solid var(--line); border-radius: 999px; font-size: 14px; cursor: pointer; background: var(--surface); }
+.ucheck .uc:has(input:checked) { border-color: var(--ink-soft); }
+.ucheck .uc input { margin: 0; width: 17px; height: 17px; min-height: 0; padding: 0; flex: none; accent-color: var(--sage); }
+.ucheck .uc i { flex: none; width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+
+details.palier > summary { cursor: pointer; }
+details.palier .pal-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+details.palier[open] .pstats { display: none; }
+.ps.bad b { color: var(--bad); }
+.tag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
+.tag.ok { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.tag.bad, .tag.ok { white-space: nowrap; display: inline-block; }
