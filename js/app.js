@@ -4,6 +4,11 @@
 const $ = id => document.getElementById(id);
 const money = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
 const price = x => { const v = +x || 0; return v.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0€'; };
+// Montants compacts pour les bandeaux et les cartes : 18,4 k€ au-delà de 100 000 €, 2,8 M€ au-delà du million.
+const short = x => { const a = Math.abs(x), f = (v, d) => v.toLocaleString('fr-FR', { maximumFractionDigits: d }).replace(/\s/g, '\u00a0');
+  return a >= 1e9 ? f(x / 1e9, a >= 1e10 ? 0 : 1) + '\u00a0Md€' : a >= 1e6 ? f(x / 1e6, a >= 1e7 ? 0 : 1) + '\u00a0M€' : a >= 1e5 ? f(x / 1e3, 0) + '\u00a0k€' : money(x); };
+// Remplace dans un texte déjà formaté les grands montants « 1 234 567 € » par leur forme compacte.
+const compact = html => String(html).replace(/-?\d{1,3}(?:\u00a0\d{3})+\u00a0€/g, m => { const v = +m.replace(/[^\d-]/g, ''); return Math.abs(v) >= 1e5 ? short(v) : m; });
 const num = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0');
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const thisMonth = new Date().toISOString().slice(0, 7);
@@ -15,7 +20,16 @@ try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (isValidState(saved)) state = migrate(saved);
 } catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
-const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ } };
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } };
+const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
+// Rappel de sauvegarde : des modifications non exportées depuis plus de 14 jours (ou jamais exportées, modifiées il y a plus d'un jour).
+function backupDue() {
+  const edit = stored('om-last-edit'), exp = stored('om-last-export');
+  if (!edit || (exp && exp >= edit)) return null;
+  const days = d => (Date.now() - new Date(d)) / 86400000;
+  if (exp ? days(exp) > 14 : days(edit) > 1) return exp ? `Dernière sauvegarde il y a ${Math.floor(days(exp))} jours` : 'Tes paramètres n\'ont jamais été exportés';
+  return null;
+}
 
 const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0 };
 const PAGES = ['synthese', 'resultat', 'previsionnel', 'charges', 'produits', 'reglages'];
@@ -24,11 +38,14 @@ const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
 function field(label, path, value, type = 'number') {
-  const extra = type === 'number' ? ' min="0" step="any"' : '';
+  // Les écarts de scénario peuvent être négatifs ; tous les autres nombres sont positifs.
+  const extra = type === 'number' ? (String(path).startsWith('scenarios.') ? ' step="any"' : ' min="0" step="any"') : '';
   // Un libellé « titre\nexplication » s'affiche sur deux lignes.
   const [head, more] = String(label).split('\n');
   const text = more ? `<span class="lh">${esc(head)}</span><span class="lx">${esc(more)}</span>` : esc(label);
-  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
+  // Grands nombres : la valeur mise en forme sous le champ (1000000 → 1 000 000).
+  const echo = type === 'number' && Math.abs(+value) >= 10000 ? `<span class="echo">${num(+value)}</span>` : '';
+  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}">${echo}</label>`;
 }
 function check(label, path, value) {
   return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
@@ -92,12 +109,12 @@ function section(id, kind, title, summary, body) {
 }
 
 // Grille de prix en trois phases : chaque phase est une pastille numérotée.
-function pricingEditor(grid, path, title, anchor) {
+function pricingEditor(grid, path, title, anchor, extra = '') {
   const now = phaseAt(grid, thisMonth);
   const rows = grid.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, path + '.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('');
   const summary = grid.map(ph => price(ph.price)).join(' › ');
   return section(anchor, 'price', title, summary, `${rows}
-    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique. Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p>`);
+    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique. Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p>${extra}`);
 }
 
 const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine'], ['months', 'Progression (mois)'], ['step', 'Augmentation par palier']];
@@ -105,7 +122,7 @@ const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine
 // ---------- Pages de paramètres ----------
 
 // Chiffres clés affichés sur une carte repliée : petites tuiles « libellé / valeur ».
-const pstats = items => `<span class="pstats">${items.filter(Boolean).map(([l, v, cls]) => `<span class="ps${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></span>`).join('')}</span>`;
+const pstats = items => `<span class="pstats">${items.filter(Boolean).map(([l, v, cls]) => `<span class="ps${cls ? ' ' + cls : ''}"><small>${l}</small><b>${compact(v)}</b></span>`).join('')}</span>`;
 const shortMonth = k => k ? MONTHS[+k.slice(5) - 1].slice(0, 4).replace(/\.$/, '') + (MONTHS[+k.slice(5) - 1].length > 4 ? '.' : '') + ' ' + k.slice(0, 4) : '—';
 // Simulation de l'application affichée, partagée par les cartes de la page Produits.
 let prodSim = null;
@@ -140,7 +157,8 @@ function programCard(a, q, j, p) {
         <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
         ${fields(q, t, [['start', 'Lancement commercial', 'month']])}
         <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>`)}
-      ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j)}
+      ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
+        <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
       ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
         <h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
         ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
@@ -403,6 +421,14 @@ function settingsPage(a, i) {
       ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
     </details>
     <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
+      ${section('st-scen', 'ins', 'Scénarios', state.scenarios.list.map(x => esc(x.name)).join(' · ') + ' · affiché : ' + esc((currentScenario() || {}).name || ''), `
+        <div class="grid">${select('Scénario affiché', 'scenarios.current', state.scenarios.current, state.scenarios.list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+        ${state.scenarios.list.map((x, k) => x.id === 'central' ? '' : `<h4>${esc(x.name)}</h4><div class="grid">${field('Inscriptions et\nabonnées (%)', `scenarios.list.${k}.volume`, x.volume)}${field('Prix\n(%)', `scenarios.list.${k}.price`, x.price)}${field('Durée\nd\'abonnement (%)', `scenarios.list.${k}.duration`, x.duration)}${field('Charges\n(%)', `scenarios.list.${k}.costs`, x.costs)}</div>`).join('')}
+        <p class="muted">Écarts par rapport au plan saisi dans Produits et Charges, qui reste le scénario central. Une baisse s'écrit avec un moins (−30). Les pages de réglages montrent toujours le plan central.</p>`)}
+      ${section('st-cash', 'cal', 'Trésorerie et revenu', `apport ${money(+state.cash.start || 0)} · revenu visé ${money(+state.cash.payGoal || 0)} / mois${state.cash.payFrom ? ' dès ' + monthName(state.cash.payFrom) : ''}`, `
+        <div class="grid">${field('Apport de départ\nargent mis dans la société (€)', 'cash.start', state.cash.start)}${field('Revenu mensuel visé\nnet pour toi (€)', 'cash.payGoal', state.cash.payGoal)}</div>
+        ${fields(state.cash, 'cash', [['payFrom', 'Je commence à me le verser à partir de', 'month']])}
+        <p class="muted">Sans date, la trésorerie est montrée avant ta rémunération : tu vois ce que la société accumule. Avec une date, ton revenu est retiré chaque mois de la trésorerie. Ne remplis pas en plus la charge « Rémunération du dirigeant », pour ne pas la compter deux fois. Valeurs par défaut à ajuster : apport 0 €, revenu visé 2 000 € par mois.</p>`)}
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
       ${implantSection()}
@@ -430,9 +456,12 @@ const table = (heads, rows, cls = []) => '<thead><tr>' + heads.map(h => `<th>${h
   + rows.map((r, i) => `<tr class="${cls[i] || ''}">` + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('') + '</tbody>';
 const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 
-function results() {
-  const all = state.apps.map(a => ({ a, ...simulate(a) }));
-  const pnl = buildPnl(state, all);
+// Scénario affiché partout (Résultat, Prévisionnel, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
+const currentScenario = () => (state.scenarios?.list || []).find(x => x.id === state.scenarios.current);
+function results(sc = currentScenario()) {
+  const st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
+  const all = st.apps.map((a, i) => ({ a, i, ...simulate(a) }));
+  const pnl = buildPnl(st, all);
   // Charges et résultat de chaque mois, à partir du compte d'exploitation.
   all.forEach((x, i) => {
     x.pnl = pnl[i];
@@ -448,7 +477,7 @@ function results() {
   const byMonth = keys.map(k => ({ month: k, ...Object.fromEntries(F.map(f => [f, rows.filter(r => r.month === k).reduce((s, r) => s + r[f], 0)])) }));
   const sum = f => rows.reduce((s, r) => s + r[f], 0);
   const summary = x => sumPnl(x.pnl.filter(e => inPeriod(e.month)));
-  return { all, scope, keys, byMonth, sum, summary };
+  return { all, scope, keys, byMonth, sum, summary, st };
 }
 
 // Une ligne par produit, avec sa part du CA de la période.
@@ -457,7 +486,7 @@ function productLines(r) {
   for (const x of r.scope) {
     const ms = x.months.filter(m => inPeriod(m.month)), last = ms.at(-1);
     const a = x.a, direct = last?.direct || 0, post = last?.post || 0;
-    const ai = state.apps.indexOf(a);
+    const ai = x.i;
     lines.push({ name: esc(soloName(a)), go: { open: 'sd', app: ai }, color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
       detail: a.programs.length ? `${num(direct + post)} abonnées en fin de période, dont ${num(post)} après un programme` : `${num(direct)} abonnées en fin de période` });
     a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), go: { open: 'p' + i, app: ai }, off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
@@ -494,22 +523,100 @@ function chart(byMonth) {
     }).join('') + '</svg>';
 }
 
+// ---------- Tableau de bord : ce qui demande ton attention ----------
+function alertsCard(r) {
+  const items = [];
+  const t = cashData();
+  if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  for (const x of r.all) {
+    const sf = capacityShortfall(x.a, x.weekly);
+    if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'produits', open: 'pr-cap', app: x.i }]);
+    const a = state.apps[x.i];
+    const pending = a.programs.filter((q, j) => { if (!q.enabled || !(q.goal?.steps || []).length) return false; const gp = programGoalPlan(a, j, simulate(a).months); return gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)); }).length
+      + (() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? 1 : 0; })();
+    if (pending) items.push(['mid', `${esc(a.name)} : ${pending} objectif${pending > 1 ? 's' : ''} pas encore appliqué${pending > 1 ? 's' : ''}.`, { page: 'produits', app: x.i }]);
+    const todo = (a.charges || []).filter(c => badge(c).includes('todo')).length;
+    if (todo) items.push(['mid', `${esc(a.name)} : ${todo} charge${todo > 1 ? 's' : ''} à compléter.`, { page: 'charges', app: x.i }]);
+  }
+  const shTodo = state.shared.charges.filter(c => badge(c).includes('todo')).length;
+  if (shTodo) items.push(['mid', `Structure Om Holistic : ${shTodo} charge${shTodo > 1 ? 's' : ''} à compléter (loyer, salaires…).`, { page: 'charges' }]);
+  const b = backupDue();
+  if (b) items.push(['mid', `${b} : exporte-les pour ne pas les perdre.`, { page: 'reglages', open: 'st-save' }]);
+  if (t.breakEven) items.push(['ok', `Point mort en ${monthName(t.breakEven)} ; ton revenu de ${money(t.goal)} par mois ${t.payReached ? 'est atteint en ' + monthName(t.payReached) : 'n\'est pas encore atteint'}.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  const go = g => `href="#${g.page}" data-goto="${g.page}" data-open="${g.open || ''}" data-anchor="${g.open || ''}"${g.app !== undefined ? ` data-app="${g.app}"` : ''}`;
+  return `<details class="card" id="s-alerts" ${view.open.has('s-alerts') || !view.open.size ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">${items.filter(x => x[0] !== 'ok').length} point${items.filter(x => x[0] !== 'ok').length > 1 ? 's' : ''} d'attention · toutes applications</span></span></summary>
+    <ul class="alerts">${items.map(([k, text, g]) => `<li class="${k}"><a ${go(g)}>${text}<span class="from">›</span></a></li>`).join('') || '<li class="ok">Rien à signaler.</li>'}</ul></details>`;
+}
+
+// ---------- Réel face au prévu ----------
+function actualsCard(r) {
+  if (view.app === 'all') return `<details class="card" id="pv-real"><summary><span>Réel face au prévu<br><span class="sum-sub">choisis une application pour saisir ses chiffres réels</span></span></summary><p class="muted">Les chiffres réels se saisissent application par application : choisis-en une en haut de la page.</p></details>`;
+  const x = r.scope[0], a = state.apps[x.i], act = a.actuals || {};
+  const ms = x.months.filter(m => inPeriod(m.month));
+  const inp = (month, f) => `<input class="real" type="number" min="0" step="any" inputmode="decimal" data-actual="${x.i}|${month}|${f}" value="${act[month]?.[f] ?? ''}" placeholder="—" aria-label="${f === 'ca' ? 'Chiffre d\'affaires' : 'Charges'} réel ${monthName(month)}">`;
+  const gap = (real, plan) => real === undefined || real === '' ? '' : `<span class="${+real < plan ? 'neg' : 'pos'}">${+real - plan >= 0 ? '+' : ''}${short(+real - plan)}</span>`;
+  const done = ms.filter(m => act[m.month] && (act[m.month].ca !== undefined && act[m.month].ca !== '')), sumPlan = done.reduce((t, m) => t + m.caHT, 0), sumReal = done.reduce((t, m) => t + +act[m.month].ca, 0);
+  return `<details class="card" id="pv-real" ${view.open.has('pv-real') ? 'open' : ''}><summary><span>Réel face au prévu<br><span class="sum-sub">${done.length ? `${done.length} mois saisis · CA réel ${short(sumReal)} pour ${short(sumPlan)} prévus (${sumPlan ? (sumReal >= sumPlan ? '+' : '') + Math.round((sumReal / sumPlan - 1) * 100) + ' %' : '—'})` : 'saisis tes chiffres réels dès les premières ventes'}</span></span></summary>
+    <p class="muted">Pour ${esc(a.name)}, ${periodName()}. Saisis chaque mois le chiffre d'affaires HT et les charges réellement constatés (dans ta comptabilité). L'écart te dit quelles hypothèses recaler.</p>
+    <div class="scroll"><table class="real-t"><thead><tr><th>Mois</th><th>CA prévu</th><th>CA réel</th><th>Écart</th><th>Charges prévues</th><th>Charges réelles</th><th>Écart</th></tr></thead><tbody>
+      ${ms.map(m => `<tr><td>${monthName(m.month)}</td><td>${money(m.caHT)}</td><td>${inp(m.month, 'ca')}</td><td>${gap(act[m.month]?.ca, m.caHT)}</td><td>${money(m.cost)}</td><td>${inp(m.month, 'charges')}</td><td>${act[m.month]?.charges === undefined || act[m.month]?.charges === '' ? '' : `<span class="${+act[m.month].charges > m.cost ? 'neg' : 'pos'}">${+act[m.month].charges - m.cost >= 0 ? '+' : ''}${short(+act[m.month].charges - m.cost)}</span>`}</td></tr>`).join('')}
+    </tbody></table></div></details>`;
+}
+
+// Export PDF : ouvre toutes les zones, puis la fenêtre d'impression (sur iPad : Partager › Enregistrer en PDF).
+const printButton = () => `<div class="row print-row"><button class="print-btn" id="printPdf">Exporter en PDF</button></div>`;
+
+// ---------- Trésorerie ----------
+// Solde de trésorerie mois par mois (toutes les applications), avec le point bas et la ligne zéro.
+function cashChart(t) {
+  const ms = t.months, W = Math.max(320, ms.length * 12), H = 180, left = 52, bottom = 22, top = 10;
+  const vals = ms.map(m => m.balance), lo = Math.min(0, ...vals), hi = Math.max(1, ...vals);
+  const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1)), x = i => left + (W - left - 8) * i / Math.max(1, ms.length - 1);
+  const pts = ms.map((m, i) => `${x(i).toFixed(1)},${y(m.balance).toFixed(1)}`).join(' ');
+  const ticks = [lo, lo + (hi - lo) / 2, hi];
+  const li = ms.findIndex(m => m.month === t.low.month);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie mois par mois">`
+    + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
+    + (lo < 0 ? `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--bad)" stroke-dasharray="4 3"/>` : '')
+    + `<polyline points="${pts}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
+    + ms.map((m, i) => m.month.endsWith('-01') ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${m.month.slice(0, 4)}</text>` : '').join('')
+    + (li >= 0 ? `<circle cx="${x(li)}" cy="${y(t.low.balance)}" r="4.5" fill="${t.low.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"><title>Point bas ${t.low.month} : ${money(t.low.balance)}</title></circle>` : '')
+    + '</svg>';
+}
+function cashData(sc) {
+  const r = results(sc);
+  return treasury(r.st, r.all);
+}
+function cashCard() {
+  const t = cashData(), c = state.cash || {};
+  const end = t.months.at(-1) || { balance: 0 }, need = t.low.balance < 0 ? -t.low.balance : 0;
+  return `<details class="card" id="pv-cash" ${view.open.has('pv-cash') || !view.open.size ? 'open' : ''}><summary><span>Trésorerie et revenu<br><span class="sum-sub">${need ? `<b class="neg">besoin de ${money(need)}</b> en ${monthName(t.low.month)}` : `point bas ${short(t.low.balance)} en ${monthName(t.low.month)}`} · point mort ${t.breakEven ? monthName(t.breakEven) : 'non atteint'}</span></span></summary>
+    <div class="kpis">
+      <div class="kpi"><small>Point bas</small><b class="${t.low.balance < 0 ? 'bad' : ''}">${short(t.low.balance)}</b><small>${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}</small></div>
+      <div class="kpi"><small>Point mort</small><b>${t.breakEven ? monthName(t.breakEven) : '—'}</b><small>résultat positif chaque mois ensuite</small></div>
+      <div class="kpi"><small>Ton revenu (${short(t.goal)} / mois)</small><b class="${t.payReached ? 'good' : ''}">${t.payReached ? monthName(t.payReached) : 'non atteint'}</b><small>net après impôts, toutes applis</small></div>
+      <div class="kpi"><small>Trésorerie fin ${end.month ? end.month.slice(0, 4) : ''}</small><b class="${end.balance < 0 ? 'bad' : 'good'}">${short(end.balance)}</b><small>${c.payFrom ? `après ta rémunération dès ${monthName(c.payFrom)}` : 'avant ta rémunération'}</small></div>
+    </div>
+    <div class="chart">${cashChart(t)}</div>
+    <p class="muted">Toute la société, toutes applications. Apport de départ ${money(t.start)}. Les impôts et cotisations de l'implantation choisie sont déduits chaque mois (en réalité, une partie se paie l'année suivante). <a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport et ton revenu</a></p></details>`;
+}
+
 // ---------- Bandeaux en tête de page ----------
 // Un chiffre clé à gauche, quatre tuiles de même taille à droite (2 × 2), sur toutes les pages.
-const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase());
+const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase()) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '');
 // Replié par défaut (une ligne : chiffre clé + 2 ou 3 repères) ; déplié, la note et les quatre tuiles.
 // Le choix replié / déplié est mémorisé sur l'appareil et vaut pour toutes les pages.
 const bannerOpen = () => { try { return localStorage.getItem('om-banner') === 'open'; } catch { return false; } };
 function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
   const tile = t => {
-    const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${t.value}</b>${t.hint ? `<span class="t-h">${t.hint}</span>` : ''}`;
+    const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${compact(t.value)}</b>${t.hint ? `<span class="t-h">${compact(t.hint)}</span>` : ''}`;
     return t.go ? `<a class="b-tile" href="#${t.go.page}" data-goto="${t.go.page}" data-open="${t.go.open || ''}" data-anchor="${t.go.anchor || t.go.open || ''}">${inner}</a>` : `<div class="b-tile">${inner}</div>`;
   };
-  const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${t.value}</b></span>`).join('');
+  const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${compact(t.value)}</b></span>`).join('');
   return `<details class="hero banner" ${bannerOpen() ? 'open' : ''}>
       <summary class="b-sum"><span class="b-head"><span class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</span>
-        <b class="b-big ${bigCls}">${big}</b></span><span class="b-minis">${minis}</span></summary>
-      <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${note}</p>` : ''}${bar}</div>
+        <b class="b-big ${bigCls}">${compact(big)}</b></span><span class="b-minis">${minis}</span></summary>
+      <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${compact(note)}</p>` : ''}${bar}</div>
       <div class="b-tiles">${tiles.map(tile).join('')}</div></div>
     </details>`;
 }
@@ -533,6 +640,7 @@ function synthesePage() {
         { label: 'Inscriptions', value: num(r.sum('admissions')), hint: `${num(last.active || 0)} en programme en fin de période`, go: { page: 'previsionnel' } },
         { label: 'Abonnées', value: num(subsEnd), hint: `en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}`, go: { page: 'previsionnel' } }
       ] })}
+    ${alertsCard(r)}
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
@@ -579,11 +687,14 @@ function previsionnelPage() {
         { label: 'Abonnées', value: num(subsEnd), hint: `fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}` },
         { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
       ] })}
+    ${cashCard()}
+    ${actualsCard(r)}
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
     <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
     <details class="card" id="pv-prod" ${view.open.has('pv-prod') || !view.open.size ? 'open' : ''}><summary>Par produit</summary><p class="muted">Touche un produit pour ouvrir ses réglages.</p><div>${productLines(r)}</div></details>
-    ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}`;
+    ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}
+    ${printButton()}`;
 }
 
 // Manque d'heures : premier mois dépassé et besoin jusqu'au palier suivant.
@@ -658,8 +769,8 @@ function capacityBlock(r) {
     </div>
     ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Heures de coaching nécessaires / semaine</span><span><i style="background:var(--bad)"></i>Heures insuffisantes</span><span><i class="dash"></i>Heures disponibles</span></div>
       <div class="chart cap-chart">${capacityChart(x)}</div>
-      ${(() => { const ai = state.apps.indexOf(x.a), sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
-      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${state.apps.indexOf(x.a)}">Voir la capacité de coaching</a></p></div>`).join('')}
+      ${(() => { const ai = x.i, sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
+      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${x.i}">Voir la capacité de coaching</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Heures nécessaires', 'Heures disponibles', 'En attente'],
         wr.map(w => [w.date, esc(w.name), num(w.demand), num(w.admitted), num(w.people), w.hours.toFixed(1), w.limit === Infinity ? '—' : `${num(w.own)}${w.hired ? ' + ' + num(w.hired) : ''}`, num(w.waiting)]))}</table></div></details>`;
@@ -734,6 +845,36 @@ function chargeGroups(list, path, a, dates, scopes) {
   }).join('');
 }
 
+// Valeur d'une nouvelle cliente sur sa durée de vie (chiffre d'affaires, avant charges), au prix de la dernière phase.
+function clientValue(a, k) {
+  const lastPrice = grid => { const ph = phasesOf(grid); return ph.length ? +ph[ph.length - 1].price || 0 : 0; };
+  const sub = d => (+d > 0 ? +d : 24);
+  if (k === 'sub') return lastPrice(a.sub.directPricing) * sub(a.sub.duration);
+  const q = a.programs[k];
+  return lastPrice(q.pricing) + Math.min(100, +q.toSolo || 0) / 100 * lastPrice(a.sub.postPricing) * sub(a.sub.postDuration);
+}
+// Canaux de vente et coût d'acquisition : ce que coûte une nouvelle cliente, face à ce qu'elle rapporte.
+function acquisitionCard(a, p) {
+  const ch = a.channels || { store: 0, storeRate: 15 };
+  const sim = simulate(a).months, firstYear = sim.filter(m => m.month >= (appDates([a]).launch || appStart(a))).slice(0, 12);
+  const pub = (a.charges || []).filter(c => c.category === 'marketing' && c.type === 'fixe').reduce((t, c) => t + firstYear.reduce((s, m) => s + (chargeAt(c, m.month, appDates([a])) || 0), 0), 0);
+  const fresh = firstYear.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) + m.products.reduce((x, q) => x + q.admissions - (q.fromSolo || 0), 0), 0);
+  const rows = [['sub', soloName(a), a.sub, p + '.sub'], ...a.programs.map((q, j) => q.enabled ? [j, progName(a, q), q, `${p}.programs.${j}`] : null).filter(Boolean)].map(([k, name, o, t]) => {
+    const v = clientValue(a, k), acq = +o.acq || 0, avg = fresh ? pub / fresh : 0, cost = acq || avg, ratio = cost ? v / cost : null;
+    return `<div class="acq-row"><div class="acq-name"><b>${esc(name)}</b><span class="muted">vaut environ ${money(v)} par cliente sur sa durée de vie</span></div>
+      ${field('Coût d\'acquisition\n€ par nouvelle cliente', t + '.acq', o.acq || 0)}
+      <span class="acq-ratio ${ratio === null ? '' : ratio >= 3 ? 'ok' : ratio >= 1 ? 'mid' : 'bad'}">${ratio === null ? 'coût non renseigné' : `rapporte ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${acq ? 'son coût' : 'la pub moyenne'}`}</span></div>`;
+  }).join('');
+  return `<details class="card" id="ch-acq" ${view.open.has('ch-acq') ? 'open' : ''}><summary><span>Canaux de vente et acquisition<br><span class="sum-sub">${+ch.store ? `${num(ch.store)} % par les stores à ${num(ch.storeRate)} %` : 'tout par le site (Stripe)'} · ${fresh ? `publicité ≈ ${money(pub / fresh)} par nouvelle cliente la 1re année` : 'acquisition à régler'}</span></span></summary>
+    <h4>Où paient tes clientes</h4>
+    <div class="grid">${field('Ventes passées par l\'App Store\net Google Play (%)', p + '.channels.store', ch.store)}${field('Commission des stores\n(%)', p + '.channels.storeRate', ch.storeRate)}</div>
+    <p class="muted">15 % pour les petits éditeurs (moins d'un million de dollars par an), 30 % au-delà. Les frais Stripe de tes charges ne s'appliquent plus qu'à la part vendue sur ton site. Par défaut : tout sur le site, à ajuster.</p>
+    <h4>Ce que coûte une nouvelle cliente</h4>
+    <p class="muted">Ta publicité fixe (catégorie Marketing) revient à environ <b>${fresh ? money(pub / fresh) : '—'}</b> par nouvelle cliente la première année (${money(pub)} pour ${num(fresh)} nouvelles clientes). Tu peux aussi raisonner par cliente : indique un coût par nouvelle cliente, il s'ajoute à la publicité fixe (mets alors celle-ci à 0 pour ne pas compter deux fois).</p>
+    ${rows}
+    <p class="muted">Une cliente doit rapporter au moins 3 fois ce qu'elle coûte à acquérir pour que la croissance soit saine. Les clientes venues de l'abonnement ne coûtent rien à acquérir.</p></details>`;
+}
+
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
@@ -751,6 +892,7 @@ function chargesPage(a, i) {
         { label: 'À compléter', value: num(todo), cls: todo ? 'warn-v' : '', hint: `sur ${list.length} charges` },
         { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
       ] })}
+    ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     <h2>Charges de ${esc(a.name)}</h2>
     <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
@@ -775,7 +917,7 @@ const PNL_ROWS = [
 
 function pnlColumns(r) {
   if (view.app === 'all') {
-    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, go: { page: 'produits', app: state.apps.indexOf(x.a) }, v: { ...s.total, structure: s.structure } }; });
+    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, go: { page: 'produits', app: x.i }, v: { ...s.total, structure: s.structure } }; });
     const tot = {};
     for (const [k] of PNL_ROWS) tot[k] = cols.reduce((t, c) => t + c.v[k], 0);
     return { cols, total: tot };
@@ -804,6 +946,33 @@ function natureCard(r) {
 }
 
 // Résultat net de la société selon chaque implantation (toutes les applications).
+// Scénarios côte à côte et sensibilité du résultat aux hypothèses clés, sur la période affichée.
+function scenarioTotals(sc) {
+  const r = results(sc), { total } = pnlColumns(r), ic = implantCalc(r), t = cashData(sc);
+  return { sc, ca: total.ca, charges: total.ca - total.result, result: total.result, net: ic.cur.net, low: t.low };
+}
+function scenarioCard() {
+  const list = state.scenarios.list, cur = currentScenario() || list[0];
+  const cols = list.map(scenarioTotals);
+  const cell = (x, v, cls = '') => `<td class="${x.sc.id === cur.id ? 'cur' : ''} ${cls}">${v}</td>`;
+  const row = (label, f, neg) => `<tr><td>${label}</td>${cols.map(x => cell(x, short(f(x)), neg && f(x) < 0 ? 'neg' : '')).join('')}</tr>`;
+  // Sensibilité : 10 % de moins sur une hypothèse, toutes choses égales par ailleurs.
+  const base = cols.find(x => x.sc.id === cur.id) || cols[0];
+  const tests = [['volume', -10, 'Inscriptions et abonnées −10 %'], ['price', -10, 'Prix −10 %'], ['duration', -10, 'Durée d\'abonnement −10 %'], ['costs', 10, 'Charges +10 %']]
+    .map(([k, d, label]) => ({ label, delta: scenarioTotals({ ...cur, id: 'sens', [k]: (+cur[k] || 0) + d }).result - base.result }));
+  const max = Math.max(1, ...tests.map(x => Math.abs(x.delta)));
+  return `<details class="card" id="r-scen" ${view.open.has('r-scen') || !view.open.size ? 'open' : ''}><summary><span>Scénarios et sensibilité<br><span class="sum-sub">affiché partout : ${esc(cur.name)} · ${list.map(x => `${esc(x.name)} ${short(cols.find(c => c.sc.id === x.id).result)}`).join(' · ')}</span></span></summary>
+    <div class="grid">${select('Scénario affiché dans Résultat, Prévisionnel et Vue d\'ensemble', 'scenarios.current', state.scenarios.current, list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="scroll"><table class="scen"><thead><tr><th></th>${cols.map(x => `<th class="${x.sc.id === cur.id ? 'cur' : ''}">${esc(x.sc.name)}</th>`).join('')}</tr></thead><tbody>
+      ${row('Chiffre d\'affaires', x => x.ca)}${row('Charges', x => x.charges)}${row('<b>Résultat d\'exploitation</b>', x => x.result, true)}${row('Net pour toi', x => x.net, true)}
+      <tr><td>Point bas de trésorerie</td>${cols.map(x => cell(x, `${short(x.low.balance)}<br><small class="muted">${monthName(x.low.month)}</small>`, x.low.balance < 0 ? 'neg' : '')).join('')}</tr></tbody></table></div>
+    <p class="muted">${list.filter(x => x.id !== 'central').map(x => `${esc(x.name)} : inscriptions et abonnées ${signedPct(x.volume)}, prix ${signedPct(x.price)}, durée d'abonnement ${signedPct(x.duration)}, charges ${signedPct(x.costs)}`).join('. ')}. <a href="#reglages" data-goto="reglages" data-open="st-scen" data-anchor="st-scen">Modifier les scénarios</a></p>
+    <h4>Ce qui pèse le plus sur ton résultat ${periodName()}</h4>
+    <div class="sens">${tests.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta)).map(x => `<div class="sens-row"><span>${x.label}</span><span class="sens-bar"><i style="width:${(Math.abs(x.delta) / max * 100).toFixed(1)}%"></i></span><b class="neg">${short(x.delta)}</b></div>`).join('')}</div>
+    <p class="muted">Chaque ligne change une seule hypothèse du scénario ${esc(cur.name)}. La plus longue barre est celle à surveiller en priorité.</p></details>`;
+}
+const signedPct = x => (+x > 0 ? '+' : '') + num(+x || 0) + ' %';
+
 function implantCalc(r) {
   const im = state.implantation;
   const sums = r.all.map(x => r.summary(x));
@@ -885,6 +1054,7 @@ function resultatPage() {
         { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', mini: false, value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
       ] })}
     ${implantBar(r)}
+    ${scenarioCard()}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>
@@ -893,7 +1063,8 @@ function resultatPage() {
     ${implantCard(r)}
     <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
         <p class="muted">La <b>contribution</b> d'un produit, c'est ce qu'il rapporte une fois payés ses propres coûts : frais de paiement, coûts par cliente, coaching et charges fixes qui lui sont rattachées.
-        Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>`;
+        Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>
+    ${printButton()}`;
 }
 
 // ---------- Rendu ----------
@@ -919,7 +1090,8 @@ function render(fresh = false) {
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
-  $('page').innerHTML = pages[view.page]();
+  const due = backupDue();
+  $('page').innerHTML = (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
 
 // ---------- Événements ----------
@@ -950,10 +1122,17 @@ document.addEventListener('change', async e => {
       o[k] = m && y ? `${y}-${m}` : '';
       save(); render();
     }
+  } else if (t.dataset.actual) {
+    const [ai, month, f] = t.dataset.actual.split('|'), a = state.apps[+ai];
+    a.actuals = a.actuals || {};
+    const cur = a.actuals[month] = a.actuals[month] || {};
+    if (t.value === '') delete cur[f]; else cur[f] = Math.max(0, +t.value || 0);
+    if (!Object.keys(cur).length) delete a.actuals[month];
+    save(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
-    else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
+    else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.dataset.path.startsWith('scenarios.') ? Math.max(-100, +t.value || 0) : Math.max(0, +t.value || 0)) : t.value;
     save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
     // pour que les résumés se mettent à jour sans fermer le clavier.
@@ -1053,6 +1232,9 @@ document.addEventListener('click', e => {
   } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
+  } else if (t.id === 'printPdf') {
+    document.querySelectorAll('#page details').forEach(d => { d.open = true; });
+    setTimeout(() => window.print(), 50);
   } else if (t.id === 'export') {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));

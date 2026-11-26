@@ -115,3 +115,12 @@ L'outil est publié par GitHub Pages à chaque mise à jour de la branche `main`
 3. L'icône **Om Finances** s'ouvre en plein écran, comme une application.
 
 Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appareil à l'autre : Réglages › Exporter les paramètres, puis Importer les paramètres sur l'autre appareil. Pour une mise à jour de l'outil, il suffit de rouvrir l'icône (au besoin, fermer et rouvrir l'appli).
+
+## Pilotage (audit, novembre 2026)
+
+- **Canaux et acquisition** (Charges › Canaux de vente et acquisition) : part des ventes passée par l'App Store / Google Play et leur commission ; coût d'acquisition par nouvelle cliente ; valeur d'une cliente sur sa durée de vie.
+- **Trésorerie et revenu** (Prévisionnel, réglages dans Réglages › Trésorerie et revenu) : solde mois par mois de la société, point bas, point mort, mois où ton revenu visé est atteint, paiement des programmes en plusieurs fois.
+- **Scénarios** (Résultat › Scénarios et sensibilité, réglages dans Réglages › Scénarios) : prudent, central, ambitieux côte à côte ; le scénario choisi s'applique à Résultat, Prévisionnel et Vue d'ensemble ; sensibilité du résultat à 10 % d'écart sur chaque hypothèse.
+- **Réel face au prévu** (Prévisionnel) : saisie mensuelle du CA et des charges réels, écart au prévu.
+- **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.
+- **Export PDF** : bouton en bas de Résultat et de Prévisionnel (sur iPad : Partager › Enregistrer en PDF).

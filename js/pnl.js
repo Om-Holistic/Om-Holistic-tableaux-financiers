@@ -20,10 +20,11 @@ const addCat = (cats, k, v) => { if (v) cats[k] = (cats[k] || 0) + v; };
 // Compte d'exploitation d'une application pour un mois (hors structure).
 function monthPnl(a, m, vat) {
   const ht = x => vat?.ttc ? x / (1 + pnlPos(vat.rate) / 100) : x;
-  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0 } };
+  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: pnlPos(a.sub.acq) } };
   a.programs.forEach((p, i) => {
     const q = m.products[i];
-    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours };
+    // Nouvelles clientes à acquérir : les inscriptions, sauf celles venues de l'abonnement (déjà clientes).
+    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours, fresh: q.admissions - (q.fromSolo || 0), acq: pnlPos(p.acq) };
   });
   const cols = {};
   for (const k in units) {
@@ -39,18 +40,29 @@ function monthPnl(a, m, vat) {
   const common = { fixed: 0 }, cats = {};
   const dates = appDates([a]);
   for (const k in cols) addCat(cats, 'coaching', cols[k].coaching);
+  // Canaux : la part vendue par l'App Store / Google Play paie leur commission, et pas les frais de paiement du site.
+  const store = Math.min(100, pnlPos(a.channels?.store)) / 100, storeRate = Math.min(100, pnlPos(a.channels?.storeRate)) / 100;
+  for (const k in cols) {
+    const fee = cols[k].ca * store * storeRate;
+    cols[k].fees += fee; addCat(cats, 'paiement', fee);
+    // Coût d'acquisition : par nouvelle cliente (inscription ou nouvelle abonnée payante).
+    const acq = Math.max(0, units[k].fresh || 0) * (units[k].acq || 0);
+    cols[k].variable += acq; addCat(cats, 'marketing', acq);
+  }
   for (const c of a.charges || []) {
     const amount = chargeAt(c, m.month, dates);
     if (amount === null || !amount) continue;
     const targets = c.scope && c.scope !== 'app' && cols[c.scope] ? [c.scope] : Object.keys(cols);
     const cat = c.category || 'autre';
+    // Les frais de paiement du site ne portent que sur la part vendue hors des stores.
+    const web = cat === 'paiement' ? 1 - store : 1;
     if (c.type === 'fixe' || c.type === 'unique') {
       if (targets.length === 1 && c.scope !== 'app') cols[targets[0]].fixed += amount; else common.fixed += amount;
       addCat(cats, cat, amount);
     } else {
       for (const k of targets) {
         const u = units[k];
-        const v = c.type === 'ca' ? u.ca * amount / 100 : c.type === 'cliente' ? u.clients * amount : c.type === 'inscription' ? u.inscriptions * amount : 0;
+        const v = web * (c.type === 'ca' ? u.ca * amount / 100 : c.type === 'cliente' ? u.clients * amount : c.type === 'inscription' ? u.inscriptions * amount : 0);
         if (c.type === 'ca') cols[k].fees += v; else cols[k].variable += v;
         addCat(cats, cat, v);
       }
@@ -122,4 +134,48 @@ function afterTax(sc, caHT, result, months) {
   return { fixed, social, tax, dist, net: r3 - dist };
 }
 
-if (typeof module !== 'undefined') module.exports = { afterTax, soloName, progName, productKeys, monthPnl, buildPnl, sumPnl };
+// Trésorerie de la société (toutes les applications), mois par mois.
+// Encaissements : chiffre d'affaires HT, les programmes payés en plusieurs fois étant étalés sur leurs mensualités.
+// Décaissements : toutes les charges, puis frais de structure, cotisations et impôts de l'implantation (calculés mois par mois,
+// approximation : l'impôt réel se paie souvent l'année suivante), puis ta rémunération à partir du mois choisi.
+function treasury(state, all) {
+  const cash = state.cash || {}, sc = (state.implantation.scenarios.find(x => x.id === state.implantation.current) || state.implantation.scenarios[0]) || {};
+  const ht = x => state.vat?.ttc ? x / (1 + pnlPos(state.vat.rate) / 100) : x;
+  const months = [...new Set(all.flatMap(x => x.months.map(m => m.month)))].sort();
+  let balance = pnlPos(cash.start), low = { month: months[0], balance }, cumResult = 0;
+  const out = [];
+  for (const month of months) {
+    let ca = 0, charges = 0, adjust = 0;
+    for (const x of all) {
+      const k = x.months.findIndex(m => m.month === month);
+      if (k < 0) continue;
+      const t = sumPnl([x.pnl[k]]).total;
+      ca += t.ca; charges += t.charges;
+      // Paiement en plusieurs fois : la vente compte dans le chiffre d'affaires du mois, l'argent arrive sur n mois.
+      x.a.programs.forEach((p, i) => {
+        const n = Math.max(1, Math.round(pnlPos(p.installments, 1)));
+        if (n === 1) return;
+        let got = 0;
+        for (let j = 0; j < n; j++) { const mm = x.months[k - j]; if (mm) got += mm.products[i].sales / n; }
+        adjust += ht(got - x.months[k].products[i].sales);
+      });
+    }
+    const result = ca - charges, tx = afterTax(sc, ca, result, 1);
+    const pay = cash.payFrom && month >= cash.payFrom ? pnlPos(cash.payGoal) : 0;
+    const inflow = ca + adjust, outflow = charges + tx.fixed + tx.social + tx.tax;
+    balance += inflow - outflow - pay;
+    cumResult += result;
+    if (balance < low.balance) low = { month, balance };
+    out.push({ month, ca, inflow, charges, taxes: tx.fixed + tx.social + tx.tax, pay, result, net: tx.net, balance });
+  }
+  // Point mort : premier mois à partir duquel le résultat mensuel reste positif.
+  let breakEven = null;
+  for (let k = out.length - 1; k >= 0 && out[k].result >= 0; k--) breakEven = out[k].month;
+  // Objectif de revenu : premier mois à partir duquel le net mensuel (après impôts) reste au-dessus de l'objectif.
+  let payReached = null;
+  const goal = pnlPos(cash.payGoal);
+  if (goal) for (let k = out.length - 1; k >= 0 && out[k].net >= goal; k--) payReached = out[k].month;
+  return { months: out, low, breakEven, payReached, start: pnlPos(cash.start), goal };
+}
+
+if (typeof module !== 'undefined') module.exports = { treasury, afterTax, soloName, progName, productKeys, monthPnl, buildPnl, sumPnl };

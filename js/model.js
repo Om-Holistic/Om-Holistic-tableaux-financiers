@@ -44,20 +44,24 @@ function program(name, start, prices, duration) {
     toSolo: 40, fromSolo: 0,
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
-    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal()
+    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1
   };
 }
 
 function application(name) {
   return {
     name, restrict: false, waitlist: false, payMissing: true,
+    // Canaux de vente : part du chiffre d'affaires encaissée par l'App Store / Google Play et leur commission.
+    channels: { store: 0, storeRate: 15 },
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
     capacitySteps: [], coachRate: 0, charges: [],
+    // Chiffres réels saisis mois par mois : { 'AAAA-MM': { ca, charges } }.
+    actuals: {},
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       postDuration: 12,
-      trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [],
+      trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
     },
@@ -236,12 +240,47 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 12,
+    version: 15,
     vat: { ttc: false, rate: 20 },
+    scenarios: defaultScenarios(),
+    // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
+    cash: { start: 0, payGoal: 2000, payFrom: '' },
     shared: defaultShared(),
     implantation: defaultImplantation(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
   };
+}
+
+// Scénarios : écarts en % appliqués au plan saisi (le scénario central ne change rien).
+function defaultScenarios() {
+  return {
+    current: 'central',
+    list: [
+      { id: 'prudent', name: 'Prudent', volume: -30, price: 0, duration: -25, costs: 15 },
+      { id: 'central', name: 'Central', volume: 0, price: 0, duration: 0, costs: 0 },
+      { id: 'ambitieux', name: 'Ambitieux', volume: 30, price: 0, duration: 25, costs: 0 }
+    ]
+  };
+}
+// Copie de l'état avec un scénario appliqué : volume d'inscriptions et d'abonnées, prix, durée d'abonnement, charges.
+function withScenario(state, sc) {
+  const s = JSON.parse(JSON.stringify(state));
+  if (!sc) return s;
+  const f = x => 1 + (+x || 0) / 100;
+  const v = Math.max(0, f(sc.volume)), pr = Math.max(0, f(sc.price)), du = Math.max(0, f(sc.duration)), co = Math.max(0, f(sc.costs));
+  const prices = grid => (grid || []).forEach(ph => { ph.price = (+ph.price || 0) * pr; });
+  const costs = list => (list || []).forEach(c => { if (c.type !== 'ca') { c.amount = (+c.amount || 0) * co; (c.steps || []).forEach(st => { st.amount = (+st.amount || 0) * co; }); } });
+  for (const a of s.apps) {
+    a.volume = v;
+    prices(a.sub.directPricing); prices(a.sub.postPricing);
+    a.programs.forEach(q => { prices(q.pricing); (q.promos || []).forEach(pm => { pm.price = (+pm.price || 0) * pr; }); });
+    if (+a.sub.duration > 0) a.sub.duration = +a.sub.duration * du;
+    if (+a.sub.postDuration > 0) a.sub.postDuration = +a.sub.postDuration * du;
+    costs(a.charges);
+    a.coachRate = (+a.coachRate || 0) * co;
+  }
+  costs(s.shared && s.shared.charges);
+  return s;
 }
 
 // Premier mois simulé : la plus ancienne date de cohorte, de lancement ou d'abonnement.
@@ -382,7 +421,17 @@ function migrate(state) {
   if ((state.version || 1) < 10) for (const a of state.apps) for (const c of a.capacitySteps || []) { if (c.hired === undefined) c.hired = 0; delete c.capacity; }
   if ((state.version || 1) < 11) for (const a of state.apps) for (const q of a.programs || []) if (!Array.isArray(q.coachSteps)) q.coachSteps = [];
   if ((state.version || 1) < 12) for (const a of state.apps) if (a.payMissing === undefined) a.payMissing = true;
-  state.version = 12;
+  if ((state.version || 1) < 13) for (const a of state.apps) {
+    if (!a.channels) a.channels = { store: 0, storeRate: 15 };
+    if (a.sub.acq === undefined) a.sub.acq = 0;
+    for (const q of a.programs || []) if (q.acq === undefined) q.acq = 0;
+  }
+  if ((state.version || 1) < 14) {
+    if (!state.cash) state.cash = { start: 0, payGoal: 2000, payFrom: '' };
+    for (const a of state.apps) for (const q of a.programs || []) if (q.installments === undefined) q.installments = 1;
+  }
+  if ((state.version || 1) < 15 && !state.scenarios) state.scenarios = defaultScenarios();
+  state.version = 15;
   return state;
 }
 
@@ -390,4 +439,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

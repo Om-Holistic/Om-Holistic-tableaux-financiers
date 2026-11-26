@@ -131,3 +131,67 @@ test('heures manquantes : payées au coût des coachs quand les inscriptions ne 
   const unpaid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
   assert.ok(Math.abs(unpaid - hired * a.coachRate) < 1e-6 * Math.max(1, unpaid));
 });
+
+test('canaux : la part vendue par les stores paie leur commission, pas les frais du site', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  const sims = s.apps.map(x => E.simulate(x));
+  const at = st => { a.channels = { store: st, storeRate: 15 }; const l = P.buildPnl(s, sims)[0]; return P.sumPnl(l).total; };
+  const web = at(0), half = at(50), all = at(100);
+  assert.ok(half.fees > web.fees && all.fees > half.fees);
+  // 100 % stores : frais = 15 % du CA (les frais Stripe disparaissent)
+  assert.ok(Math.abs(all.fees - all.ca * 0.15) < 1e-6 * all.ca, `${all.fees} vs ${all.ca * 0.15}`);
+  assert.ok(Math.abs(all.result - (all.ca - all.charges)) < 1e-6 * all.ca);
+});
+
+test('acquisition : coût par nouvelle cliente, hors clientes venues de l\'abonnement', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
+  const sims = s.apps.map(x => E.simulate(x));
+  const ms = sims[0].months;
+  const expected = ms.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) * 10 + m.products.reduce((x, q) => x + (q.admissions - q.fromSolo) * 20, 0), 0);
+  const before = (() => { a.sub.acq = 0; a.programs.forEach(q => { q.acq = 0; }); return P.sumPnl(P.buildPnl(s, sims)[0]).total.variable; })();
+  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
+  const after = P.sumPnl(P.buildPnl(s, sims)[0]).total.variable;
+  assert.ok(Math.abs(after - before - expected) < 1e-6 * Math.max(1, expected));
+});
+
+test('trésorerie : solde = apport + encaissements − charges − impôts − rémunération', () => {
+  const s = M.defaultState();
+  s.cash = { start: 5000, payGoal: 1500, payFrom: '2029-01' };
+  const all = s.apps.map(a => ({ a, ...E.simulate(a) }));
+  const pnl = P.buildPnl(s, all);
+  all.forEach((x, i) => { x.pnl = pnl[i]; });
+  const t = P.treasury(s, all);
+  const flows = t.months.reduce((b, m) => b + m.inflow - m.charges - m.taxes - m.pay, 5000);
+  assert.ok(Math.abs(flows - t.months.at(-1).balance) < 1e-6 * Math.max(1, Math.abs(flows)));
+  assert.equal(t.months.find(m => m.month === '2028-12').pay, 0);
+  assert.equal(t.months.find(m => m.month === '2029-01').pay, 1500);
+  assert.ok(t.low.balance <= Math.min(...t.months.map(m => m.balance)) + 1e-9);
+  // Sans paiement en plusieurs fois, les encaissements valent le chiffre d'affaires.
+  assert.ok(t.months.every(m => Math.abs(m.inflow - m.ca) < 1e-6));
+});
+
+test('trésorerie : le paiement en 3 fois retarde l\'argent sans changer le chiffre d\'affaires', () => {
+  const s = M.defaultState();
+  const run = n => { s.apps[0].programs.forEach(q => { q.installments = n; }); const all = s.apps.map(a => ({ a, ...E.simulate(a) })); const pnl = P.buildPnl(s, all); all.forEach((x, i) => { x.pnl = pnl[i]; }); return P.treasury(s, all); };
+  const one = run(1), three = run(3);
+  const ca = t => t.months.reduce((x, m) => x + m.ca, 0);
+  assert.ok(Math.abs(ca(one) - ca(three)) < 1e-6 * ca(one));
+  const k = one.months.findIndex(m => m.month === '2027-08');
+  assert.ok(three.months[k].balance < one.months[k].balance);
+});
+
+test('scénarios : le central ne change rien, le prudent baisse, l\'ambitieux monte', () => {
+  const s = M.defaultState();
+  const res = sc => { const st = M.withScenario(s, sc); const all = st.apps.map(a => ({ a, ...E.simulate(a) })); return P.sumPnl(P.buildPnl(st, all).flat().filter(e => e.month.startsWith('2029'))).total; };
+  const [pru, cen, amb] = s.scenarios.list.map(res);
+  const plan = (() => { const all = s.apps.map(a => ({ a, ...E.simulate(a) })); return P.sumPnl(P.buildPnl(s, all).flat().filter(e => e.month.startsWith('2029'))).total; })();
+  assert.ok(Math.abs(cen.result - plan.result) < 1e-6 * Math.max(1, Math.abs(plan.result)));
+  assert.ok(pru.ca < cen.ca && amb.ca > cen.ca);
+  assert.ok(pru.result < cen.result);
+  // Prix +10 % : le chiffre d'affaires des programmes et abonnements monte d'environ 10 %.
+  const up = res({ id: 'x', volume: 0, price: 10, duration: 0, costs: 0 });
+  assert.ok(Math.abs(up.ca / cen.ca - 1.1) < 0.02, String(up.ca / cen.ca));
+  // Le scénario ne modifie pas l'état d'origine.
+  assert.equal(s.apps[0].volume, undefined);
+});
