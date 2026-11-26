@@ -644,3 +644,32 @@ table.coach-need tr.c-block td:first-child { box-shadow: inset 3px 0 0 var(--bad
 .cstep dd { margin: 2px 0 0; font-weight: 600; }
 .cstep dd small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 12px; }
 @media (max-width: 520px) { .cstep dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Menu vertical sur téléphone : bouton en haut à gauche, volet qui glisse depuis la gauche. */
+.menubtn { display: none; }
+@media (max-width: 767px) {
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: center; gap: 10px; padding-block: 8px; min-height: 56px; }
+  .head h1 { font-size: 1.2rem; }
+  .head p { display: none; }
+  .menubtn { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin-left: -6px; border: 0; border-radius: 12px; background: transparent; color: var(--on-forest); cursor: pointer; }
+  .menubtn:active { background: rgba(255, 255, 255, .1); }
+  .menubtn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .toolbar { top: calc(env(safe-area-inset-top, 0px) + 56px); }
+  #tabs {
+    top: 0; bottom: 0; left: 0; right: auto; z-index: 50; width: min(290px, 84vw);
+    display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+    background: var(--forest); border: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 12px calc(env(safe-area-inset-bottom, 0px) + 18px) max(12px, env(safe-area-inset-left, 0px));
+    transform: translateX(-105%); transition: transform .22s ease; box-shadow: 8px 0 30px -12px rgba(0, 0, 0, .5);
+  }
+  body.menu-open #tabs { transform: none; }
+  #tabs a, .menu-open #tabs a { flex-direction: row; gap: 14px; padding: 13px 14px; border-radius: 12px; font-size: 16px; color: var(--on-forest); opacity: .8; text-align: left; }
+  #tabs a.current { opacity: 1; color: #fff; background: var(--sage); }
+  #tabs svg { width: 22px; height: 22px; }
+  #tabs .s { display: none; }
+  #tabs .l { display: inline; }
+  .menushade { position: fixed; inset: 0; z-index: 28; background: rgba(15, 10, 30, .45); }
+  body.menu-open { overflow: hidden; }
+  main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .savebtn { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+}
