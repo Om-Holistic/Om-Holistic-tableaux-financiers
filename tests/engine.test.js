@@ -78,7 +78,7 @@ test('compte d\'exploitation : charges rattachées aux produits et structure ré
   const state = model.defaultState();
   state.vat = { ttc: false, rate: 20 };
   const chrysalis = state.apps[0], refit = chrysalis.programs[0];
-  chrysalis.coachRate = 30;
+  chrysalis.coachRate = 30; chrysalis.payMissing = false;
   chrysalis.charges = [
     model.charge('Stripe', 'ca', 2),
     model.charge('YMove', 'fixe', 29, refit.id),
@@ -290,7 +290,7 @@ test('passerelle en % par an : 12 % par an ≈ 1 % des abonnées par mois', () =
 test('capacité en heures : coût des coachs embauchées et refus quand les heures manquent', () => {
   const state = model.defaultState();
   const a = state.apps[0];
-  a.coachRate = 40;
+  a.coachRate = 40; a.payMissing = false;
   a.capacitySteps = [{ date: '2027-01', hours: 10, hired: 6 }];
   const sims = state.apps.map(x => simulate(x));
   const pnl = buildPnl(state, sims);

@@ -359,7 +359,8 @@ function capacityCard(a, p) {
       <p class="muted">Les heures de coachs embauchées sont payées chaque semaine à ce coût, utilisées ou non. Tes propres heures ne coûtent rien ici (ta rémunération est dans Charges).</p>
       ${check('Refuser les inscriptions quand les heures ne suffisent plus', p + '.restrict', a.restrict)}
       ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}
-      <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
+      ${a.restrict ? '' : check('Payer les heures qui manquent au coût horaire des coachs', p + '.payMissing', a.payMissing)}
+      <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent${a.payMissing ? ' ; ces heures en trop sont alors comptées comme des heures de coachs embauchées, au coût horaire ci-dessus, pour que le résultat reste réaliste' : ''}. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
 }
 
 function implantSection() {

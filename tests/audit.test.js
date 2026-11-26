@@ -89,8 +89,9 @@ test('TVA : saisie TTC, le compte d\'exploitation est HT', () => {
   assert.ok(near(P.sumPnl([e]).total.ca, m.total / 1.2));
 });
 
-test('coaching : coût = heures embauchées × coût horaire', () => {
+test('coaching : coût = heures embauchées × coût horaire (heures manquantes non payées)', () => {
   const s = fresh(), a = s.apps[0];
+  a.payMissing = false;
   const sims = s.apps.map(x => E.simulate(x));
   const list = P.buildPnl(s, sims)[0];
   const hired = sims[0].months.reduce((t, m) => t + m.hiredHours, 0);
@@ -114,4 +115,19 @@ test('passerelle : les abonnées seules qui achètent un programme n\'augmentent
   const withLink = E.simulate(a).months;
   assert.ok(year(withLink, '2029', m => m.products[1].admissions) > year(base, '2029', m => m.products[1].admissions));
   assert.ok(year(withLink, '2029', m => m.direct) <= year(base, '2029', m => m.direct) + 1e-6);
+});
+
+test('heures manquantes : payées au coût des coachs quand les inscriptions ne sont pas refusées', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  a.restrict = false;
+  a.programs[0].palierMode = true; a.programs[0].launch = false; a.programs[0].paliers = [{ rate: 40, weeks: 300 }];
+  const sims = s.apps.map(x => E.simulate(x));
+  const extra = sims[0].months.reduce((t, m) => t + m.extraHours, 0), hired = sims[0].months.reduce((t, m) => t + m.hiredHours, 0);
+  assert.ok(extra > 0, 'des heures manquent');
+  a.payMissing = true;
+  const paid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
+  assert.ok(Math.abs(paid - (hired + extra) * a.coachRate) < 1e-6 * paid);
+  a.payMissing = false;
+  const unpaid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
+  assert.ok(Math.abs(unpaid - hired * a.coachRate) < 1e-6 * Math.max(1, unpaid));
 });
