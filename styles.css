@@ -628,3 +628,19 @@ ul.hist li { display: flex; align-items: center; justify-content: space-between;
 .dotk { margin-right: 5px; vertical-align: -1px; }
 table.users td, table.users th { text-align: right; white-space: nowrap; }
 table.users td:first-child, table.users th:first-child { text-align: left; }
+
+/* Coaching : heures nécessaires, tes heures, heures à déléguer. */
+table.coach-need td, table.coach-need th { text-align: right; white-space: nowrap; }
+table.coach-need td:first-child, table.coach-need th:first-child { text-align: left; }
+table.coach-need tr.c-block td:first-child { box-shadow: inset 3px 0 0 var(--bad); }
+.cap-sum { margin: 4px 0 10px; line-height: 1.45; }
+
+.csteps { display: flex; flex-direction: column; gap: 8px; margin-bottom: 10px; }
+.cstep { border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.cstep.block { border-left: 4px solid var(--bad); }
+.cstep p { margin: 0 0 6px; }
+.cstep dl { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; margin: 0; }
+.cstep dt { font-size: 10.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--ink-soft); }
+.cstep dd { margin: 2px 0 0; font-weight: 600; }
+.cstep dd small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 12px; }
+@media (max-width: 520px) { .cstep dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
