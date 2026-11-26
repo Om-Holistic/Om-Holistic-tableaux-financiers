@@ -529,7 +529,15 @@ dl.pl-lines dd { margin: 0; text-align: right; font-weight: 600; white-space: no
 .toolbar.four { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr) minmax(0, 1fr); }
 .toolbar.four .appsel { grid-column: 1 / -1; }
 @media (min-width: 768px) { .toolbar.four { grid-template-columns: 1.6fr 1.2fr .9fr 1fr; } .toolbar.four .appsel { grid-column: auto; } }
-.bench { align-self: flex-start; margin-top: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
-.bench.good { background: #dff5ec; color: #0b6b49; }
-.bench.ok { background: #fff1d6; color: #8a5300; }
-.bench.low { background: #fde3df; color: #a3261a; }
+/* Repère investisseur : jauge sous la valeur */
+.gauge { margin-top: 8px; }
+.g-track { position: relative; display: flex; height: 6px; border-radius: 3px; overflow: visible; }
+.g-track .z { display: block; height: 100%; }
+.g-track .z:first-child { border-radius: 3px 0 0 3px; } .g-track .z:nth-child(3) { border-radius: 0 3px 3px 0; }
+.g-track .z.low { background: #f6c9c2; } .g-track .z.ok { background: #fbe2b0; } .g-track .z.good { background: #bfe9d6; }
+.g-dot { position: absolute; top: 50%; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--surface); box-shadow: 0 0 0 1px rgba(0, 0, 0, .15); }
+.gauge.good .g-dot { background: var(--good); } .gauge.ok .g-dot { background: #d98a00; } .gauge.low .g-dot { background: var(--bad); }
+.g-t { display: flex; justify-content: space-between; gap: 6px; margin-top: 6px; font-size: 11.5px; }
+.g-t .tgt { color: var(--clay); font-weight: 600; }
+.g-t .gap { font-weight: 700; white-space: nowrap; }
+.gauge.good .gap { color: var(--good); } .gauge.ok .gap { color: #b06f00; } .gauge.low .gap { color: var(--bad); }

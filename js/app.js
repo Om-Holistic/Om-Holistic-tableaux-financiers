@@ -1287,7 +1287,13 @@ function kpiCard(r) {
   const mark = (k, v, unit, up = true) => {
     if (v === null || v === undefined || !isFinite(v) || !B[k]) return '';
     const { good, ok } = B[k], lvl = up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
-    return `<span class="bench ${lvl}">${{ good: 'bon', ok: 'correct', low: 'faible' }[lvl]} · repère ${up ? '≥' : '≤'} ${num(good)}${unit}</span>`;
+    // Jauge : zones faible / correct / bon, repère en trait, position de la valeur en point.
+    const max = Math.max(up ? good * 1.6 : ok * 1.5, v * 1.05, 1e-9), pos = x => Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
+    const zones = up ? `<i class="z low" style="width:${pos(ok)}%"></i><i class="z ok" style="width:${pos(good) - pos(ok)}%"></i><i class="z good" style="width:${100 - pos(good)}%"></i>`
+      : `<i class="z good" style="width:${pos(good)}%"></i><i class="z ok" style="width:${pos(ok) - pos(good)}%"></i><i class="z low" style="width:${100 - pos(ok)}%"></i>`;
+    const gap = v - good, gapTxt = (gap >= 0 ? '+' : '−') + num(Math.abs(Math.round(gap * 10) / 10)).replace(/^(\d+)$/, '$1') + unit.replace(' / mois', '');
+    return `<div class="gauge ${lvl}"><div class="g-track">${zones}<b class="g-dot" style="left:${pos(v)}%"></b></div>
+      <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${num(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
   };
   const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
   const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
@@ -1297,7 +1303,7 @@ function kpiCard(r) {
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
       kpi('ARR', short(mrr * 12), 'MRR × 12'),
-      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' % / mois')),
+      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' %')),
       kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
     ${group('Économie unitaire', [
       kpi('ARPU', price(Math.round(arpu * 100) / 100), 'revenu moyen par abonnée et par mois, HT'),
