@@ -429,3 +429,12 @@ details.card.product[open] .pstats { display: none; }
 .acq-ratio { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--ground); justify-self: start; }
 .acq-ratio.ok { color: var(--good); } .acq-ratio.mid { color: #b7791f; } .acq-ratio.bad { color: var(--bad); }
 @media (min-width: 768px) { .acq-row { grid-template-columns: 1.4fr 1fr auto; } .acq-ratio { justify-self: end; margin-bottom: 4px; } }
+
+/* Scénarios côte à côte et sensibilité */
+table.scen td.cur, table.scen th.cur { background: var(--sage-tint); font-weight: 600; }
+table.scen td { vertical-align: top; }
+.sens { display: flex; flex-direction: column; gap: 8px; }
+.sens-row { display: grid; grid-template-columns: minmax(0, 1.4fr) 1fr auto; gap: 10px; align-items: center; font-size: 13px; }
+.sens-bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.sens-bar i { display: block; height: 100%; background: var(--bad); border-radius: 99px; }
+.sens-row b { font-variant-numeric: tabular-nums; white-space: nowrap; }

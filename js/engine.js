@@ -76,6 +76,7 @@ function simulate(a, soloStock) {
   }));
 
   const subStart = a.sub.start ? firstMonday(monthDate(a.sub.start)) : null;
+  const vol = Number.isFinite(+a.volume) && +a.volume > 0 ? +a.volume : 1;
 
   for (let d = firstMonday(start); d <= end; d = addWeeks(d, 1)) {
     const m = months.get(monthKey(d));
@@ -97,6 +98,8 @@ function simulate(a, soloStock) {
         const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
         want += w < 0 ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
       }
+      // Scénario : plus ou moins d'inscriptions que prévu (1 = le plan tel que saisi).
+      want *= vol;
       // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage annuel, réparti par semaine), dès son lancement.
       let fromSolo = 0;
       if (commercial && d >= commercial && pos(p.fromSolo) > 0) {
@@ -147,7 +150,7 @@ function simulate(a, soloStock) {
     // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
       const trial = pos(a.sub.trialDays);
-      const count = weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * (trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1);
+      const count = vol * weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * (trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1);
       const paid = new Date(+d + trial * DAY);
       const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
       credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });

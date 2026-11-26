@@ -29,7 +29,8 @@ const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
 function field(label, path, value, type = 'number') {
-  const extra = type === 'number' ? ' min="0" step="any"' : '';
+  // Les écarts de scénario peuvent être négatifs ; tous les autres nombres sont positifs.
+  const extra = type === 'number' ? (String(path).startsWith('scenarios.') ? ' step="any"' : ' min="0" step="any"') : '';
   // Un libellé « titre\nexplication » s'affiche sur deux lignes.
   const [head, more] = String(label).split('\n');
   const text = more ? `<span class="lh">${esc(head)}</span><span class="lx">${esc(more)}</span>` : esc(label);
@@ -411,6 +412,10 @@ function settingsPage(a, i) {
       ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
     </details>
     <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
+      ${section('st-scen', 'ins', 'Scénarios', state.scenarios.list.map(x => esc(x.name)).join(' · ') + ' · affiché : ' + esc((currentScenario() || {}).name || ''), `
+        <div class="grid">${select('Scénario affiché', 'scenarios.current', state.scenarios.current, state.scenarios.list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+        ${state.scenarios.list.map((x, k) => x.id === 'central' ? '' : `<h4>${esc(x.name)}</h4><div class="grid">${field('Inscriptions et\nabonnées (%)', `scenarios.list.${k}.volume`, x.volume)}${field('Prix\n(%)', `scenarios.list.${k}.price`, x.price)}${field('Durée\nd\'abonnement (%)', `scenarios.list.${k}.duration`, x.duration)}${field('Charges\n(%)', `scenarios.list.${k}.costs`, x.costs)}</div>`).join('')}
+        <p class="muted">Écarts par rapport au plan saisi dans Produits et Charges, qui reste le scénario central. Une baisse s'écrit avec un moins (−30). Les pages de réglages montrent toujours le plan central.</p>`)}
       ${section('st-cash', 'cal', 'Trésorerie et revenu', `apport ${money(+state.cash.start || 0)} · revenu visé ${money(+state.cash.payGoal || 0)} / mois${state.cash.payFrom ? ' dès ' + monthName(state.cash.payFrom) : ''}`, `
         <div class="grid">${field('Apport de départ\nargent mis dans la société (€)', 'cash.start', state.cash.start)}${field('Revenu mensuel visé\nnet pour toi (€)', 'cash.payGoal', state.cash.payGoal)}</div>
         ${fields(state.cash, 'cash', [['payFrom', 'Je commence à me le verser à partir de', 'month']])}
@@ -442,9 +447,12 @@ const table = (heads, rows, cls = []) => '<thead><tr>' + heads.map(h => `<th>${h
   + rows.map((r, i) => `<tr class="${cls[i] || ''}">` + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('') + '</tbody>';
 const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 
-function results() {
-  const all = state.apps.map(a => ({ a, ...simulate(a) }));
-  const pnl = buildPnl(state, all);
+// Scénario affiché partout (Résultat, Prévisionnel, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
+const currentScenario = () => (state.scenarios?.list || []).find(x => x.id === state.scenarios.current);
+function results(sc = currentScenario()) {
+  const st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
+  const all = st.apps.map((a, i) => ({ a, i, ...simulate(a) }));
+  const pnl = buildPnl(st, all);
   // Charges et résultat de chaque mois, à partir du compte d'exploitation.
   all.forEach((x, i) => {
     x.pnl = pnl[i];
@@ -460,7 +468,7 @@ function results() {
   const byMonth = keys.map(k => ({ month: k, ...Object.fromEntries(F.map(f => [f, rows.filter(r => r.month === k).reduce((s, r) => s + r[f], 0)])) }));
   const sum = f => rows.reduce((s, r) => s + r[f], 0);
   const summary = x => sumPnl(x.pnl.filter(e => inPeriod(e.month)));
-  return { all, scope, keys, byMonth, sum, summary };
+  return { all, scope, keys, byMonth, sum, summary, st };
 }
 
 // Une ligne par produit, avec sa part du CA de la période.
@@ -469,7 +477,7 @@ function productLines(r) {
   for (const x of r.scope) {
     const ms = x.months.filter(m => inPeriod(m.month)), last = ms.at(-1);
     const a = x.a, direct = last?.direct || 0, post = last?.post || 0;
-    const ai = state.apps.indexOf(a);
+    const ai = x.i;
     lines.push({ name: esc(soloName(a)), go: { open: 'sd', app: ai }, color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
       detail: a.programs.length ? `${num(direct + post)} abonnées en fin de période, dont ${num(post)} après un programme` : `${num(direct)} abonnées en fin de période` });
     a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), go: { open: 'p' + i, app: ai }, off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
@@ -523,9 +531,9 @@ function cashChart(t) {
     + (li >= 0 ? `<circle cx="${x(li)}" cy="${y(t.low.balance)}" r="4.5" fill="${t.low.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"><title>Point bas ${t.low.month} : ${money(t.low.balance)}</title></circle>` : '')
     + '</svg>';
 }
-function cashData() {
-  const r = results();
-  return treasury(state, r.all);
+function cashData(sc) {
+  const r = results(sc);
+  return treasury(r.st, r.all);
 }
 function cashCard() {
   const t = cashData(), c = state.cash || {};
@@ -543,7 +551,7 @@ function cashCard() {
 
 // ---------- Bandeaux en tête de page ----------
 // Un chiffre clé à gauche, quatre tuiles de même taille à droite (2 × 2), sur toutes les pages.
-const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase());
+const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase()) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '');
 // Replié par défaut (une ligne : chiffre clé + 2 ou 3 repères) ; déplié, la note et les quatre tuiles.
 // Le choix replié / déplié est mémorisé sur l'appareil et vaut pour toutes les pages.
 const bannerOpen = () => { try { return localStorage.getItem('om-banner') === 'open'; } catch { return false; } };
@@ -706,8 +714,8 @@ function capacityBlock(r) {
     </div>
     ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Heures de coaching nécessaires / semaine</span><span><i style="background:var(--bad)"></i>Heures insuffisantes</span><span><i class="dash"></i>Heures disponibles</span></div>
       <div class="chart cap-chart">${capacityChart(x)}</div>
-      ${(() => { const ai = state.apps.indexOf(x.a), sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
-      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${state.apps.indexOf(x.a)}">Voir la capacité de coaching</a></p></div>`).join('')}
+      ${(() => { const ai = x.i, sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
+      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${x.i}">Voir la capacité de coaching</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Heures nécessaires', 'Heures disponibles', 'En attente'],
         wr.map(w => [w.date, esc(w.name), num(w.demand), num(w.admitted), num(w.people), w.hours.toFixed(1), w.limit === Infinity ? '—' : `${num(w.own)}${w.hired ? ' + ' + num(w.hired) : ''}`, num(w.waiting)]))}</table></div></details>`;
@@ -854,7 +862,7 @@ const PNL_ROWS = [
 
 function pnlColumns(r) {
   if (view.app === 'all') {
-    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, go: { page: 'produits', app: state.apps.indexOf(x.a) }, v: { ...s.total, structure: s.structure } }; });
+    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, go: { page: 'produits', app: x.i }, v: { ...s.total, structure: s.structure } }; });
     const tot = {};
     for (const [k] of PNL_ROWS) tot[k] = cols.reduce((t, c) => t + c.v[k], 0);
     return { cols, total: tot };
@@ -883,6 +891,33 @@ function natureCard(r) {
 }
 
 // Résultat net de la société selon chaque implantation (toutes les applications).
+// Scénarios côte à côte et sensibilité du résultat aux hypothèses clés, sur la période affichée.
+function scenarioTotals(sc) {
+  const r = results(sc), { total } = pnlColumns(r), ic = implantCalc(r), t = cashData(sc);
+  return { sc, ca: total.ca, charges: total.ca - total.result, result: total.result, net: ic.cur.net, low: t.low };
+}
+function scenarioCard() {
+  const list = state.scenarios.list, cur = currentScenario() || list[0];
+  const cols = list.map(scenarioTotals);
+  const cell = (x, v, cls = '') => `<td class="${x.sc.id === cur.id ? 'cur' : ''} ${cls}">${v}</td>`;
+  const row = (label, f, neg) => `<tr><td>${label}</td>${cols.map(x => cell(x, short(f(x)), neg && f(x) < 0 ? 'neg' : '')).join('')}</tr>`;
+  // Sensibilité : 10 % de moins sur une hypothèse, toutes choses égales par ailleurs.
+  const base = cols.find(x => x.sc.id === cur.id) || cols[0];
+  const tests = [['volume', -10, 'Inscriptions et abonnées −10 %'], ['price', -10, 'Prix −10 %'], ['duration', -10, 'Durée d\'abonnement −10 %'], ['costs', 10, 'Charges +10 %']]
+    .map(([k, d, label]) => ({ label, delta: scenarioTotals({ ...cur, id: 'sens', [k]: (+cur[k] || 0) + d }).result - base.result }));
+  const max = Math.max(1, ...tests.map(x => Math.abs(x.delta)));
+  return `<details class="card" id="r-scen" ${view.open.has('r-scen') || !view.open.size ? 'open' : ''}><summary><span>Scénarios et sensibilité<br><span class="sum-sub">affiché partout : ${esc(cur.name)} · ${list.map(x => `${esc(x.name)} ${short(cols.find(c => c.sc.id === x.id).result)}`).join(' · ')}</span></span></summary>
+    <div class="grid">${select('Scénario affiché dans Résultat, Prévisionnel et Vue d\'ensemble', 'scenarios.current', state.scenarios.current, list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="scroll"><table class="scen"><thead><tr><th></th>${cols.map(x => `<th class="${x.sc.id === cur.id ? 'cur' : ''}">${esc(x.sc.name)}</th>`).join('')}</tr></thead><tbody>
+      ${row('Chiffre d\'affaires', x => x.ca)}${row('Charges', x => x.charges)}${row('<b>Résultat d\'exploitation</b>', x => x.result, true)}${row('Net pour toi', x => x.net, true)}
+      <tr><td>Point bas de trésorerie</td>${cols.map(x => cell(x, `${short(x.low.balance)}<br><small class="muted">${monthName(x.low.month)}</small>`, x.low.balance < 0 ? 'neg' : '')).join('')}</tr></tbody></table></div>
+    <p class="muted">${list.filter(x => x.id !== 'central').map(x => `${esc(x.name)} : inscriptions et abonnées ${signedPct(x.volume)}, prix ${signedPct(x.price)}, durée d'abonnement ${signedPct(x.duration)}, charges ${signedPct(x.costs)}`).join('. ')}. <a href="#reglages" data-goto="reglages" data-open="st-scen" data-anchor="st-scen">Modifier les scénarios</a></p>
+    <h4>Ce qui pèse le plus sur ton résultat ${periodName()}</h4>
+    <div class="sens">${tests.sort((x, y) => Math.abs(y.delta) - Math.abs(x.delta)).map(x => `<div class="sens-row"><span>${x.label}</span><span class="sens-bar"><i style="width:${(Math.abs(x.delta) / max * 100).toFixed(1)}%"></i></span><b class="neg">${short(x.delta)}</b></div>`).join('')}</div>
+    <p class="muted">Chaque ligne change une seule hypothèse du scénario ${esc(cur.name)}. La plus longue barre est celle à surveiller en priorité.</p></details>`;
+}
+const signedPct = x => (+x > 0 ? '+' : '') + num(+x || 0) + ' %';
+
 function implantCalc(r) {
   const im = state.implantation;
   const sums = r.all.map(x => r.summary(x));
@@ -964,6 +999,7 @@ function resultatPage() {
         { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', mini: false, value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
       ] })}
     ${implantBar(r)}
+    ${scenarioCard()}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>
@@ -1032,7 +1068,7 @@ document.addEventListener('change', async e => {
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
-    else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
+    else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.dataset.path.startsWith('scenarios.') ? Math.max(-100, +t.value || 0) : Math.max(0, +t.value || 0)) : t.value;
     save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
     // pour que les résumés se mettent à jour sans fermer le clavier.

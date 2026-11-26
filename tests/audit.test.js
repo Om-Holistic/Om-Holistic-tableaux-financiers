@@ -180,3 +180,18 @@ test('trésorerie : le paiement en 3 fois retarde l\'argent sans changer le chif
   const k = one.months.findIndex(m => m.month === '2027-08');
   assert.ok(three.months[k].balance < one.months[k].balance);
 });
+
+test('scénarios : le central ne change rien, le prudent baisse, l\'ambitieux monte', () => {
+  const s = M.defaultState();
+  const res = sc => { const st = M.withScenario(s, sc); const all = st.apps.map(a => ({ a, ...E.simulate(a) })); return P.sumPnl(P.buildPnl(st, all).flat().filter(e => e.month.startsWith('2029'))).total; };
+  const [pru, cen, amb] = s.scenarios.list.map(res);
+  const plan = (() => { const all = s.apps.map(a => ({ a, ...E.simulate(a) })); return P.sumPnl(P.buildPnl(s, all).flat().filter(e => e.month.startsWith('2029'))).total; })();
+  assert.ok(Math.abs(cen.result - plan.result) < 1e-6 * Math.max(1, Math.abs(plan.result)));
+  assert.ok(pru.ca < cen.ca && amb.ca > cen.ca);
+  assert.ok(pru.result < cen.result);
+  // Prix +10 % : le chiffre d'affaires des programmes et abonnements monte d'environ 10 %.
+  const up = res({ id: 'x', volume: 0, price: 10, duration: 0, costs: 0 });
+  assert.ok(Math.abs(up.ca / cen.ca - 1.1) < 0.02, String(up.ca / cen.ca));
+  // Le scénario ne modifie pas l'état d'origine.
+  assert.equal(s.apps[0].volume, undefined);
+});
