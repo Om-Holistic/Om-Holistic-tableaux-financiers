@@ -745,3 +745,22 @@ main, #page, .card { min-width: 0; max-width: 100%; }
   .toolbar .appsel select { font-size: 16px; }
 }
 .g-t { flex-wrap: wrap; } .g-t .gap { white-space: normal; }
+
+/* Choix de ce qui s'affiche : cases sur ordinateur, fenêtre de choix sur téléphone. */
+.pick-btn, .pick-t, .pick-ok { display: none; }
+.pick-sheet { display: contents; }
+@media (max-width: 767px) {
+  .picker { margin: 4px 0 12px; }
+  .pick-btn { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 14px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); color: var(--ink); }
+  .pick-btn small { flex: none; color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  .pick-btn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+  .pick-btn svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
+  .pick-sheet { display: none; }
+  .picker.open .pick-sheet { display: flex; position: fixed; inset: 0; z-index: 100; background: rgba(20, 16, 40, .45); align-items: flex-end; }
+  .pick-box { width: 100%; max-height: 80vh; overflow: auto; background: var(--surface); border-radius: 20px 20px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgba(0, 0, 0, .2); }
+  .pick-t { display: block; font-size: 17px; margin-bottom: 8px; }
+  .pick-box .ucheck { flex-direction: column; flex-wrap: nowrap; gap: 0; margin: 0 0 12px; }
+  .pick-box .ucheck .uc { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 4px; font-size: 16px; background: none; }
+  .pick-box .ucheck .uc input { width: 22px; height: 22px; }
+  .pick-ok { display: block; width: 100%; font-weight: 600; }
+}
