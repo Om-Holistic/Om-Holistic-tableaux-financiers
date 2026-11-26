@@ -104,6 +104,19 @@ const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine
 
 // ---------- Pages de paramètres ----------
 
+// Chiffres clés affichés sur une carte repliée : petites tuiles « libellé / valeur ».
+const pstats = items => `<span class="pstats">${items.filter(Boolean).map(([l, v, cls]) => `<span class="ps${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></span>`).join('')}</span>`;
+const shortMonth = k => k ? MONTHS[+k.slice(5) - 1].slice(0, 4).replace(/\.$/, '') + (MONTHS[+k.slice(5) - 1].length > 4 ? '.' : '') + ' ' + k.slice(0, 4) : '—';
+// Simulation de l'application affichée, partagée par les cartes de la page Produits.
+let prodSim = null;
+// Douze premiers mois de vente d'un produit, à partir d'une date.
+function firstYear(from, f) {
+  if (!prodSim || !from) return null;
+  const end = addMonths(from, 12);
+  return prodSim.months.filter(m => m.month >= from && m.month < end).reduce((t, m) => t + f(m), 0);
+}
+const priceRange = grid => { const xs = phasesOf(grid).map(ph => +ph.price || 0); return xs.length ? (Math.min(...xs) === Math.max(...xs) ? price(xs[0]) : `${price(Math.min(...xs)).replace(/\s?€$/, '')} → ${price(Math.max(...xs))}`) : '—'; };
+
 function programCard(a, q, j, p) {
   const t = p + '.programs.' + j;
   const open = view.open.has('p' + j) ? 'open' : '';
@@ -111,7 +124,10 @@ function programCard(a, q, j, p) {
   const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
   const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
-  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
+  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span><br><span class="sum-sub">${calSummary}</span>
+      ${pstats([['Prix', priceRange(q.pricing)], ['Durée', `${num(q.duration)} sem.`], ['Coaching', `${num(+q.coach || 0)}${(q.coachSteps || []).length ? ' → ' + num(coachAt(q, '9999-12')) : ''} min`],
+        q.enabled && q.start ? ['1re année', `${num(firstYear(q.start, m => m.products[j].admissions) || 0)} inscr.`, 'hi'] : null,
+        q.enabled && q.start ? ['CA 1re année', money(firstYear(q.start, m => m.products[j].sales) || 0), 'hi'] : null])}</span></summary>
       <div class="grid head4">
         <label>Programme<span class="tbox"><input data-path="${t}.enabled" type="checkbox" ${q.enabled ? 'checked' : ''}>Actif</span></label>
         ${field('Nom du programme', t + '.name', q.name, 'text')}${field('Durée (semaines)', t + '.duration', q.duration)}${field('Coaching / cliente (min / sem.)', t + '.coach', q.coach)}
@@ -213,10 +229,14 @@ function goalSection(a, p) {
 }
 
 function productsPage(a, i) {
+  prodSim = simulate(a);
   const p = 'apps.' + i;
   const g = a.sub.directPricing;
   // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
-  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${price(phaseAt(g, thisMonth).price)} · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
+  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
+      ${pstats([['Prix', priceRange(g) + ' / mois'], +a.sub.trialDays > 0 ? ['Essai', `${num(a.sub.trialDays)} j`] : null,
+        a.sub.start ? ['Abonnées à 1 an', num(((m => m ? m.direct + m.post : 0)(prodSim && prodSim.months.find(m => m.month === addMonths(a.sub.start, 11))))), 'hi'] : null,
+        a.sub.start ? ['CA 1re année', money(firstYear(a.sub.start, m => m.directCA + m.postCA) || 0), 'hi'] : null])}</span></summary>
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
       ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ['duration', 'Durée moyenne d\'abonnement (mois)']])}
         ${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
@@ -236,7 +256,22 @@ function productsPage(a, i) {
         ${a.sub.postPricing.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, p + '.sub.postPricing.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('')}`) : ''}
     </details>`;
   const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
-  return `<p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
+  const progs = a.programs.filter(q => q.enabled);
+  const next = timelineItems(a).find(it => it.date >= thisMonth);
+  const prices = progs.flatMap(q => phasesOf(q.pricing).map(ph => +ph.price || 0));
+  const cap = capacityAt(a, thisMonth), mins = progs.map(q => coachAt(q, thisMonth));
+  const range = (xs, f) => xs.length ? (Math.min(...xs) === Math.max(...xs) ? f(xs[0]) : `${f(Math.min(...xs))} → ${f(Math.max(...xs))}`) : '—';
+  return `${banner({ label: `Produits de ${esc(a.name)}`, big: `${progs.length + 1} produit${progs.length ? 's' : ''}`,
+      note: next ? `Prochaine date : ${next.text.replace(/<[^>]+>/g, '')} · ${monthName(next.date)}` : 'Aucune date à venir',
+      tiles: [
+        { label: 'Abonnement', value: price(phaseAt(g, thisMonth).price), hint: 'par mois aujourd\'hui', go: { page: 'produits', open: 'sd', anchor: 'sd' } },
+        ...(progs.length ? [
+          { label: 'Prix des programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
+          { label: 'Heures de coaching', value: cap ? `${num((+cap.hours || 0) + (+cap.hired || 0))} h` : 'illimitées', hint: cap ? `par semaine dès ${monthName(cap.date)}` : 'aucun palier', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap' } },
+          { label: 'Temps par cliente', value: range(mins, x => num(x) + ' min'), hint: 'par semaine aujourd\'hui', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-coachtime' } }
+        ] : [{ label: 'Calendrier', value: num(timelineCount(a)), hint: 'dates', go: { page: 'produits', open: 'pr-cal', anchor: 'pr-cal' } }])
+      ] })}
+    <p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
     ${calendarCard(a)}${solo}${programs}
     <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
     ${a.programs.length ? capacityCard(a, p) : ''}`;
@@ -244,7 +279,7 @@ function productsPage(a, i) {
 
 // Tous les jalons d'une application, dans l'ordre chronologique.
 // Chaque jalon indique où il se règle et y mène d'un geste.
-function timeline(a) {
+function timelineItems(a) {
   const items = [];
   a.programs.forEach((q, j) => {
     if (!q.enabled) return;
@@ -257,6 +292,10 @@ function timeline(a) {
   if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › ${esc(soloName(a))}` } });
   (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.hours)} h toi${+c.hired ? ` + ${num(c.hired)} h coachs` : ''} / semaine`, go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap', from: 'Produits › Capacité de coaching' } }));
   items.sort((x, y) => x.date.localeCompare(y.date));
+  return items;
+}
+function timeline(a) {
+  const items = timelineItems(a);
   if (!items.length) return '<p class="muted">Aucune date pour l\'instant : ajoute une cohorte de test ou une date de lancement dans Produits et prix.</p>';
   return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><a href="#${it.go.page}" data-goto="${it.go.page}" data-open="${it.go.open}" data-anchor="${it.go.anchor}">
       <span class="when">${monthName(it.date)}</span><span class="what">${it.text}${it.sub ? ` · <span class="muted">${it.sub}</span>` : ''}<span class="from">${it.go.from} ›</span></span></a></li>`).join('')}</ol>`;
@@ -266,7 +305,10 @@ function timeline(a) {
 const timelineCount = a => (timeline(a).match(/<li /g) || []).length;
 function calendarCard(a) {
   const n = timelineCount(a);
-  return `<details class="card product tool-cal" id="pr-cal" ${view.open.has('pr-cal') ? 'open' : ''}><summary><span>Calendrier de ${esc(a.name)}<br><span class="sum-sub">${n} dates · à partir de ${monthName(appStart(a))}</span></span></summary>
+  return `<details class="card product tool-cal" id="pr-cal" ${view.open.has('pr-cal') ? 'open' : ''}><summary><span>Calendrier de ${esc(a.name)}<br><span class="sum-sub">${n} dates · à partir de ${monthName(appStart(a))}</span>
+      ${(() => { const items = timelineItems(a), nx = items.find(it => it.date >= thisMonth), launches = items.filter(it => it.kind === 'launch');
+        return pstats([['Début', shortMonth(appStart(a))], launches.length ? ['Lancements', launches.map(it => shortMonth(it.date)).filter((v, i, xs) => xs.indexOf(v) === i).slice(0, 3).join(' · ')] : null,
+          nx ? ['Prochaine date', `${nx.text.replace(/<[^>]+>/g, '').split(' · ')[0]} · ${shortMonth(nx.date)}`, 'hi'] : null]); })()}</span></summary>
       <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates saisies dans chaque produit et dans la capacité de coaching. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
       ${timeline(a)}</details>`;
 }
@@ -296,7 +338,13 @@ function capacityCard(a, p) {
       + `<p class="muted cap-derived">${num(total)} h par semaine${avgMin ? ` · environ ${num(Math.floor(total * 60 / avgMin))} clientes en même temps à ${num(Math.round(avgMin))} min chacune` : ''}${+c.hired && +a.coachRate ? ` · coachs : ${money(+c.hired * a.coachRate * 52 / 12)} / mois` : ''}</p>`;
   }).join('');
   const last = (a.capacitySteps || [])[a.capacitySteps.length - 1];
-  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers · jusqu'à ${num((+last.hours || 0) + (+last.hired || 0))} h / semaine` : 'illimitée'} · temps par cliente${(() => { const ms = progs.map(q => +q.coach || 0); return ms.length ? ' ' + num(Math.min(...ms)) + (Math.max(...ms) !== Math.min(...ms) ? '–' + num(Math.max(...ms)) : '') + ' min' : ''; })()}</span></span></summary>
+  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers, tous les programmes` : 'illimitée, aucun palier'}</span>
+      ${(() => { const cur = capacityAt(a, thisMonth), ms = progs.map(q => +q.coach || 0), hired = last ? +last.hired || 0 : 0;
+        const peak = prodSim && prodSim.weekly && prodSim.weekly.length ? Math.max(...prodSim.weekly.map(w => w.people)) : null;
+        return pstats([cur ? ['Au départ', `${num((+cur.hours || 0) + (+cur.hired || 0))} h / sem.`] : null, last ? ['Au dernier palier', `${num((+last.hours || 0) + hired)} h / sem.`, 'hi'] : null,
+          ms.length ? ['Temps / cliente', `${num(Math.min(...ms))}${Math.max(...ms) !== Math.min(...ms) ? '–' + num(Math.max(...ms)) : ''} min`] : null,
+          hired && +a.coachRate ? ['Coachs', `${money(hired * a.coachRate * 52 / 12)} / mois`] : null,
+          peak !== null ? ['Pic de clientes', num(peak)] : null]); })()}</span></summary>
       ${coachTimeBlock(a, p)}
       <h3 class="cap-h">Heures de coaching disponibles</h3>
       <p class="muted">Indique les heures que tu consacres au coaching chaque semaine (pas tes autres heures de travail), et celles de coachs embauchées. Le nombre de clientes possible en découle, selon le temps par cliente de chaque programme. Ajoute un palier à chaque changement.</p>
@@ -329,7 +377,18 @@ function implantSection() {
 function settingsPage(a, i) {
   const p = 'apps.' + i;
   const vat = state.vat.ttc ? `prix saisis TTC · TVA ${num(state.vat.rate)} %` : 'prix saisis HT';
-  return `<details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
+  let lastExport = null; try { lastExport = localStorage.getItem('om-last-export'); } catch { /* stockage indisponible */ }
+  const days = lastExport ? Math.floor((Date.now() - new Date(lastExport)) / 86400000) : null;
+  const im = state.implantation, cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  return `${banner({ label: 'Réglages', big: `${state.apps.length} application${state.apps.length > 1 ? 's' : ''}`,
+      note: state.apps.map(x => esc(x.name)).join(' · '),
+      tiles: [
+        { label: 'TVA', value: state.vat.ttc ? `${num(state.vat.rate)} %` : 'HT', hint: state.vat.ttc ? 'prix saisis TTC' : 'prix saisis hors taxe', go: { page: 'reglages', open: 'st-vat' } },
+        { label: 'Implantation', value: cur ? esc(cur.name) : '—', cls: 'txt', hint: 'taux à valider', go: { page: 'reglages', open: 'st-implant' } },
+        { label: 'Dernière sauvegarde', value: days === null ? 'Jamais' : days === 0 ? 'Aujourd\'hui' : `Il y a ${days} j`, cls: days === null || days > 14 ? 'warn-v' : '', hint: 'export du fichier', go: { page: 'reglages', open: 'st-save' } },
+        { label: 'Données', value: 'Cet appareil', cls: 'txt', hint: 'exporte pour changer d\'appareil' }
+      ] })}
+    <details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
       ${fields(a, p, [['name', 'Nom de l\'application', 'text']])}
       <ul class="where">
         <li><a href="#produits">Produits et prix</a> : calendrier, cohortes de test, lancement, durée, prix en 3 phases, rythme d'inscriptions, objectifs d'abonnées, promotions, passerelles, période d'essai${a.programs.length ? ', capacité de coaching' : ''}.</li>
@@ -429,14 +488,34 @@ function chart(byMonth) {
     }).join('') + '</svg>';
 }
 
+// ---------- Bandeaux en tête de page ----------
+// Un chiffre clé à gauche, quatre tuiles de même taille à droite (2 × 2), sur toutes les pages.
+const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase());
+function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
+  const tile = t => {
+    const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${t.value}</b>${t.hint ? `<span class="t-h">${t.hint}</span>` : ''}`;
+    return t.go ? `<a class="b-tile" href="#${t.go.page}" data-goto="${t.go.page}" data-open="${t.go.open || ''}" data-anchor="${t.go.anchor || t.go.open || ''}">${inner}</a>` : `<div class="b-tile">${inner}</div>`;
+  };
+  return `<div class="hero banner">
+      <div class="b-main"><div class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</div>
+        <div class="big ${bigCls}">${big}</div>${note ? `<p class="b-note">${note}</p>` : ''}${bar}</div>
+      <div class="b-tiles">${tiles.map(tile).join('')}</div>
+    </div>`;
+}
+const shareBar = (sales, subs) => { const t = sales + subs || 1; return `<div class="share"><i style="width:${(sales / t * 100).toFixed(1)}%;background:var(--sage)"></i><i style="width:${(subs / t * 100).toFixed(1)}%;background:var(--clay)"></i></div>`; };
+const pctOf = (x, t) => t ? Math.round(x / t * 100) + ' %' : '—';
+
 function synthesePage() {
   const r = results();
   const total = r.sum('total'), sales = r.sum('sales'), subs = r.sum('directCA') + r.sum('postCA'), net = r.sum('net'), cost = r.sum('cost');
   const margin = r.sum('caHT') ? net / r.sum('caHT') * 100 : 0;
   const last = r.byMonth.at(-1) || {};
   const pct = x => total ? (x / total * 100).toFixed(1) : 0;
+  const best = r.byMonth.reduce((b, m) => !b || m.total > b.total ? m : b, null);
+  const first = r.byMonth[0] || {}, subsEnd = (last.direct || 0) + (last.post || 0), subsGain = subsEnd - ((first.direct || 0) + (first.post || 0));
   return `<div class="hero">
-      <div><small>Chiffre d'affaires ${periodName()}</small><div class="big">${money(total)}</div></div>
+      <div><div class="b-label"><small>Chiffre d'affaires</small><span class="chip">${periodChip()}</span></div><div class="big">${money(total)}</div>
+        <p class="b-note">${best ? `Meilleur mois : ${monthName(best.month)} (${money(best.total)})` : ''}${r.byMonth.length ? `<br>Moyenne : ${money(total / r.byMonth.length)} par mois` : ''}</p></div>
       <div style="display:flex;flex-direction:column;gap:10px">
         <div class="share"><i style="width:${pct(sales)}%;background:var(--sage)"></i><i style="width:${pct(subs)}%;background:var(--clay)"></i></div>
         <div class="split"><div><span>Programmes</span><b>${money(sales)}</b></div><div><span>Abonnements</span><b>${money(subs)}</b></div></div>
@@ -444,9 +523,9 @@ function synthesePage() {
     </div>
     <div class="kpis">
       <div class="kpi"><a href="#resultat"><small>Résultat d'exploitation</small><b class="${net < 0 ? 'bad' : 'good'}">${money(net)}</b><small>${margin.toFixed(0)} % du CA HT</small></a></div>
-      <div class="kpi"><small>Charges</small><b>${money(cost)}</b></div>
-      <div class="kpi"><small>Inscriptions aux programmes</small><b>${num(r.sum('admissions'))}</b></div>
-      <div class="kpi"><small>Abonnées en fin de période</small><b>${num((last.direct || 0) + (last.post || 0))}</b></div>
+      <div class="kpi"><a href="#charges"><small>Charges</small><b>${money(cost)}</b><small>${pctOf(cost, r.sum('caHT'))} du CA HT</small></a></div>
+      <div class="kpi"><a href="#previsionnel"><small>Inscriptions</small><b>${num(r.sum('admissions'))}</b><small>${num(last.active || 0)} en programme en fin de période</small></a></div>
+      <div class="kpi"><a href="#previsionnel"><small>Abonnées</small><b>${num(subsEnd)}</b><small>en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}</small></a></div>
     </div>
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
@@ -483,11 +562,17 @@ function previsionnelPage() {
   const heads = ['Mois', 'Programmes', 'Abo. direct', 'Abo. après prog.', 'CA', 'Charges', 'Résultat', 'En programme', 'Abonnées'];
   const line = m => [m.month, money(m.sales), money(m.directCA), money(m.postCA), `<b>${money(m.total)}</b>`, money(m.cost), signed(m.net), num(m.active), num(m.direct + m.post)];
   const tot = { month: 'Total', sales: sum('sales'), directCA: sum('directCA'), postCA: sum('postCA'), total, cost, net, active: last.active || 0, direct: last.direct || 0, post: last.post || 0 };
-  return `<div class="hero">
-      <div><small>Résultat ${periodName()}</small><div class="big ${net < 0 ? 'neg-hero' : ''}">${money(net)}</div></div>
-      <div class="split"><div><span>Chiffre d'affaires</span><b>${money(total)}</b></div><div><span>Charges</span><b>${money(cost)}</b></div>
-        <div><span>Abonnées en fin de période</span><b>${num((last.direct || 0) + (last.post || 0))}</b></div><div><span>En programme en fin de période</span><b>${num(last.active || 0)}</b></div></div>
-    </div>
+  const first = ms[0] || {}, subsEnd = (last.direct || 0) + (last.post || 0), subsGain = subsEnd - ((first.direct || 0) + (first.post || 0));
+  const posMonths = ms.filter(m => m.net >= 0).length, caHT = sum('caHT');
+  const progSales = sum('sales'), subSales = sum('directCA') + sum('postCA');
+  return `${banner({ label: 'Résultat', chip: periodChip(), big: money(net), bigCls: net < 0 ? 'neg-hero' : '',
+      note: `${pctOf(net, caHT)} du CA HT · ${posMonths} mois positif${posMonths > 1 ? 's' : ''} sur ${ms.length}`,
+      tiles: [
+        { label: 'Chiffre d\'affaires', value: money(total), hint: shareBar(progSales, subSales) + `<span>${pctOf(progSales, total)} programmes</span>` },
+        { label: 'Charges', value: money(cost), hint: `${pctOf(cost, caHT)} du CA HT`, go: { page: 'charges' } },
+        { label: 'Abonnées', value: num(subsEnd), hint: `fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}` },
+        { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
+      ] })}
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
     <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
@@ -648,9 +733,18 @@ function chargesPage(a, i) {
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
   const dates = appDates([a]), all = appDates(state.apps);
   const sh = state.shared;
-  return `<div class="hero"><div><small>Charges fixes de ${esc(a.name)} par mois</small><div class="big">${money((a.charges || []).reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, addMonths(dates.launch || dates.first, 12), dates) || 0 : 0), 0))}</div><small>un an après le lancement, hors structure</small></div>
-      <div class="split"><div><span>Charges</span><b>${(a.charges || []).length}</b></div><div><span>À compléter</span><b>${(a.charges || []).filter(c => badge(c).includes('todo')).length}</b></div>
-        <div><span>Estimations</span><b>${(a.charges || []).filter(c => badge(c).includes('est')).length}</b></div><div><span>Confirmées</span><b>${(a.charges || []).filter(c => !c.estimate).length}</b></div></div></div>
+  const ref = addMonths(dates.launch || dates.first, 12);
+  const fixedAt = (list, ds) => list.reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, ref, ds) || 0 : 0), 0);
+  const list = a.charges || [], todo = list.filter(c => badge(c).includes('todo')).length, est = list.filter(c => badge(c).includes('est')).length;
+  const r = results();
+  return `${banner({ label: `Charges fixes de ${esc(a.name)}`, chip: 'par mois', big: money(fixedAt(list, dates)),
+      note: `En ${monthName(ref)}, un an après le lancement, hors structure`,
+      tiles: [
+        { label: 'Total des charges', value: money(r.sum('cost')), hint: `${periodName()} · ${pctOf(r.sum('cost'), r.sum('caHT'))} du CA HT`, go: { page: 'resultat', open: 'r-nature' } },
+        { label: 'Structure Om Holistic', value: money(fixedAt(sh.charges, all)), hint: 'par mois, toutes applis' },
+        { label: 'À compléter', value: num(todo), cls: todo ? 'warn-v' : '', hint: `sur ${list.length} charges` },
+        { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
+      ] })}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     <h2>Charges de ${esc(a.name)}</h2>
     <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
@@ -764,10 +858,16 @@ function resultatPage() {
       <span class="meter"><i style="width:${(Math.abs(v) / max * 100).toFixed(1)}%;background:${v < 0 ? 'var(--bad)' : 'var(--good)'}"></i></span>
       <span class="muted">CA ${money(c.v.ca || 0)} · ${c.v.ca ? Math.round(v / c.v.ca * 100) : 0} % du CA</span></div>`;
   }).join('');
-  return `<div class="hero">
-      <div><small>Résultat d'exploitation ${periodName()}</small><div class="big ${total.result < 0 ? 'neg-hero' : ''}">${money(total.result)}</div></div>
-      <div class="split"><div><span>Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}</span><b>${money(total.ca)}</b></div><div><span>Marge d'exploitation</span><b>${rate.toFixed(1)} %</b></div></div>
-    </div>
+  const ic = implantCalc(r);
+  const top = bars.reduce((b, c) => !b || (c.v[key] || 0) > (b.v[key] || 0) ? c : b, null);
+  return `${banner({ label: 'Résultat d\'exploitation', chip: periodChip(), big: money(total.result), bigCls: total.result < 0 ? 'neg-hero' : '',
+      note: `Marge d'exploitation de ${rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du chiffre d'affaires`,
+      tiles: [
+        { label: `Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}`, value: money(total.ca) },
+        { label: 'Charges', value: money(total.ca - total.result), hint: `${pctOf(total.ca - total.result, total.ca)} du CA`, go: { page: 'charges' } },
+        { label: 'Net pour toi', value: money(ic.cur.net), cls: ic.cur.net < 0 ? 'neg-hero' : '', hint: `${esc(ic.cur.sc.name)}${view.app === 'all' ? '' : ' · toutes applis'}`, go: { page: 'resultat', open: 'r-implant' } },
+        { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
+      ] })}
     ${implantBar(r)}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
@@ -815,6 +915,8 @@ function route() {
   // Arrivée depuis le calendrier : on ouvre la zone concernée et on la met en évidence.
   const target = view.goto && document.getElementById(view.goto.anchor);
   view.goto = null;
+  // Une zone rangée dans une autre (ex. TVA dans « Toutes les applications ») : on ouvre aussi ses parents.
+  for (let d = target && target.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
   if (target) { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1600); }
   else window.scrollTo(0, 0);
 }
@@ -938,6 +1040,8 @@ document.addEventListener('click', e => {
     link.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
     link.download = 'om-holistic-finances.json';
     link.click();
+    try { localStorage.setItem('om-last-export', new Date().toISOString()); } catch { /* stockage indisponible */ }
+    render();
   }
 });
 
