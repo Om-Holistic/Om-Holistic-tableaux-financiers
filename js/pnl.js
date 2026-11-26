@@ -20,10 +20,11 @@ const addCat = (cats, k, v) => { if (v) cats[k] = (cats[k] || 0) + v; };
 // Compte d'exploitation d'une application pour un mois (hors structure).
 function monthPnl(a, m, vat) {
   const ht = x => vat?.ttc ? x / (1 + pnlPos(vat.rate) / 100) : x;
-  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0 } };
+  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: pnlPos(a.sub.acq) } };
   a.programs.forEach((p, i) => {
     const q = m.products[i];
-    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours };
+    // Nouvelles clientes à acquérir : les inscriptions, sauf celles venues de l'abonnement (déjà clientes).
+    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours, fresh: q.admissions - (q.fromSolo || 0), acq: pnlPos(p.acq) };
   });
   const cols = {};
   for (const k in units) {
@@ -39,18 +40,29 @@ function monthPnl(a, m, vat) {
   const common = { fixed: 0 }, cats = {};
   const dates = appDates([a]);
   for (const k in cols) addCat(cats, 'coaching', cols[k].coaching);
+  // Canaux : la part vendue par l'App Store / Google Play paie leur commission, et pas les frais de paiement du site.
+  const store = Math.min(100, pnlPos(a.channels?.store)) / 100, storeRate = Math.min(100, pnlPos(a.channels?.storeRate)) / 100;
+  for (const k in cols) {
+    const fee = cols[k].ca * store * storeRate;
+    cols[k].fees += fee; addCat(cats, 'paiement', fee);
+    // Coût d'acquisition : par nouvelle cliente (inscription ou nouvelle abonnée payante).
+    const acq = Math.max(0, units[k].fresh || 0) * (units[k].acq || 0);
+    cols[k].variable += acq; addCat(cats, 'marketing', acq);
+  }
   for (const c of a.charges || []) {
     const amount = chargeAt(c, m.month, dates);
     if (amount === null || !amount) continue;
     const targets = c.scope && c.scope !== 'app' && cols[c.scope] ? [c.scope] : Object.keys(cols);
     const cat = c.category || 'autre';
+    // Les frais de paiement du site ne portent que sur la part vendue hors des stores.
+    const web = cat === 'paiement' ? 1 - store : 1;
     if (c.type === 'fixe' || c.type === 'unique') {
       if (targets.length === 1 && c.scope !== 'app') cols[targets[0]].fixed += amount; else common.fixed += amount;
       addCat(cats, cat, amount);
     } else {
       for (const k of targets) {
         const u = units[k];
-        const v = c.type === 'ca' ? u.ca * amount / 100 : c.type === 'cliente' ? u.clients * amount : c.type === 'inscription' ? u.inscriptions * amount : 0;
+        const v = web * (c.type === 'ca' ? u.ca * amount / 100 : c.type === 'cliente' ? u.clients * amount : c.type === 'inscription' ? u.inscriptions * amount : 0);
         if (c.type === 'ca') cols[k].fees += v; else cols[k].variable += v;
         addCat(cats, cat, v);
       }

@@ -44,20 +44,22 @@ function program(name, start, prices, duration) {
     toSolo: 40, fromSolo: 0,
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
-    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal()
+    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0
   };
 }
 
 function application(name) {
   return {
     name, restrict: false, waitlist: false, payMissing: true,
+    // Canaux de vente : part du chiffre d'affaires encaissée par l'App Store / Google Play et leur commission.
+    channels: { store: 0, storeRate: 15 },
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
     capacitySteps: [], coachRate: 0, charges: [],
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       postDuration: 12,
-      trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [],
+      trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
     },
@@ -236,7 +238,7 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 12,
+    version: 13,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     implantation: defaultImplantation(),
@@ -382,7 +384,12 @@ function migrate(state) {
   if ((state.version || 1) < 10) for (const a of state.apps) for (const c of a.capacitySteps || []) { if (c.hired === undefined) c.hired = 0; delete c.capacity; }
   if ((state.version || 1) < 11) for (const a of state.apps) for (const q of a.programs || []) if (!Array.isArray(q.coachSteps)) q.coachSteps = [];
   if ((state.version || 1) < 12) for (const a of state.apps) if (a.payMissing === undefined) a.payMissing = true;
-  state.version = 12;
+  if ((state.version || 1) < 13) for (const a of state.apps) {
+    if (!a.channels) a.channels = { store: 0, storeRate: 15 };
+    if (a.sub.acq === undefined) a.sub.acq = 0;
+    for (const q of a.programs || []) if (q.acq === undefined) q.acq = 0;
+  }
+  state.version = 13;
   return state;
 }
 

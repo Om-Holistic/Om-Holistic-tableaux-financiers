@@ -131,3 +131,26 @@ test('heures manquantes : payées au coût des coachs quand les inscriptions ne 
   const unpaid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
   assert.ok(Math.abs(unpaid - hired * a.coachRate) < 1e-6 * Math.max(1, unpaid));
 });
+
+test('canaux : la part vendue par les stores paie leur commission, pas les frais du site', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  const sims = s.apps.map(x => E.simulate(x));
+  const at = st => { a.channels = { store: st, storeRate: 15 }; const l = P.buildPnl(s, sims)[0]; return P.sumPnl(l).total; };
+  const web = at(0), half = at(50), all = at(100);
+  assert.ok(half.fees > web.fees && all.fees > half.fees);
+  // 100 % stores : frais = 15 % du CA (les frais Stripe disparaissent)
+  assert.ok(Math.abs(all.fees - all.ca * 0.15) < 1e-6 * all.ca, `${all.fees} vs ${all.ca * 0.15}`);
+  assert.ok(Math.abs(all.result - (all.ca - all.charges)) < 1e-6 * all.ca);
+});
+
+test('acquisition : coût par nouvelle cliente, hors clientes venues de l\'abonnement', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
+  const sims = s.apps.map(x => E.simulate(x));
+  const ms = sims[0].months;
+  const expected = ms.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) * 10 + m.products.reduce((x, q) => x + (q.admissions - q.fromSolo) * 20, 0), 0);
+  const before = (() => { a.sub.acq = 0; a.programs.forEach(q => { q.acq = 0; }); return P.sumPnl(P.buildPnl(s, sims)[0]).total.variable; })();
+  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
+  const after = P.sumPnl(P.buildPnl(s, sims)[0]).total.variable;
+  assert.ok(Math.abs(after - before - expected) < 1e-6 * Math.max(1, expected));
+});

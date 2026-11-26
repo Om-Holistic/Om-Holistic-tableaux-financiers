@@ -4,6 +4,11 @@
 const $ = id => document.getElementById(id);
 const money = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
 const price = x => { const v = +x || 0; return v.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0€'; };
+// Montants compacts pour les bandeaux et les cartes : 18,4 k€ au-delà de 100 000 €, 2,8 M€ au-delà du million.
+const short = x => { const a = Math.abs(x), f = (v, d) => v.toLocaleString('fr-FR', { maximumFractionDigits: d }).replace(/\s/g, '\u00a0');
+  return a >= 1e9 ? f(x / 1e9, a >= 1e10 ? 0 : 1) + '\u00a0Md€' : a >= 1e6 ? f(x / 1e6, a >= 1e7 ? 0 : 1) + '\u00a0M€' : a >= 1e5 ? f(x / 1e3, 0) + '\u00a0k€' : money(x); };
+// Remplace dans un texte déjà formaté les grands montants « 1 234 567 € » par leur forme compacte.
+const compact = html => String(html).replace(/-?\d{1,3}(?:\u00a0\d{3})+\u00a0€/g, m => { const v = +m.replace(/[^\d-]/g, ''); return Math.abs(v) >= 1e5 ? short(v) : m; });
 const num = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0');
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const thisMonth = new Date().toISOString().slice(0, 7);
@@ -28,7 +33,9 @@ function field(label, path, value, type = 'number') {
   // Un libellé « titre\nexplication » s'affiche sur deux lignes.
   const [head, more] = String(label).split('\n');
   const text = more ? `<span class="lh">${esc(head)}</span><span class="lx">${esc(more)}</span>` : esc(label);
-  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
+  // Grands nombres : la valeur mise en forme sous le champ (1000000 → 1 000 000).
+  const echo = type === 'number' && Math.abs(+value) >= 10000 ? `<span class="echo">${num(+value)}</span>` : '';
+  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}">${echo}</label>`;
 }
 function check(label, path, value) {
   return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
@@ -105,7 +112,7 @@ const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine
 // ---------- Pages de paramètres ----------
 
 // Chiffres clés affichés sur une carte repliée : petites tuiles « libellé / valeur ».
-const pstats = items => `<span class="pstats">${items.filter(Boolean).map(([l, v, cls]) => `<span class="ps${cls ? ' ' + cls : ''}"><small>${l}</small><b>${v}</b></span>`).join('')}</span>`;
+const pstats = items => `<span class="pstats">${items.filter(Boolean).map(([l, v, cls]) => `<span class="ps${cls ? ' ' + cls : ''}"><small>${l}</small><b>${compact(v)}</b></span>`).join('')}</span>`;
 const shortMonth = k => k ? MONTHS[+k.slice(5) - 1].slice(0, 4).replace(/\.$/, '') + (MONTHS[+k.slice(5) - 1].length > 4 ? '.' : '') + ' ' + k.slice(0, 4) : '—';
 // Simulation de l'application affichée, partagée par les cartes de la page Produits.
 let prodSim = null;
@@ -502,14 +509,14 @@ const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./,
 const bannerOpen = () => { try { return localStorage.getItem('om-banner') === 'open'; } catch { return false; } };
 function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
   const tile = t => {
-    const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${t.value}</b>${t.hint ? `<span class="t-h">${t.hint}</span>` : ''}`;
+    const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${compact(t.value)}</b>${t.hint ? `<span class="t-h">${compact(t.hint)}</span>` : ''}`;
     return t.go ? `<a class="b-tile" href="#${t.go.page}" data-goto="${t.go.page}" data-open="${t.go.open || ''}" data-anchor="${t.go.anchor || t.go.open || ''}">${inner}</a>` : `<div class="b-tile">${inner}</div>`;
   };
-  const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${t.value}</b></span>`).join('');
+  const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${compact(t.value)}</b></span>`).join('');
   return `<details class="hero banner" ${bannerOpen() ? 'open' : ''}>
       <summary class="b-sum"><span class="b-head"><span class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</span>
-        <b class="b-big ${bigCls}">${big}</b></span><span class="b-minis">${minis}</span></summary>
-      <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${note}</p>` : ''}${bar}</div>
+        <b class="b-big ${bigCls}">${compact(big)}</b></span><span class="b-minis">${minis}</span></summary>
+      <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${compact(note)}</p>` : ''}${bar}</div>
       <div class="b-tiles">${tiles.map(tile).join('')}</div></div>
     </details>`;
 }
@@ -734,6 +741,36 @@ function chargeGroups(list, path, a, dates, scopes) {
   }).join('');
 }
 
+// Valeur d'une nouvelle cliente sur sa durée de vie (chiffre d'affaires, avant charges), au prix de la dernière phase.
+function clientValue(a, k) {
+  const lastPrice = grid => { const ph = phasesOf(grid); return ph.length ? +ph[ph.length - 1].price || 0 : 0; };
+  const sub = d => (+d > 0 ? +d : 24);
+  if (k === 'sub') return lastPrice(a.sub.directPricing) * sub(a.sub.duration);
+  const q = a.programs[k];
+  return lastPrice(q.pricing) + Math.min(100, +q.toSolo || 0) / 100 * lastPrice(a.sub.postPricing) * sub(a.sub.postDuration);
+}
+// Canaux de vente et coût d'acquisition : ce que coûte une nouvelle cliente, face à ce qu'elle rapporte.
+function acquisitionCard(a, p) {
+  const ch = a.channels || { store: 0, storeRate: 15 };
+  const sim = simulate(a).months, firstYear = sim.filter(m => m.month >= (appDates([a]).launch || appStart(a))).slice(0, 12);
+  const pub = (a.charges || []).filter(c => c.category === 'marketing' && c.type === 'fixe').reduce((t, c) => t + firstYear.reduce((s, m) => s + (chargeAt(c, m.month, appDates([a])) || 0), 0), 0);
+  const fresh = firstYear.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) + m.products.reduce((x, q) => x + q.admissions - (q.fromSolo || 0), 0), 0);
+  const rows = [['sub', soloName(a), a.sub, p + '.sub'], ...a.programs.map((q, j) => q.enabled ? [j, progName(a, q), q, `${p}.programs.${j}`] : null).filter(Boolean)].map(([k, name, o, t]) => {
+    const v = clientValue(a, k), acq = +o.acq || 0, avg = fresh ? pub / fresh : 0, cost = acq || avg, ratio = cost ? v / cost : null;
+    return `<div class="acq-row"><div class="acq-name"><b>${esc(name)}</b><span class="muted">vaut environ ${money(v)} par cliente sur sa durée de vie</span></div>
+      ${field('Coût d\'acquisition\n€ par nouvelle cliente', t + '.acq', o.acq || 0)}
+      <span class="acq-ratio ${ratio === null ? '' : ratio >= 3 ? 'ok' : ratio >= 1 ? 'mid' : 'bad'}">${ratio === null ? 'coût non renseigné' : `rapporte ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${acq ? 'son coût' : 'la pub moyenne'}`}</span></div>`;
+  }).join('');
+  return `<details class="card" id="ch-acq" ${view.open.has('ch-acq') ? 'open' : ''}><summary><span>Canaux de vente et acquisition<br><span class="sum-sub">${+ch.store ? `${num(ch.store)} % par les stores à ${num(ch.storeRate)} %` : 'tout par le site (Stripe)'} · ${fresh ? `publicité ≈ ${money(pub / fresh)} par nouvelle cliente la 1re année` : 'acquisition à régler'}</span></span></summary>
+    <h4>Où paient tes clientes</h4>
+    <div class="grid">${field('Ventes passées par l\'App Store\net Google Play (%)', p + '.channels.store', ch.store)}${field('Commission des stores\n(%)', p + '.channels.storeRate', ch.storeRate)}</div>
+    <p class="muted">15 % pour les petits éditeurs (moins d'un million de dollars par an), 30 % au-delà. Les frais Stripe de tes charges ne s'appliquent plus qu'à la part vendue sur ton site. Par défaut : tout sur le site, à ajuster.</p>
+    <h4>Ce que coûte une nouvelle cliente</h4>
+    <p class="muted">Ta publicité fixe (catégorie Marketing) revient à environ <b>${fresh ? money(pub / fresh) : '—'}</b> par nouvelle cliente la première année (${money(pub)} pour ${num(fresh)} nouvelles clientes). Tu peux aussi raisonner par cliente : indique un coût par nouvelle cliente, il s'ajoute à la publicité fixe (mets alors celle-ci à 0 pour ne pas compter deux fois).</p>
+    ${rows}
+    <p class="muted">Une cliente doit rapporter au moins 3 fois ce qu'elle coûte à acquérir pour que la croissance soit saine. Les clientes venues de l'abonnement ne coûtent rien à acquérir.</p></details>`;
+}
+
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
@@ -751,6 +788,7 @@ function chargesPage(a, i) {
         { label: 'À compléter', value: num(todo), cls: todo ? 'warn-v' : '', hint: `sur ${list.length} charges` },
         { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
       ] })}
+    ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     <h2>Charges de ${esc(a.name)}</h2>
     <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>

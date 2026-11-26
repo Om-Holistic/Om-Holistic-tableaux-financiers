@@ -212,6 +212,8 @@ tr.total td { font-size: 14px; border-top: 2px solid var(--ink); }
 a { color: var(--sage); }
 .grid > .wide { grid-column: 1 / -1; }
 .grid.one { grid-template-columns: 1fr; }
+label.two { display: flex; flex-direction: column; gap: 0; }
+label.two input { margin-top: 4px; }
 label.two .lh { display: block; font-weight: 600; color: var(--ink); }
 label.two .lx { display: block; font-weight: 400; font-size: .85em; margin-top: 2px; }
 @media (min-width: 768px) { .grid > .wide { grid-column: span 2; } .grid:has(> .wide) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
@@ -417,3 +419,13 @@ details.card.product[open] .pstats { display: none; }
 .goal-pending { border-radius: 12px; padding: 10px 12px; background: var(--sage-tint); border-left: 4px solid var(--bad); display: flex; flex-direction: column; gap: 8px; }
 .goal-pending p { margin: 0; font-size: 14px; }
 .goal-pending button { background: var(--bad); color: #fff; font-weight: 600; }
+
+/* Grands nombres : valeur mise en forme sous le champ */
+.echo { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+/* Acquisition : une ligne par produit */
+.acq-row { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: end; }
+.acq-row:last-of-type { border-bottom: 0; }
+.acq-name { display: flex; flex-direction: column; gap: 2px; }
+.acq-ratio { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--ground); justify-self: start; }
+.acq-ratio.ok { color: var(--good); } .acq-ratio.mid { color: #b7791f; } .acq-ratio.bad { color: var(--bad); }
+@media (min-width: 768px) { .acq-row { grid-template-columns: 1.4fr 1fr auto; } .acq-ratio { justify-self: end; margin-bottom: 4px; } }
