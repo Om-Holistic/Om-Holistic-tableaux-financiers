@@ -665,7 +665,7 @@ function natureCard(r) {
 }
 
 // Résultat net de la société selon chaque implantation (toutes les applications).
-function implantCard(r) {
+function implantCalc(r) {
   const im = state.implantation;
   const sums = r.all.map(x => r.summary(x));
   const ca = sums.reduce((t, s) => t + s.total.ca, 0), result = sums.reduce((t, s) => t + s.total.result, 0);
@@ -674,8 +674,24 @@ function implantCard(r) {
   const yearCa = ca * 12 / months;
   const over = x => +x.sc.caLimit > 0 && yearCa > +x.sc.caLimit;
   const allowed = res.filter(x => !over(x));
-  const best = (allowed.length ? allowed : res).reduce((b, x) => x.net > b.net ? x : b, (allowed.length ? allowed : res)[0]);
+  const pool = allowed.length ? allowed : res;
+  const best = pool.reduce((b, x) => x.net > b.net ? x : b, pool[0]);
   const cur = res.find(x => x.sc.id === im.current) || res[0];
+  return { im, ca, result, months, res, yearCa, over, best, cur };
+}
+// Bandeau en tête du Résultat : l'implantation choisie et son effet immédiat sur le net.
+function implantBar(r) {
+  const { im, ca, result, cur, best, over } = implantCalc(r);
+  const gap = best.net - cur.net;
+  return `<div class="card implant-bar">
+    <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="net-split"><div><span>Résultat d'exploitation${view.app === 'all' ? '' : ' de toutes les applications'}</span><b>${money(result)}</b></div><div><span>Frais, cotisations et impôts</span><b>${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b>${money(cur.net)}</b></div></div>
+    <p class="muted">${over(cur) ? '<b class="neg">Plafond de chiffre d\'affaires dépassé pour ce statut.</b> ' : ''}${gap > 0.5 ? `Le scénario « ${esc(best.sc.name)} » donnerait ${money(gap)} de plus.` : 'C\'est le scénario le plus favorable avec les taux saisis.'} Taux indicatifs à valider. <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Comparer les implantations</a></p>
+  </div>`;
+}
+
+function implantCard(r) {
+  const { im, ca, result, res, yearCa, over, best, cur } = implantCalc(r);
   const row = x => [`${x.sc.id === im.current ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === im.current ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
     signed(-x.fixed || 0), signed(-x.social || 0), signed(-(x.tax + x.dist) || 0), `<b>${signed(x.net)}</b>`, ca ? `${(x.net / ca * 100).toFixed(0)} %` : '—'];
   return `<details class="card" id="r-implant" ${view.open.has('r-implant') || !view.open.size ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
@@ -713,6 +729,7 @@ function resultatPage() {
       <div><small>Résultat d'exploitation ${periodName()}</small><div class="big ${total.result < 0 ? 'neg-hero' : ''}">${money(total.result)}</div></div>
       <div class="split"><div><span>Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}</span><b>${money(total.ca)}</b></div><div><span>Marge d'exploitation</span><b>${rate.toFixed(1)} %</b></div></div>
     </div>
+    ${implantBar(r)}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>

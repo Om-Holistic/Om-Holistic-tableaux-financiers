@@ -344,3 +344,4 @@ table.ramp td:first-child { white-space: nowrap; }
 .net-split .net span { color: inherit; opacity: .8; } .net-split .net b { color: inherit; }
 .warn { color: var(--ink); background: color-mix(in srgb, var(--k-cal) 14%, transparent); padding: 8px 10px; border-radius: 10px; font-size: 13px; }
 .warn:empty { display: none; }
+.implant-bar .net-split { margin: 10px 0 6px; } .implant-bar p { margin: 0; }
