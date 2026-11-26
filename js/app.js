@@ -20,11 +20,12 @@ try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (isValidState(saved)) state = migrate(saved);
 } catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
-const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } };
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } Sync.changed(); };
 const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
 // Rappel de sauvegarde : des modifications non exportées depuis plus de 14 jours (ou jamais exportées, modifiées il y a plus d'un jour).
 function backupDue() {
   const edit = stored('om-last-edit'), exp = stored('om-last-export');
+  if (Sync.on && Sync.at) return null; // synchronisé : une copie existe déjà sur le serveur
   if (!edit || (exp && exp >= edit)) return null;
   const days = d => (Date.now() - new Date(d)) / 86400000;
   if (exp ? days(exp) > 14 : days(edit) > 1) return exp ? `Dernière sauvegarde il y a ${Math.floor(days(exp))} jours` : 'Tes paramètres n\'ont jamais été exportés';
@@ -398,6 +399,37 @@ function implantSection() {
     <div class="row"><button data-add="implantation.scenarios">Ajouter un scénario</button></div>`);
 }
 
+// ---------- Synchronisation ----------
+
+const when = d => d ? new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '';
+function syncText() {
+  const s = Sync.status;
+  if (!Sync.on) return 'Désactivée : tes paramètres restent sur cet appareil.';
+  if (s.state === 'pending') return 'Envoi des dernières modifications…';
+  if (s.state === 'conflict') return 'Deux versions différentes à départager.';
+  if (s.state === 'offline' || s.state === 'error') return s.msg;
+  return Sync.at ? `À jour · dernière synchro le ${when(Sync.at)}` : 'Connexion au serveur…';
+}
+// Bandeau en haut de toutes les pages quand les deux appareils ont modifié en même temps, ou en cas d'erreur.
+function syncStrip() {
+  const s = Sync.status;
+  if (s.state === 'conflict' && s.remote) return `<div class="sync-strip conflict"><p><b>Tes chiffres ont aussi changé ailleurs.</b> Version de ton ${esc(s.remote.device || 'autre appareil')} du ${when(s.remote.at)}, et celle de cet appareil avec des modifications pas encore envoyées. Laquelle garder ?</p>
+    <div class="row"><button data-sync="theirs">Prendre celle de ${esc(s.remote.device === 'ordinateur' ? 'l\'ordinateur' : 'l\'' + (s.remote.device || 'autre appareil'))}</button><button data-sync="mine">Garder celle-ci</button></div></div>`;
+  if (s.state === 'error') return `<a class="sync-strip" href="#reglages" data-goto="reglages" data-open="st-sync" data-anchor="st-sync">${esc(s.msg)} ›</a>`;
+  return '';
+}
+function syncSection() {
+  const summary = Sync.on ? 'activée sur cet appareil' : 'iPhone, iPad et ordinateur à jour';
+  const body = Sync.on ? `<p class="sync-state ${Sync.status.state}" id="syncStatus">${esc(syncText())}</p>
+      <p class="muted">Chaque modification est envoyée quelques secondes après, et l'appli récupère la dernière version quand tu y reviens. Tes chiffres sont chiffrés sur l'appareil avec ta phrase secrète : le serveur ne peut pas les lire.</p>
+      <div class="row"><button id="syncNow">Synchroniser maintenant</button><button class="danger" id="syncOff">Désactiver sur cet appareil</button></div>`
+    : `<p class="muted">Choisis une phrase secrète et tape la même sur chacun de tes appareils. Elle chiffre tes chiffres avant qu'ils quittent l'appareil. Garde-la bien : sans elle, personne ne peut récupérer la version en ligne (tes paramètres restent quand même sur chaque appareil).</p>
+      <div class="grid"><label class="wide"><span>Phrase secrète (au moins 12 caractères)</span><input id="syncPhrase" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="par exemple : quatre mots que tu retiens"></label></div>
+      <div class="row"><button id="syncOn">Activer la synchro</button></div>
+      <p id="syncMsg" class="warn">${view.syncMsg ? esc(view.syncMsg) : ''}</p>`;
+  return section('st-sync', 'cal', 'Synchronisation entre appareils', summary, body);
+}
+
 function settingsPage(a, i) {
   const p = 'apps.' + i;
   const vat = state.vat.ttc ? `prix saisis TTC · TVA ${num(state.vat.rate)} %` : 'prix saisis HT';
@@ -410,7 +442,7 @@ function settingsPage(a, i) {
         { label: 'TVA', value: state.vat.ttc ? `${num(state.vat.rate)} %` : 'HT', hint: state.vat.ttc ? 'prix saisis TTC' : 'prix saisis hors taxe', go: { page: 'reglages', open: 'st-vat' } },
         { label: 'Implantation', mini: false, value: cur ? esc(cur.name) : '—', cls: 'txt', hint: 'taux à valider', go: { page: 'reglages', open: 'st-implant' } },
         { label: 'Dernière sauvegarde', mini: 'Sauvegarde', value: days === null ? 'Jamais' : days === 0 ? 'Aujourd\'hui' : `Il y a ${days} j`, cls: days === null || days > 14 ? 'warn-v' : '', hint: 'export du fichier', go: { page: 'reglages', open: 'st-save' } },
-        { label: 'Données', mini: false, value: 'Cet appareil', cls: 'txt', hint: 'exporte pour changer d\'appareil' }
+        { label: 'Données', mini: 'Synchro', value: Sync.on ? 'Synchronisées' : 'Cet appareil', cls: 'txt', hint: Sync.on ? 'iPhone, iPad et ordinateur' : 'active la synchro', go: { page: 'reglages', open: 'st-sync' } }
       ] })}
     <details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
       ${fields(a, p, [['name', 'Nom de l\'application', 'text']])}
@@ -432,7 +464,8 @@ function settingsPage(a, i) {
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
       ${implantSection()}
-      ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">Tes paramètres restent dans ce navigateur. Exporte-les régulièrement pour les garder ou les ouvrir sur un autre appareil.</p>
+      ${syncSection()}
+      ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">${Sync.on ? 'Tes paramètres sont synchronisés. Un export reste utile pour garder une copie datée.' : 'Tes paramètres restent dans ce navigateur. Exporte-les régulièrement, ou active la synchro pour les retrouver sur tes autres appareils.'}</p>
         <div class="row"><button id="export">Exporter les paramètres</button><label class="file"><span>Importer des paramètres</span><input id="import" type="file" accept=".json"></label></div>
         <p id="importMsg" class="warn"></p>`)}
       ${section('st-new', 'ins', 'Ajouter une application', 'nouvelle application avec son abonnement', '<div class="row"><button id="addApp">Ajouter une application</button></div>')}
@@ -1091,7 +1124,7 @@ function render(fresh = false) {
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
-  $('page').innerHTML = (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
+  $('page').innerHTML = syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
 
 // ---------- Événements ----------
@@ -1229,6 +1262,13 @@ document.addEventListener('click', e => {
     const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
     if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
     save(); render();
+  } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
+  } else if (t.id === 'syncNow') { Sync.now();
+  } else if (t.id === 'syncOff') { Sync.disable(); render();
+  } else if (t.id === 'syncOn') {
+    const phrase = $('syncPhrase').value;
+    t.disabled = true; t.textContent = 'Connexion…'; view.syncMsg = '';
+    Sync.enable(phrase, !!stored('om-last-edit')).then(() => render(), err => { view.syncMsg = err.message; render(); });
   } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
@@ -1245,4 +1285,22 @@ document.addEventListener('click', e => {
   }
 });
 
+// Une version plus récente arrive d'un autre appareil : on la prend, sans la renvoyer.
+Sync.init({
+  state: () => state,
+  apply(x) {
+    if (!isValidState(x)) return false;
+    state = migrate(x);
+    if (!state.apps[+view.app]) view.app = '0';
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ }
+    render();
+    return true;
+  },
+  // Le statut change : on met à jour la ligne d'état, et on redessine seulement pour un conflit, une erreur ou leur fin.
+  onStatus(changed) {
+    const el = $('syncStatus');
+    if (el) { el.textContent = syncText(); el.className = 'sync-state ' + Sync.status.state; }
+    if (changed && (['conflict', 'error'].includes(Sync.status.state) || document.querySelector('.sync-strip'))) render();
+  }
+});
 route();

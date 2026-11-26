@@ -1,0 +1,32 @@
+# Déploie le serveur de synchronisation sur Fly quand il change sur main (ou à la demande).
+# Il faut le secret FLY_API_TOKEN dans les réglages du dépôt.
+name: Serveur de synchro
+on:
+  push:
+    branches: [main]
+    paths: ['sync-server/**', '.github/workflows/sync-server.yml']
+  workflow_dispatch:
+concurrency: sync-server
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sync-server
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Créer l'application et son disque la première fois
+        run: |
+          if ! flyctl status --app om-holistic-finances-sync >/dev/null 2>&1; then
+            flyctl apps create om-holistic-finances-sync --org personal
+          fi
+          if ! flyctl volumes list --app om-holistic-finances-sync | grep -q om_sync_data; then
+            flyctl volumes create om_sync_data --app om-holistic-finances-sync --region cdg --size 1 --yes
+          fi
+      - name: Déployer
+        run: flyctl deploy --remote-only --ha=false
+      - name: Vérifier
+        run: curl -fsS --retry 5 --retry-delay 5 https://om-holistic-finances-sync.fly.dev/health
