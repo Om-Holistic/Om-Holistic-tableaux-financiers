@@ -220,3 +220,46 @@ test('objectif d\'un programme : le rythme appliqué donne les inscriptions vis�
   const m = simulate(a).months.find(x => x.month === plan.steps[0].at);
   assert.ok(m.products[0].admissions * 12 >= 100, String(m.products[0].admissions * 12));
 });
+
+test('charges : démarrage sur le calendrier, paliers et charge ponctuelle', () => {
+  const s = defaultState();
+  const a = s.apps[0];
+  const dates = appDates([a]);
+  const host = charge('Hébergement', 'fixe', 10, 'app', '', '', { anchor: 'first', steps: [{ after: 6, amount: 30 }] });
+  assert.equal(chargeAt(host, '2026-12', dates), null);
+  assert.equal(chargeAt(host, '2027-01', dates), 10);
+  assert.equal(chargeAt(host, '2027-07', dates), 30);
+  const pub = charge('Publicité', 'fixe', 300, 'app', '', '', { anchor: 'launch', offset: 2 });
+  assert.equal(chargeAt(pub, '2027-08', dates), null);
+  assert.equal(chargeAt(pub, '2027-09', dates), 300);
+  // Si le lancement recule, la charge suit.
+  a.programs.forEach(p => { p.start = '2028-01'; }); a.sub.start = '2028-01';
+  assert.equal(chargeAt(pub, '2027-09', appDates([a])), null);
+  const once = charge('Marque', 'unique', 190, 'app', '', '', { anchor: 'first' });
+  assert.equal(chargeAt(once, '2027-01', dates), 190);
+  assert.equal(chargeAt(once, '2027-02', dates), null);
+});
+
+test('migration v8 : les anciennes charges d\'exemple sont remplacées, les autres gardées', () => {
+  const s = defaultState();
+  s.version = 7;
+  s.apps[0].charges = [charge('Hébergement et base de données (exemple)', 'fixe', 30)];
+  s.apps[1].charges = [charge('Ma charge', 'fixe', 12)];
+  s.shared.charges = [charge('Expert-comptable (exemple)', 'fixe', 100)];
+  const m = migrate(s);
+  assert.ok(m.apps[0].charges.length > 5 && m.apps[0].charges.every(c => c.category));
+  assert.equal(m.apps[1].charges.length, 1);
+  assert.equal(m.apps[1].charges[0].anchor, 'date');
+  assert.ok(m.shared.charges.some(c => /Loyer/.test(c.name)));
+});
+
+test('implantation : du résultat d\'exploitation au net', () => {
+  const { afterTax } = require('../js/pnl.js');
+  const micro = { fixedYear: 0, socialRate: 20, socialBase: 'ca', taxRate: 2, taxBase: 'ca', distRate: 0 };
+  const r = afterTax(micro, 10000, 6000, 12);
+  assert.equal(r.social, 2000); assert.equal(r.tax, 200); assert.equal(r.net, 3800);
+  const sasu = { fixedYear: 1200, socialRate: 0, taxRate: 15, distRate: 30 };
+  const s2 = afterTax(sasu, 10000, 6000, 6);
+  assert.equal(s2.fixed, 600);
+  assert.ok(Math.abs(s2.net - (5400 * 0.85 * 0.7)) < 1e-9);
+});

@@ -67,8 +67,69 @@ function application(name) {
 
 // Une charge : fixe (€ / mois), cliente (€ / mois par cliente), inscription (€ par inscription)
 // ou ca (% du chiffre d'affaires). scope : 'app' (commune), 'sub' (abonnement) ou l'id d'un programme.
-function charge(name, type, amount, scope = 'app', start = '', end = '') {
-  return { id: newId(), name, type, amount, scope, start, end };
+// Catégories de charges, regroupées comme dans un compte d'exploitation classique.
+const CHARGE_CATEGORIES = [
+  ['tech', 'Hébergement et services techniques'],
+  ['contenu', 'Contenus et licences'],
+  ['logiciels', 'Logiciels et abonnements'],
+  ['paiement', 'Frais de paiement'],
+  ['marketing', 'Publicité et communication'],
+  ['honoraires', 'Honoraires, juridique et administratif'],
+  ['banque', 'Banque et assurances'],
+  ['locaux', 'Loyer et locaux'],
+  ['impots', 'Impôts et taxes'],
+  ['coaching', 'Coaching (sous-traitance ou salaires)'],
+  ['personnel', 'Personnel et rémunération'],
+  ['autre', 'Autres charges']
+];
+// Repère de démarrage d'une charge : elle suit le calendrier quand une date change.
+const CHARGE_ANCHORS = [
+  ['first', 'Début des prévisions (première cohorte)'],
+  ['product', 'Démarrage du produit rattaché'],
+  ['launch', 'Lancement commercial'],
+  ['sub', 'Ouverture des abonnements'],
+  ['date', 'Date précise']
+];
+
+// Une charge : catégorie, type, montant, rattachement, démarrage (repère + décalage, ou date), fin,
+// paliers de montée en charge (au bout de X mois, nouveau montant), estimation ou montant confirmé.
+function charge(name, type, amount, scope = 'app', start = '', end = '', more = {}) {
+  return { id: newId(), name, category: 'autre', type, amount, scope, anchor: 'date', offset: 0, start, end, steps: [], estimate: true, note: '', ...more };
+}
+const ch = (name, category, type, amount, more = {}) => charge(name, type, amount, more.scope || 'app', '', '', { category, anchor: 'first', ...more });
+
+// Dates repères d'une application (ou de toutes, pour les charges de structure).
+function appDates(apps) {
+  const min = xs => xs.filter(Boolean).sort()[0] || '';
+  return {
+    first: min(apps.map(appStart)),
+    launch: min(apps.flatMap(a => [a.sub?.start, ...a.programs.map(p => p.start)])),
+    sub: min(apps.map(a => a.sub?.start)),
+    product: (scope) => {
+      for (const a of apps) {
+        if (scope === 'sub') return a.sub?.start || '';
+        const p = a.programs.find(q => q.id === scope);
+        if (p) return min([p.start, ...(p.cohorts || []).map(c => c.date)]);
+      }
+      return min(apps.map(appStart));
+    }
+  };
+}
+// Premier mois d'une charge ('' = dès le début).
+function chargeStart(c, dates) {
+  if (!c.anchor || c.anchor === 'date') return c.start || '';
+  const base = c.anchor === 'product' ? dates.product(c.scope) : dates[c.anchor];
+  return base ? addMonths(base, Math.round(+c.offset || 0)) : '';
+}
+const monthsFrom = (from, to) => { const [y1, m1] = from.split('-').map(Number), [y2, m2] = to.split('-').map(Number); return (y2 - y1) * 12 + m2 - m1; };
+// Montant d'une charge pour un mois, ou null si elle ne s'applique pas ce mois-là.
+function chargeAt(c, month, dates) {
+  const start = chargeStart(c, dates);
+  if (c.type === 'unique') return (start || dates.first) === month ? Math.max(0, +c.amount || 0) : null;
+  if ((start && month < start) || (c.end && month > c.end)) return null;
+  let amount = Math.max(0, +c.amount || 0);
+  if (start) for (const st of [...(c.steps || [])].sort((x, y) => x.after - y.after)) if (monthsFrom(start, month) >= +st.after) amount = Math.max(0, +st.amount || 0);
+  return amount;
 }
 
 // Calendrier d'exemple : cohorte alpha, deuxième cohorte, puis lancement commercial.
@@ -86,13 +147,41 @@ function chrysalisApp() {
   return a;
 }
 
+// Charges estimées de CHRYSALISS : montants indicatifs, à confirmer (« estimation » tant que non confirmés).
 function exampleCharges(a) {
   const refit = a.programs.find(p => /refit/i.test(p.name));
+  const sleep = a.programs.find(p => /sleep/i.test(p.name));
+  const calm = a.programs.find(p => /calm/i.test(p.name));
   return [
-    charge('Hébergement et base de données (exemple)', 'fixe', 30),
-    charge('Bibliothèque d\'exercices YMove', 'fixe', 29, refit ? refit.id : 'app'),
-    charge('IA et envois d\'e-mails (exemple)', 'cliente', 0.5),
-    charge('Frais de paiement Stripe (exemple)', 'ca', 2)
+    ch('Hébergement de l\'application (Fly.io)', 'tech', 'fixe', 10, { steps: [{ after: 6, amount: 30 }, { after: 18, amount: 60 }], note: 'Petites machines pendant les tests, puis plus de puissance au lancement et avec la croissance.' }),
+    ch('Base de données et sauvegardes', 'tech', 'fixe', 5, { steps: [{ after: 6, amount: 15 }, { after: 18, amount: 30 }], note: 'Base gérée et copies de sauvegarde quotidiennes hors de Fly.io.' }),
+    ch('E-mails transactionnels (Resend, Postmark…)', 'tech', 'fixe', 20, { anchor: 'launch', note: 'Offre gratuite suffisante pendant les tests.' }),
+    ch('Suivi des erreurs et disponibilité (Sentry…)', 'tech', 'fixe', 26, { anchor: 'launch', offset: 6, note: 'Offre gratuite au début, offre payante quand le trafic monte.' }),
+    ch('Comptes utilisatrices (Clerk)', 'tech', 'fixe', 25, { anchor: 'launch', offset: 12, note: 'Gratuit jusqu\'à 10 000 utilisatrices actives par mois, offre Pro ensuite.' }),
+    ch('Intelligence artificielle (OpenAI)', 'tech', 'cliente', 0.5, { note: 'Coût par cliente active et par mois, selon l\'usage des fonctions IA.' }),
+    ch('Bibliothèque d\'exercices YMove', 'contenu', 'fixe', 29, { scope: refit ? refit.id : 'app', anchor: refit ? 'product' : 'first', estimate: false, note: 'Montant confirmé.' }),
+    ch('Bibliothèque d\'exercices MuscleWiki', 'contenu', 'fixe', 11, { scope: refit ? refit.id : 'app', anchor: refit ? 'product' : 'first', note: '12 $ / mois, relevé dans le code de CHRYSALISS.' }),
+    ...(sleep || calm ? [ch('Musiques et sons sous licence', 'contenu', 'fixe', 15, { scope: (sleep || calm).id, anchor: 'product', note: 'Pour les séances audio (sommeil, relaxation).' })] : []),
+    ch('Commission Stripe', 'paiement', 'ca', 1.5, { note: 'Cartes européennes : 1,5 % + 0,25 € par paiement.' }),
+    ch('Frais fixes Stripe par abonnement', 'paiement', 'cliente', 0.25, { scope: 'sub', note: '0,25 € par prélèvement mensuel.' }),
+    ch('Frais fixes Stripe par inscription', 'paiement', 'inscription', 0.25, { note: '0,25 € par paiement de programme.' }),
+    ch('Publicité en ligne (Meta, Google…)', 'marketing', 'fixe', 300, { anchor: 'launch', steps: [{ after: 6, amount: 600 }, { after: 18, amount: 1000 }], note: 'Budget à piloter : il conditionne le rythme d\'inscriptions.' }),
+    ch('Newsletter et e-mailing (Brevo…)', 'marketing', 'fixe', 9, { anchor: 'launch', steps: [{ after: 12, amount: 25 }] }),
+    ch('Outils de création (Canva Pro…)', 'logiciels', 'fixe', 12),
+    ch('CGV, CGU et RGPD (juriste)', 'honoraires', 'unique', 600, { anchor: 'launch', note: 'Rédaction ou relecture avant la vente au public.' }),
+    ch('Dépôt de la marque CHRYSALISS (INPI)', 'honoraires', 'unique', 190, { note: '190 € pour une classe, 40 € par classe en plus. À supprimer si déjà fait.' })
+  ];
+}
+// Charges estimées d'une petite application (abonnement seul).
+function smallAppCharges(name) {
+  return [
+    ch('Hébergement de l\'application (Fly.io)', 'tech', 'fixe', 5, { steps: [{ after: 6, amount: 15 }, { after: 18, amount: 30 }] }),
+    ch('Base de données et sauvegardes', 'tech', 'fixe', 3, { steps: [{ after: 12, amount: 10 }] }),
+    ch('E-mails transactionnels', 'tech', 'fixe', 10, { offset: 6 }),
+    ch('Commission Stripe', 'paiement', 'ca', 1.5, { note: 'Cartes européennes : 1,5 % + 0,25 € par paiement.' }),
+    ch('Frais fixes Stripe par abonnement', 'paiement', 'cliente', 0.25, { scope: 'sub' }),
+    ch('Publicité en ligne', 'marketing', 'fixe', 100, { steps: [{ after: 6, amount: 200 }] }),
+    ch(`Dépôt de la marque ${name} (INPI)`, 'honoraires', 'unique', 190, { note: 'À supprimer si déjà fait.' })
   ];
 }
 
@@ -103,19 +192,53 @@ function smallApp(name, start, prices) {
   a.sub.directPricing = pricing(start, prices);
   a.sub.directPricing[0].label = 'Lancement';
   a.sub.initial = 2; a.sub.target = 10; a.sub.duration = 8;
-  a.charges = [charge('Hébergement (exemple)', 'fixe', 15), charge('Frais de paiement (exemple)', 'ca', 2)];
+  a.charges = smallAppCharges(name);
   return a;
 }
 
 function defaultShared() {
-  return { key: 'ca', charges: [charge('Expert-comptable (exemple)', 'fixe', 100), charge('Banque et assurance (exemple)', 'fixe', 40)] };
+  return { key: 'ca', charges: [
+    ch('Banque professionnelle', 'banque', 'fixe', 10),
+    ch('Assurance responsabilité civile professionnelle', 'banque', 'fixe', 25),
+    ch('Logiciel de comptabilité et facturation', 'logiciels', 'fixe', 15, { note: 'Tu tiens ta comptabilité toi-même : pas d\'expert-comptable.' }),
+    ch('GitHub et outils de développement (IA de code…)', 'logiciels', 'fixe', 25),
+    ch('Noms de domaine', 'tech', 'fixe', 3, { note: 'Environ 12 € par an et par domaine.' }),
+    ch('Messagerie professionnelle (Google Workspace…)', 'logiciels', 'fixe', 7),
+    ch('Site vitrine Om Holistic', 'marketing', 'fixe', 15),
+    ch('Téléphone et internet (part professionnelle)', 'autre', 'fixe', 20),
+    ch('Comptes développeur Apple et Google', 'honoraires', 'fixe', 9, { anchor: 'launch', note: '99 € par an chez Apple (+ 25 € une fois chez Google). À supprimer si les apps restent sur le web.' }),
+    ch('Loyer et charges d\'un bureau', 'locaux', 'fixe', 0, { note: 'À compléter si tu quittes le travail à domicile : indique le mois de début.' }),
+    ch('Salaire d\'une embauche (assistante, développeur…)', 'personnel', 'fixe', 0, { note: 'À compléter : coût total employeur par mois. Le coaching sous-traité se règle avec le coût horaire du coaching.' }),
+    ch('Rémunération du dirigeant', 'personnel', 'fixe', 0, { note: 'À compléter selon ce que tu veux te verser. Les cotisations dépendent de l\'implantation.' }),
+    ch('Formation et veille', 'autre', 'fixe', 0, { note: 'À compléter.' }),
+    ch('Cotisation foncière des entreprises (CFE)', 'impots', 'fixe', 25, { offset: 12, note: 'Exonérée l\'année de création, environ 300 € par an ensuite selon la commune.' })
+  ] };
+}
+
+// Implantations possibles de la société : chaque scénario a ses frais, cotisations et impôts.
+// Taux INDICATIFS, à faire valider par un conseiller : ils servent à comparer, pas à déclarer.
+function defaultImplantation() {
+  const sc = (id, name, o) => ({ id, name, fixedYear: 0, socialRate: 0, socialBase: 'result', taxRate: 0, taxBase: 'result', distRate: 0, note: '', ...o });
+  return { current: 'fr-micro', scenarios: [
+    sc('fr-micro', 'France · micro-entreprise', { caLimit: 77700, socialRate: 21.2, socialBase: 'ca', taxRate: 1.7, taxBase: 'ca',
+      note: 'Cotisations et impôt (versement libératoire) calculés sur le chiffre d\'affaires, sans déduire les charges. Plafond d\'environ 77 700 € de CA par an pour les services. Taux à vérifier selon l\'activité.' }),
+    sc('fr-sasu', 'France · SASU à l\'impôt sur les sociétés', { taxRate: 15, distRate: 30,
+      note: 'Impôt sur les sociétés à 15 % jusqu\'à 42 500 € de bénéfice (25 % au-delà), puis prélèvement forfaitaire de 30 % sur les dividendes versés. Sans salaire de la dirigeante.' }),
+    sc('llc-fr', 'LLC Wyoming · tu vis en France', { fixedYear: 700, socialRate: 40, taxRate: 11,
+      note: 'Une LLC à associée unique est en général transparente : le bénéfice est imposé en France, avec cotisations sociales. Frais : rapport annuel et agent enregistré au Wyoming, déclaration américaine (formulaire 5472). Risque de requalification : à valider absolument.' }),
+    sc('llc-bz', 'LLC Wyoming · tu vis au Belize', { fixedYear: 700,
+      note: 'Fiscalité souvent présentée comme territoriale : à faire confirmer, ainsi que le coût de la résidence et ce qui reste dû en France (clientes françaises, TVA européenne).' }),
+    sc('llc-do', 'LLC Wyoming · tu vis en République dominicaine', { fixedYear: 700,
+      note: 'Imposition des revenus étrangers à faire confirmer (règles spécifiques après 3 ans de résidence). Coût de la résidence à ajouter.' })
+  ] };
 }
 
 function defaultState() {
   return {
-    version: 7,
+    version: 8,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
+    implantation: defaultImplantation(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
   };
 }
@@ -225,7 +348,25 @@ function migrate(state) {
     if (!a.sub.paliers) { a.sub.paliers = []; a.sub.palierMode = false; }
     for (const p of a.programs) if (!p.goal) p.goal = defaultProgramGoal();
   }
-  state.version = 7;
+  // Version 8 : catégories, démarrage relatif au calendrier, paliers. Les anciennes charges d'exemple sont remplacées.
+  if ((state.version || 1) < 8) {
+    const OLD = /\(exemple\)$|^Bibliothèque d'exercices YMove$/;
+    for (const a of state.apps) {
+      const onlyExamples = (a.charges || []).every(c => OLD.test(c.name));
+      if (onlyExamples) a.charges = /^chrysal+is+$/i.test(a.name) ? exampleCharges(a) : smallAppCharges(a.name);
+    }
+    if (state.shared && state.shared.charges.every(c => OLD.test(c.name))) state.shared.charges = defaultShared().charges;
+  }
+  for (const c of [...state.apps.flatMap(a => a.charges || []), ...(state.shared?.charges || [])]) {
+    if (!c.category) c.category = 'autre';
+    if (!c.anchor) { c.anchor = 'date'; c.offset = 0; }
+    if (!c.steps) c.steps = [];
+    if (c.estimate === undefined) c.estimate = true;
+    if (c.note === undefined) c.note = '';
+    if (!c.type) c.type = 'fixe';
+  }
+  if (!state.implantation) state.implantation = defaultImplantation();
+  state.version = 8;
   return state;
 }
 
@@ -233,4 +374,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { appStart, capacityAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

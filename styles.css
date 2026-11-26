@@ -327,3 +327,20 @@ details.quarter > summary .sum-sub b { font-weight: 600; }
 .levers button { background: var(--bad); color: #fff; border-color: transparent; font-weight: 600; }
 a.lever { display: inline-flex; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; }
 .cap-alert details.fold > summary { font-weight: 600; }
+/* Charges */
+.tag.est { background: color-mix(in srgb, var(--k-cal) 18%, transparent); color: var(--ink); }
+.tag.todo { background: color-mix(in srgb, var(--bad) 15%, transparent); color: var(--bad); }
+details.card.charge { margin-top: 8px; box-shadow: none; border: 1px solid var(--line); }
+details.card.charge > summary .tag { margin-left: 4px; vertical-align: 1px; }
+.cat-dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; vertical-align: -1px; background: var(--k-sub); }
+.cat-dot.k-cal { background: var(--k-cal); } .cat-dot.k-price { background: var(--k-price); } .cat-dot.k-ins { background: var(--k-ins); } .cat-dot.k-promo { background: var(--k-promo); }
+table.ramp th small { font-weight: 400; color: var(--ink-soft); }
+table.ramp td:first-child { white-space: nowrap; }
+.net-split { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin: 12px 0; }
+.net-split > div { background: var(--ground); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 2px; }
+.net-split span { font-size: 12px; color: var(--ink-soft); }
+.net-split b { font-family: var(--display); font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.net-split .net { background: linear-gradient(135deg, var(--forest), var(--forest-2)); color: var(--on-forest); }
+.net-split .net span { color: inherit; opacity: .8; } .net-split .net b { color: inherit; }
+.warn { color: var(--ink); background: color-mix(in srgb, var(--k-cal) 14%, transparent); padding: 8px 10px; border-radius: 10px; font-size: 13px; }
+.warn:empty { display: none; }

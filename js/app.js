@@ -271,6 +271,23 @@ function capacityCard(a, p) {
       ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}</details>`;
 }
 
+function implantSection() {
+  const im = state.implantation;
+  const cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  const bases = [['result', 'du bénéfice'], ['ca', 'du chiffre d\'affaires']];
+  return section('st-implant', 'cal', 'Implantation de la société', esc(cur ? cur.name : '—'), `
+    <div class="grid">${select('Implantation retenue', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <p class="warn">Taux indicatifs à faire valider par un conseiller. Ils servent à comparer les scénarios dans l'onglet Résultat.</p>
+    ${im.scenarios.map((sc, k) => { const t = 'implantation.scenarios.' + k, id = 'imp-' + sc.id; return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(sc.name)}<br><span class="sum-sub">frais ${money(+sc.fixedYear || 0)} / an · cotisations ${num(+sc.socialRate || 0)} % · impôt ${num(+sc.taxRate || 0)} %${+sc.distRate ? ` · dividendes ${num(+sc.distRate)} %` : ''}</span></span></summary>
+      ${fields(sc, t, [['name', 'Nom du scénario', 'text']])}
+      <div class="grid">${field('Frais de structure (€ / an)', t + '.fixedYear', sc.fixedYear)}${field('Cotisations sociales (%)', t + '.socialRate', sc.socialRate)}${select('Calculées sur', t + '.socialBase', sc.socialBase, bases)}
+        ${field('Impôt (%)', t + '.taxRate', sc.taxRate)}${select('Calculé sur', t + '.taxBase', sc.taxBase, bases)}${field('Impôt sur les dividendes (%)', t + '.distRate', sc.distRate)}${field('Plafond de CA (€ / an, 0 = aucun)', t + '.caLimit', sc.caLimit || 0)}</div>
+      ${fields(sc, t, [['note', 'Remarques', 'text']])}
+      ${sc.note ? `<p class="muted">${esc(sc.note)}</p>` : ''}
+      <div class="row"><button class="danger" data-remove="${t}">Supprimer ce scénario</button></div></details>`; }).join('')}
+    <div class="row"><button data-add="implantation.scenarios">Ajouter un scénario</button></div>`);
+}
+
 function settingsPage(a, i) {
   const p = 'apps.' + i;
   const vat = state.vat.ttc ? `prix saisis TTC · TVA ${num(state.vat.rate)} %` : 'prix saisis HT';
@@ -285,6 +302,7 @@ function settingsPage(a, i) {
     <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
+      ${implantSection()}
       ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">Tes paramètres restent dans ce navigateur. Exporte-les régulièrement pour les garder ou les ouvrir sur un autre appareil.</p>
         <div class="row"><button id="export">Exporter les paramètres</button><label class="file"><span>Importer des paramètres</span><input id="import" type="file" accept=".json"></label></div>
         <p id="importMsg" class="warn"></p>`)}
@@ -518,47 +536,93 @@ function capacityBlock(r) {
 
 // ---------- Charges ----------
 
-const CHARGE_TYPES = [['fixe', 'Fixe, par mois'], ['cliente', 'Par cliente active, par mois'], ['inscription', 'Par inscription à un programme'], ['ca', 'Pourcentage du chiffre d\'affaires']];
-const AMOUNT_LABEL = { fixe: 'Montant (€ / mois)', cliente: 'Montant (€ / cliente / mois)', inscription: 'Montant (€ / inscription)', ca: 'Pourcentage (%)' };
-function chargeSummary(c, a) {
-  const prog = a.programs.find(p => p.id === c.scope);
-  const scope = c.scope === 'sub' ? soloName(a) : prog ? progName(a, prog) : 'Commune à ' + a.name;
-  const amount = c.type === 'ca' ? `${price(c.amount).replace('\u00a0€', '')} % du CA` : `${price(c.amount)}${{ fixe: ' / mois', cliente: ' / cliente / mois', inscription: ' / inscription' }[c.type]}`;
-  const when = c.start || c.end ? ` · ${c.start ? monthName(c.start) : '…'} → ${c.end ? monthName(c.end) : '…'}` : '';
-  return `${amount} · ${esc(scope)}${when}`;
+const CHARGE_TYPES = [['fixe', 'Fixe, par mois'], ['unique', 'Ponctuelle (une seule fois)'], ['cliente', 'Par cliente active, par mois'], ['inscription', 'Par inscription à un programme'], ['ca', 'Pourcentage du chiffre d\'affaires']];
+const AMOUNT_LABEL = { fixe: 'Montant (€ / mois)', unique: 'Montant (€, une fois)', cliente: 'Montant (€ / cliente / mois)', inscription: 'Montant (€ / inscription)', ca: 'Pourcentage (%)' };
+const CAT_NAME = Object.fromEntries(CHARGE_CATEGORIES);
+const CAT_KIND = { tech: 'sub', contenu: 'ins', logiciels: 'ins', paiement: 'price', marketing: 'promo', honoraires: 'cal', banque: 'cal', locaux: 'cal', impots: 'price', coaching: 'ins', personnel: 'promo', autre: 'sub' };
+const ANCHOR_NAME = { first: 'début des prévisions', product: 'démarrage du produit', launch: 'lancement commercial', sub: 'ouverture des abonnements' };
+const unitOf = c => ({ fixe: ' / mois', unique: ' une fois', cliente: ' / cliente / mois', inscription: ' / inscription', ca: '' }[c.type] || '');
+const amountText = (c, v) => c.type === 'ca' ? `${price(v).replace(' €', '')} % du CA` : `${price(v)}${unitOf(c)}`;
+function whenText(c, dates) {
+  const start = chargeStart(c, dates);
+  const from = c.anchor && c.anchor !== 'date' ? `${ANCHOR_NAME[c.anchor]}${+c.offset ? ' + ' + num(+c.offset) + ' mois' : ''}` : '';
+  const end = c.end ? ` jusqu'à ${monthName(c.end)}` : '';
+  if (c.type === 'unique') return `en ${start ? monthName(start) : monthName(dates.first)}${from ? ' (' + from + ')' : ''}`;
+  return `${start ? 'dès ' + monthName(start) : 'dès le début'}${from ? ' (' + from + ')' : ''}${end}`;
+}
+function chargeSummary(c, a, dates) {
+  const prog = a && a.programs.find(p => p.id === c.scope);
+  const scope = !a ? '' : c.scope === 'sub' ? ' · ' + esc(soloName(a)) : prog ? ' · ' + esc(progName(a, prog)) : '';
+  const steps = (c.steps || []).length ? ' → ' + [...c.steps].sort((x, y) => x.after - y.after).map(st => `${amountText(c, st.amount)} à +${num(st.after)} mois`).join(' → ') : '';
+  return `${amountText(c, c.amount)}${steps} · ${whenText(c, dates)}${scope}`;
+}
+const badge = c => !(+c.amount) && !(c.steps || []).some(st => +st.amount) ? '<span class="tag todo">À compléter</span>' : c.estimate ? '<span class="tag est">Estimation</span>' : '<span class="tag on">Confirmé</span>';
+
+function chargeEditor(c, t, a, dates, scopes) {
+  const id = 'ch' + c.id;
+  const anchors = CHARGE_ANCHORS.filter(([k]) => k !== 'product' || (a && c.scope && c.scope !== 'app'));
+  return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)} ${badge(c)}<br><span class="sum-sub">${chargeSummary(c, a, dates)}</span></span></summary>
+    ${fields(c, t, [['name', 'Nom', 'text']])}
+    <div class="grid">${select('Catégorie', t + '.category', c.category, CHARGE_CATEGORIES).replace('<label>', '<label class="wide">')}${select('Type', t + '.type', c.type, a ? CHARGE_TYPES : CHARGE_TYPES.filter(([k]) => k === 'fixe' || k === 'unique'))}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
+    ${scopes ? '<div class="grid">' + select('Rattachée à', t + '.scope', c.scope || 'app', scopes).replace('<label>', '<label class="wide">') + '</div>' : ''}
+    <h4>${c.type === 'unique' ? 'Quand' : 'Démarrage et fin'}</h4>
+    <div class="grid">${select(c.type === 'unique' ? 'Payée au' : 'Commence au', t + '.anchor', c.anchor || 'date', anchors).replace('<label>', '<label class="wide">')}
+      ${c.anchor === 'date' ? monthField('Mois', t + '.start', c.start, 'dès le début') : field('Décalage (mois après)', t + '.offset', c.offset || 0)}
+      ${c.type === 'unique' ? '' : monthField('Fin', t + '.end', c.end, 'sans fin')}</div>
+    <p class="muted">Calculé : ${whenText(c, dates)}. Si la date repère change dans ton calendrier, la charge suit.</p>
+    ${c.type === 'unique' ? '' : `<h4>Montée en charge</h4>
+    ${(c.steps || []).map((st, k) => lineEditor(st, `${t}.steps.${k}`, [['after', 'Au bout de (mois)'], ['amount', c.type === 'ca' ? 'Nouveau %' : 'Nouveau montant (€)']], 'Supprimer ce palier')).join('')}
+    <div class="row"><button data-add="${t}.steps">Ajouter un palier</button></div>`}
+    ${check('Montant confirmé (sinon, c\'est une estimation)', t + '.estimate_ok', !c.estimate)}
+    ${fields(c, t, [['note', 'Hypothèse, source ou remarque', 'text']])}
+    <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
+}
+
+// Charges mensuelles fixes à quelques dates clés : on voit la montée en charge d'un coup d'œil.
+function chargeRamp(list, dates, extra = []) {
+  const base = dates.launch || dates.first;
+  if (!base) return '';
+  const cols = [['Début', dates.first], ['Lancement', dates.launch], ['+ 6 mois', addMonths(base, 6)], ['+ 1 an', addMonths(base, 12)], ['+ 2 ans', addMonths(base, 24)]].filter(x => x[1]);
+  const fixedAt = (c, m) => c.type === 'fixe' ? chargeAt(c, m, dates) || 0 : 0;
+  const cats = CHARGE_CATEGORIES.filter(([k]) => list.some(c => c.category === k && cols.some(([, m]) => fixedAt(c, m))));
+  const rows = cats.map(([k, n]) => [`<span class="cat-dot k-${CAT_KIND[k]}"></span>${esc(n)}`, ...cols.map(([, m]) => money(list.filter(c => c.category === k).reduce((t, c) => t + fixedAt(c, m), 0)))]);
+  const totals = cols.map(([, m]) => list.reduce((t, c) => t + fixedAt(c, m), 0));
+  rows.push(['<b>Total par mois</b>', ...totals.map(v => `<b>${money(v)}</b>`)]);
+  return `<div class="scroll"><table class="ramp">${table(['', ...cols.map(([l, m]) => `${l}<br><small>${monthName(m)}</small>`)], rows, [...cats.map(() => ''), 'total'])}</table></div>
+    <p class="muted">Charges fixes mensuelles seulement. S'y ajoutent les charges ponctuelles, les frais proportionnels au CA, par cliente ou par inscription${extra.length ? ', et ' + extra.join(', ') : ''}.</p>`;
+}
+
+function chargeGroups(list, path, a, dates, scopes) {
+  return CHARGE_CATEGORIES.map(([k, n]) => {
+    const items = list.map((c, j) => ({ c, j })).filter(x => (x.c.category || 'autre') === k);
+    if (!items.length) return '';
+    const id = (a ? 'cg-' : 'sg-') + k;
+    const todo = items.filter(x => badge(x.c).includes('todo')).length;
+    return section(id, CAT_KIND[k], n, `${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
+      items.map(({ c, j }) => chargeEditor(c, `${path}.${j}`, a, dates, scopes)).join(''));
+  }).join('');
 }
 
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
-  const list = (a.charges || []).map((c, j) => {
-    const t = `${p}.charges.${j}`, id = 'ch' + c.id;
-    return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${chargeSummary(c, a)}</span></span></summary>
-      ${fields(c, t, [['name', 'Nom', 'text']])}
-      <div class="grid">${select('Type', t + '.type', c.type, CHARGE_TYPES)}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
-      ${select('Rattachée à', t + '.scope', c.scope || 'app', scopes)}
-      ${periodEditor(c, t)}
-      <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
-  }).join('');
+  const dates = appDates([a]), all = appDates(state.apps);
   const sh = state.shared;
-  const shared = sh.charges.map((c, j) => {
-    const t = `shared.charges.${j}`, id = 'sh' + c.id;
-    return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${price(c.amount)} / mois</span></span></summary>
-      ${fields(c, t, [['name', 'Nom', 'text'], ['amount', 'Montant (€ / mois)']])}
-      ${periodEditor(c, t)}
-      <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
-  }).join('');
-  return `<h2>Charges de ${esc(a.name)}</h2>
-    <p class="muted">Rattache chaque charge au produit qui la provoque pour voir sa vraie rentabilité. Une charge commune reste dans la colonne « Commun ».
-    Un pourcentage, un coût par cliente ou par inscription commun est réparti exactement entre les produits.</p>
-    ${list || '<p class="muted">Aucune charge.</p>'}
+  return `<div class="hero"><div><small>Charges fixes de ${esc(a.name)} par mois</small><div class="big">${money((a.charges || []).reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, addMonths(dates.launch || dates.first, 12), dates) || 0 : 0), 0))}</div><small>un an après le lancement, hors structure</small></div>
+      <div class="split"><div><span>Charges</span><b>${(a.charges || []).length}</b></div><div><span>À compléter</span><b>${(a.charges || []).filter(c => badge(c).includes('todo')).length}</b></div>
+        <div><span>Estimations</span><b>${(a.charges || []).filter(c => badge(c).includes('est')).length}</b></div><div><span>Confirmées</span><b>${(a.charges || []).filter(c => !c.estimate).length}</b></div></div></div>
+    <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
+    <h2>Charges de ${esc(a.name)}</h2>
+    <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
+    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes)}
     <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
-    ${a.programs.length ? `<div class="card" id="ch-coach">${fields(a, p, [['coachRate', 'Coût du coaching (€ / heure)']])}
+    ${a.programs.length ? `<div class="card" id="ch-coach"><h4>Coaching</h4>${fields(a, p, [['coachRate', 'Coût du coaching (€ / heure)']])}
       <p class="muted">Multiplié par les heures de coaching de chaque programme (minutes par cliente et par semaine, dans Produits). Laisse 0 si tu coaches toi-même et ne te rémunères pas à l'heure. Si tu embauches, indique ici le coût horaire moyen (ou ajoute une charge fixe pour un salaire).</p></div>` : ''}
     <h2>Charges de structure Om Holistic</h2>
-    <p class="muted">Charges communes à toutes les applications (comptable, banque, assurance…), réparties entre elles.</p>
+    <p class="muted">Communes à toutes les applications (banque, assurance, outils, locaux, personnel…), réparties entre elles.</p>
     <div class="card">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']])}</div>
-    ${shared}
+    <details class="card" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
+    ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
     <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`;
 }
 
@@ -581,6 +645,47 @@ function pnlColumns(r) {
   const cols = productKeys(x.a).map((k, j) => ({ name: k.name, off: k.off, go: { page: 'produits', open: j ? 'p' + (j - 1) : 'sd' }, v: { ...(s.cols[k.key] || {}), structure: null, result: null } }));
   cols.push({ name: 'Commun', common: true, go: { page: 'charges' }, v: { ca: null, fees: null, variable: null, coaching: null, margin: null, fixed: s.commonFixed, contribution: -s.commonFixed, structure: s.structure, result: null } });
   return { cols, total: { ...s.total, structure: s.structure } };
+}
+
+// Compte d'exploitation par nature de charge (présentation classique).
+function natureCard(r) {
+  const sums = r.scope.map(x => r.summary(x));
+  const ca = sums.reduce((t, s) => t + s.total.ca, 0), result = sums.reduce((t, s) => t + s.total.result, 0);
+  const cats = {};
+  for (const s of sums) for (const k in s.cats) cats[k] = (cats[k] || 0) + s.cats[k];
+  const lines = CHARGE_CATEGORIES.filter(([k]) => cats[k] > 0.005);
+  const total = lines.reduce((t, [k]) => t + cats[k], 0);
+  const pct = v => ca ? `${(v / ca * 100).toFixed(1)} %` : '—';
+  const rows = [['<b>Chiffre d\'affaires' + (state.vat.ttc ? ' HT' : '') + '</b>', `<b>${money(ca)}</b>`, '100 %'],
+    ...lines.map(([k, n]) => [`<span class="cat-dot k-${CAT_KIND[k]}"></span>${esc(n)}`, signed(-cats[k]), pct(cats[k])]),
+    ['Total des charges', signed(-total), pct(total)], ['<b>Résultat d\'exploitation</b>', `<b>${signed(result)}</b>`, pct(result)]];
+  return `<details class="card" id="r-nature" ${view.open.has('r-nature') ? 'open' : ''}><summary>Compte d'exploitation par nature</summary>
+    <p class="muted">Les charges regroupées par catégorie, structure Om Holistic comprise${view.app === 'all' ? '' : ' (quote-part de ' + esc(r.scope[0].a.name) + ')'}. <a href="#charges">Voir les charges</a></p>
+    <div class="scroll"><table class="pnl nature">${table(['', 'Montant', '% du CA'], rows, [...rows.map((_, i) => i === rows.length - 1 ? 'total' : i === rows.length - 2 ? 'sub' : '')])}</table></div></details>`;
+}
+
+// Résultat net de la société selon chaque implantation (toutes les applications).
+function implantCard(r) {
+  const im = state.implantation;
+  const sums = r.all.map(x => r.summary(x));
+  const ca = sums.reduce((t, s) => t + s.total.ca, 0), result = sums.reduce((t, s) => t + s.total.result, 0);
+  const months = new Set(r.all.flatMap(x => x.months.filter(m => inPeriod(m.month)).map(m => m.month))).size || 1;
+  const res = im.scenarios.map(sc => ({ sc, ...afterTax(sc, ca, result, months) }));
+  const yearCa = ca * 12 / months;
+  const over = x => +x.sc.caLimit > 0 && yearCa > +x.sc.caLimit;
+  const allowed = res.filter(x => !over(x));
+  const best = (allowed.length ? allowed : res).reduce((b, x) => x.net > b.net ? x : b, (allowed.length ? allowed : res)[0]);
+  const cur = res.find(x => x.sc.id === im.current) || res[0];
+  const row = x => [`${x.sc.id === im.current ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === im.current ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
+    signed(-x.fixed || 0), signed(-x.social || 0), signed(-(x.tax + x.dist) || 0), `<b>${signed(x.net)}</b>`, ca ? `${(x.net / ca * 100).toFixed(0)} %` : '—'];
+  return `<details class="card" id="r-implant" ${view.open.has('r-implant') || !view.open.size ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
+    <div class="grid">${select('Implantation retenue', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="net-split"><div><span>Résultat d'exploitation</span><b>${money(result)}</b></div><div><span>Frais de structure</span><b>${money(-cur.fixed || 0)}</b></div><div><span>Cotisations sociales</span><b>${money(-cur.social || 0)}</b></div><div><span>Impôts</span><b>${money(-(cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b class="${cur.net < 0 ? 'neg' : ''}">${money(cur.net)}</b></div></div>
+    ${over(cur) ? `<p class="warn">Ton chiffre d'affaires (environ ${money(yearCa)} par an) dépasse le plafond de ${money(+cur.sc.caLimit)} de ce statut.</p>` : ''}
+    <h4>Comparaison des implantations</h4>
+    <div class="scroll"><table class="pnl">${table(['Implantation', 'Frais', 'Cotisations', 'Impôts', 'Net', '% du CA'], res.map(row))}</table></div>
+    <p class="warn">Taux indicatifs, à faire valider par un conseiller fiscal. Le lieu où tu vis décide en général de ton imposition, et la TVA européenne reste due sur les ventes aux clientes européennes quelle que soit l'implantation. Toutes les applications Om Holistic sont comptées ensemble.</p>
+    <p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Modifier les taux et les frais de chaque implantation</a></p></details>`;
 }
 
 function resultatPage() {
@@ -612,6 +717,8 @@ function resultatPage() {
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>
     <details class="card" id="r-table" open><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary><p class="muted">Touche le nom d'${view.app === 'all' ? 'une application' : 'un produit'} pour ouvrir ses réglages.</p>${tableHtml}</details>
+    ${natureCard(r)}
+    ${implantCard(r)}
     <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
         <p class="muted">La <b>contribution</b> d'un produit, c'est ce qu'il rapporte une fois payés ses propres coûts : frais de paiement, coûts par cliente, coaching et charges fixes qui lui sont rattachées.
         Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>`;
@@ -669,7 +776,8 @@ document.addEventListener('change', async e => {
     }
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
-    o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
+    if (k === 'estimate_ok') o.estimate = !t.checked;
+    else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
     save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
     // pour que les résumés se mettent à jour sans fermer le clavier.
@@ -705,11 +813,14 @@ document.addEventListener('click', e => {
     const fresh = {
       programs: () => program('Nouveau programme', thisMonth, [100, 150, 200], 8),
       paliers: () => ({ rate: 2, weeks: 8 }),
-      steps: () => { const l = o[k][o[k].length - 1]; return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
+      steps: () => { const l = o[k][o[k].length - 1];
+        if (o.type) return l ? { after: +l.after + 12, amount: +l.amount } : { after: 12, amount: +o.amount || 0 };
+        return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
       capacitySteps: () => ({ date: thisMonth, capacity: 20, hours: 15 }),
       cohorts: () => ({ name: ['Cohorte alpha', 'Deuxième cohorte', 'Troisième cohorte'][o[k].length] || `Cohorte ${o[k].length + 1}`, date: thisMonth, size: 10 }),
-      charges: () => charge('Nouvelle charge', 'fixe', 0)
+      scenarios: () => ({ id: newId(), name: 'Nouveau scénario', fixedYear: 0, socialRate: 0, socialBase: 'result', taxRate: 0, taxBase: 'result', distRate: 0, note: '' }),
+      charges: () => charge('Nouvelle charge', 'fixe', 0, 'app', '', '', { anchor: 'first' })
     }[k];
     o[k].push(fresh()); save(); render();
   } else if (t.dataset.remove) {

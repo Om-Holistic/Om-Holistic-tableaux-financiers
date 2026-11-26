@@ -57,17 +57,33 @@ tarif de lancement → phase 2, tarif standard → phase 3.
 
 ## Charges et compte d'exploitation
 
-Chaque charge a un type et se rattache à un produit ou à toute l'application :
+Chaque charge a une **catégorie** (hébergement et services techniques, contenus et licences, logiciels, frais de paiement,
+publicité, honoraires, banque et assurances, loyer, impôts et taxes, coaching, personnel, autres), un **type**
+(fixe par mois, ponctuelle, par cliente active, par inscription, % du CA) et se rattache à un produit ou à toute l'application.
 
-- **fixe** (€ / mois), **par cliente active** (€ / cliente / mois), **par inscription** (€), ou **% du CA** ;
-- le coaching est valorisé à un coût horaire (0 par défaut) multiplié par les heures de chaque programme.
+- **Démarrage relatif au calendrier** : début des prévisions, démarrage du produit, lancement commercial, ouverture des
+  abonnements (+ décalage en mois), ou date précise. Si la date repère bouge, la charge suit.
+- **Montée en charge** : paliers « au bout de X mois, nouveau montant ».
+- **Estimation ou confirmé** : chaque charge reste une estimation tant qu'elle n'est pas confirmée ; un montant à 0 est
+  signalé « à compléter » (loyer, salaire, rémunération de la dirigeante…).
+- Le tableau « Montée en charge » montre les charges fixes mensuelles au début, au lancement, à +6 mois, +1 an et +2 ans.
 
-Une charge variable commune (pourcentage, par cliente, par inscription) est répartie exactement entre les produits ;
-une charge fixe commune reste dans la colonne « Commun ». Les charges de structure Om Holistic sont réparties
-entre les applications au prorata du CA ou à parts égales. Si les prix sont saisis TTC, le compte les convertit en HT.
+Les montants pré-remplis sont des estimations (seul YMove, 29 € / mois, est confirmé).
+Le coaching est valorisé à un coût horaire multiplié par les heures de chaque programme. Une charge variable commune est
+répartie exactement entre les produits ; une charge fixe commune reste dans la colonne « Commun ». Les charges de structure
+Om Holistic sont réparties entre les applications au prorata du CA ou à parts égales. Si les prix sont saisis TTC, le compte
+les convertit en HT.
 
 Contribution d'un produit = CA − frais − coûts variables − coaching − charges fixes rattachées.
 Résultat d'exploitation = somme des contributions − charges fixes communes − quote-part de structure.
+L'onglet Résultat présente aussi le **compte d'exploitation par nature** (une ligne par catégorie).
+
+## Implantation de la société
+
+Réglages › Implantation : chaque scénario (France micro-entreprise, SASU, LLC Wyoming avec résidence en France, au Belize
+ou en République dominicaine…) a ses frais de structure annuels, ses cotisations sociales (sur le bénéfice ou le CA), son
+impôt, un impôt sur les dividendes et un éventuel plafond de CA. L'onglet Résultat calcule le net de la société pour
+l'implantation retenue et compare tous les scénarios. **Taux indicatifs, à faire valider par un conseiller.**
 
 ## Calcul
 
