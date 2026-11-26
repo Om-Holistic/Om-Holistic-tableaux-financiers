@@ -1063,6 +1063,9 @@ function chargesPeriodCard(a, i, r) {
     <p class="muted">Pourcentages : part du chiffre d'affaires HT. Le résultat est celui de la page Résultat, ${periodName()}.${quiet.length ? ` Sans coût sur la période (pas encore démarrées ou terminées) : ${quiet.join(', ')}.` : ''}${sc && sc.id !== 'central' ? ` Scénario ${esc(sc.name)} : montants ajustés comme dans Résultat, les fiches plus bas montrent le plan central.` : ''}</p></details>`;
 }
 
+// Bloc dépliable de la page Charges (replié par défaut), total de la période dans l'en-tête.
+const chargeFold = (id, title, sub, body) => `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${title}<br><span class="sum-sub">${sub}</span></span></summary>${body}</details>`;
+
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
@@ -1072,6 +1075,9 @@ function chargesPage(a, i) {
   const fixedAt = (list, ds) => list.reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, ref, ds) || 0 : 0), 0);
   const list = a.charges || [], todo = list.filter(c => badge(c).includes('todo')).length, est = list.filter(c => badge(c).includes('est')).length;
   const r = results(), cost = r.sum('cost');
+  const nV = list.filter(c => !isFixed(c)).length, nF = list.length - nV;
+  const pe = r.all[i].pnl.filter(e => inPeriod(e.month)), ps = pe.length ? sumPnl(pe) : null;
+  const tot = ps && { v: ps.total.fees + ps.total.variable + ps.total.coaching, f: ps.total.fixed, s: ps.structure };
   return `${banner({ label: 'Charges', chip: periodChip(), big: money(cost),
       note: `${pctOf(cost, r.sum('caHT'))} du CA HT ${periodName()}, structure comprise : le même total que dans Résultat. Détail juste en dessous.`,
       tiles: [
@@ -1083,20 +1089,18 @@ function chargesPage(a, i) {
     ${chargesPeriodCard(a, i, r)}
     ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
-    <h2>Charges variables de ${esc(a.name)}</h2>
-    <p class="muted">Elles suivent l'activité : par cliente, par inscription ou en pourcentage du chiffre d'affaires.</p>
-    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
-    <h2>Charges fixes de ${esc(a.name)}</h2>
-    <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
-    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
-    <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
-    ${a.programs.length ? `<div class="card" id="ch-coach"><h4>Coaching</h4><p class="muted">Le coût du coaching vient des heures de coachs embauchées et de leur coût horaire (${money(+a.coachRate || 0)} / h), réglés dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p></div>` : ''}
-    <h2>Charges de structure Om Holistic</h2>
-    <p class="muted">Communes à toutes les applications (banque, assurance, outils, locaux, personnel…), réparties entre elles.</p>
-    <div class="card">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']])}</div>
-    <details class="card" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
-    ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
-    <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`;
+    ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
+      `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
+      ${a.programs.length ? `<p class="muted">Coaching : heures de coachs × ${money(+a.coachRate || 0)} / h, réglé dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p>` : ''}
+      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+    ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${nF} charge${nF > 1 ? 's' : ''}${tot ? ` · ${money(tot.f)} ${periodName()}` : ''}`,
+      `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
+      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+    ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}${tot ? ` · quote-part ${money(tot.s)} ${periodName()}` : ''}`,
+      `<div class="grid">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']]).replace('<label>', '<label class="wide">')}</div>
+      <details class="fold" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
+      ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
+      <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`)}`;
 }
 
 // ---------- Compte d'exploitation ----------
