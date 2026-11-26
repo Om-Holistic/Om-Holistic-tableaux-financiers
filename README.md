@@ -104,7 +104,7 @@ des abonnements = 1 / durée moyenne (0 = aucune résiliation).
 - `js/engine.js` : simulation
 - `js/pnl.js` : compte d'exploitation
 - `js/app.js` : interface
-- `tests/engine.test.js` : tests du calcul, à lancer avec `node --test tests/engine.test.js`
+- `tests/engine.test.js` : tests du calcul, à lancer avec `node --test tests/engine.test.js tests/audit.test.js`
 
 ## Installer sur iPad ou iPhone
 
