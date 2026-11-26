@@ -57,7 +57,7 @@ header {
 
 #tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(8, 1fr);
+  display: grid; grid-template-columns: repeat(9, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
@@ -620,3 +620,11 @@ ul.hist li { display: flex; align-items: center; justify-content: space-between;
   .toolbar.four { grid-template-columns: minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .9fr); }
   .toolbar select { padding-left: 10px; }
 }
+
+/* Utilisatrices : légende des courbes et tableau par période. */
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 4px 0 8px; font-size: 13px; color: var(--ink-soft); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i, .dotk { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.dotk { margin-right: 5px; vertical-align: -1px; }
+table.users td, table.users th { text-align: right; white-space: nowrap; }
+table.users td:first-child, table.users th:first-child { text-align: left; }
