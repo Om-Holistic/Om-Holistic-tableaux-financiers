@@ -166,6 +166,8 @@ details.fold > summary { font-size: 14px; }
 .chart svg { display: block; width: 100%; height: auto; min-width: 300px; }
 .chart text { fill: var(--ink-soft); font: 10px var(--body); }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--ink-soft); stroke-width: 1; }
+.chart text.unit { font-weight: 600; }
 
 /* Produits : une ligne par produit avec barre de part du CA */
 .prod { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -629,6 +631,13 @@ ul.hist li { display: flex; align-items: center; justify-content: space-between;
 table.users td, table.users th { text-align: right; white-space: nowrap; }
 table.users td:first-child, table.users th:first-child { text-align: left; }
 
+/* Bulle de valeur sur les graphiques. */
+#tip { position: fixed; z-index: 40; max-width: min(320px, calc(100vw - 16px)); padding: 7px 10px; border-radius: 10px; background: var(--ink); color: var(--surface); font-size: 13px; line-height: 1.35; font-weight: 500; pointer-events: none; box-shadow: 0 6px 18px -8px rgba(0,0,0,.4); }
+svg [data-tip] { cursor: pointer; }
+svg .hit { fill: transparent; }
+svg .pt.on circle:not(.hit) { r: 5; stroke: var(--surface); stroke-width: 2; }
+svg g.on rect { opacity: 1; filter: brightness(1.12); }
+
 /* Coaching : heures nécessaires, tes heures, heures à déléguer. */
 table.coach-need td, table.coach-need th { text-align: right; white-space: nowrap; }
 table.coach-need td:first-child, table.coach-need th:first-child { text-align: left; }
@@ -644,3 +653,32 @@ table.coach-need tr.c-block td:first-child { box-shadow: inset 3px 0 0 var(--bad
 .cstep dd { margin: 2px 0 0; font-weight: 600; }
 .cstep dd small { display: block; font-weight: 400; color: var(--ink-soft); font-size: 12px; }
 @media (max-width: 520px) { .cstep dl { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* Menu vertical sur téléphone : bouton en haut à gauche, volet qui glisse depuis la gauche. */
+.menubtn { display: none; }
+@media (max-width: 767px) {
+  header { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 30; display: flex; align-items: center; gap: 10px; padding-block: 8px; min-height: 56px; }
+  .head h1 { font-size: 1.2rem; }
+  .head p { display: none; }
+  .menubtn { display: inline-flex; align-items: center; justify-content: center; width: 42px; height: 42px; margin-left: -6px; border: 0; border-radius: 12px; background: transparent; color: var(--on-forest); cursor: pointer; }
+  .menubtn:active { background: rgba(255, 255, 255, .1); }
+  .menubtn svg { width: 26px; height: 26px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .toolbar { top: calc(env(safe-area-inset-top, 0px) + 56px); }
+  #tabs {
+    top: 0; bottom: 0; left: 0; right: auto; z-index: 50; width: min(290px, 84vw);
+    display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+    background: var(--forest); border: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 12px calc(env(safe-area-inset-bottom, 0px) + 18px) max(12px, env(safe-area-inset-left, 0px));
+    transform: translateX(-105%); transition: transform .22s ease; box-shadow: 8px 0 30px -12px rgba(0, 0, 0, .5);
+  }
+  body.menu-open #tabs { transform: none; }
+  #tabs a, .menu-open #tabs a { flex-direction: row; gap: 14px; padding: 13px 14px; border-radius: 12px; font-size: 16px; color: var(--on-forest); opacity: .8; text-align: left; }
+  #tabs a.current { opacity: 1; color: #fff; background: var(--sage); }
+  #tabs svg { width: 22px; height: 22px; }
+  #tabs .s { display: none; }
+  #tabs .l { display: inline; }
+  .menushade { position: fixed; inset: 0; z-index: 28; background: rgba(15, 10, 30, .45); }
+  body.menu-open { overflow: hidden; }
+  main { padding-bottom: calc(80px + env(safe-area-inset-bottom, 0px)); }
+  .savebtn { bottom: calc(18px + env(safe-area-inset-bottom, 0px)); }
+}

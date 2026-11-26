@@ -663,9 +663,23 @@ function productLines(r) {
     <span class="meter"><i style="width:${(l.ca / max * 100).toFixed(1)}%;background:${l.color}"></i></span><span class="muted">${l.detail}</span></div>`).join('');
 }
 
+// Graduations rondes (1, 2, 2,5 ou 5 × 10^n) qui couvrent [lo, hi], environ n intervalles.
+function niceScale(lo, hi, n = 4, minStep = 0) {
+  const raw = Math.max(1e-9, hi - lo) / n, mag = 10 ** Math.floor(Math.log10(raw));
+  const step = Math.max(minStep, [1, 2, 2.5, 5, 10].map(f => f * mag).find(v => v >= raw - 1e-12));
+  const a = Math.floor(lo / step + 1e-9) * step, b = Math.max(a + step, Math.ceil(hi / step - 1e-9) * step);
+  const ticks = []; for (let k = 0; a + k * step <= b + step / 2; k++) ticks.push(a + k * step);
+  return { lo: a, hi: b, ticks };
+}
+// Axes : ordonnée graduée avec son unité en haut, abscisse au niveau du zéro.
+function axes(left, W, top, y0, unit) {
+  return `<line class="axis" x1="${left}" x2="${left}" y1="${top}" y2="${y0}"/><line class="axis" x1="${left}" x2="${W}" y1="${y0}" y2="${y0}"/>`
+    + (unit ? `<text class="unit" x="4" y="11">${unit}</text>` : '');
+}
+
 // Barres empilées : programmes (sauge) et abonnements (argile), sur une échelle arrondie.
 function chart(byMonth) {
-  const W = Math.max(320, byMonth.length * 26), H = 190, left = 44, bottom = 22, top = 8;
+  const W = Math.max(320, byMonth.length * 26), H = 206, left = 44, bottom = 22, top = 26;
   const raw = Math.max(1, ...byMonth.map(m => m.total));
   const mag = 10 ** Math.floor(Math.log10(raw)), max = Math.ceil(raw / mag / 2) * mag * 2 || 1;
   const y = v => top + (H - top - bottom) * (1 - v / max), bw = (W - left) / Math.max(1, byMonth.length);
@@ -678,10 +692,10 @@ function chart(byMonth) {
     + byMonth.map((m, i) => {
       const x = left + i * bw + bw * .15, w = bw * .7, subs = m.directCA + m.postCA;
       const label = i % every === 0 ? `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${byMonth.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g><title>${m.month} : ${money(m.total)} (programmes ${money(m.sales)}, abonnements ${money(subs)})</title>
+      return `<g data-tip="${esc(`${monthName(m.month)} : ${money(m.total)} · programmes ${money(m.sales)} · abonnements ${money(subs)}`)}">
         <rect x="${x}" y="${y(m.sales)}" width="${w}" height="${y(0) - y(m.sales)}" rx="2" fill="var(--sage)"/>
         <rect x="${x}" y="${y(m.total)}" width="${w}" height="${Math.max(0, y(m.sales) - y(m.total))}" rx="2" fill="var(--clay)"/></g>${label}`;
-    }).join('') + '</svg>';
+    }).join('') + axes(left, W, top, y(0), '€') + '</svg>';
 }
 
 // ---------- Tableau de bord : ce qui demande ton attention ----------
@@ -782,23 +796,23 @@ function cashRange(all) {
 function cashChart(bs) {
   // Largeur réelle de la carte : le texte et les barres gardent leur taille, sur iPhone comme sur iPad.
   const avail = Math.max(300, ($('page')?.clientWidth || 360) - 34);
-  const W = Math.max(avail, bs.length * 34), H = 210, left = 52, bottom = 24, top = 10, right = 8;
-  const hi = Math.max(1, ...bs.map(b => Math.max(b.inflow, b.balance))), lo = Math.min(0, ...bs.map(b => Math.min(-(b.charges + b.taxes + b.pay), b.balance)));
+  const W = Math.max(avail, bs.length * 34), H = 220, left = 52, bottom = 24, top = 14, right = 8;
+  const sc = niceScale(Math.min(0, ...bs.map(b => Math.min(-(b.charges + b.taxes + b.pay), b.balance))), Math.max(1, ...bs.map(b => Math.max(b.inflow, b.balance))), 5), hi = sc.hi, lo = sc.lo;
   const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1));
   const slot = (W - left - right) / Math.max(1, bs.length), bw = Math.max(3, Math.min(28, slot * 0.5)), cx = i => left + slot * (i + 0.5);
-  const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
+  const ticks = sc.ticks;
   const every = Math.ceil(bs.length / 12);
   const step = view.cashStep;
   const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MSHORT[+b.key.slice(5) - 1].replace('.', '') + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie par période">`
     + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
     + bs.map((b, i) => { const out = b.charges + b.taxes + b.pay;
-      return `<g><title>${bucketName(b.key, step)} : entrées ${money(b.inflow)}, sorties ${money(out)}, solde ${money(b.balance)}</title>`
+      return `<g data-tip="${esc(`${bucketName(b.key, step)} : entrées ${money(b.inflow)} · sorties ${money(out)} · solde ${money(b.balance)}`)}">`
         + `<rect x="${cx(i) - bw / 2}" y="${y(b.inflow)}" width="${bw}" height="${Math.max(0, y(0) - y(b.inflow))}" rx="2" fill="var(--good)" opacity=".75"/>`
         + `<rect x="${cx(i) - bw / 2}" y="${y(0)}" width="${bw}" height="${Math.max(0, y(-out) - y(0))}" rx="2" fill="var(--sage)" opacity=".6"/></g>`; }).join('')
-    + `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink-soft)" stroke-width="1"/>`
+    + axes(left, W, top, y(0), '')
     + `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(b.balance).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
-    + bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 24 ? 0 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/>`).join('')
+    + bs.map((b, i) => `<g class="pt" data-tip="${esc(`${bucketName(b.key, step)} : solde ${money(b.balance)}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(b.balance)}" r="12"/><circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 48 ? 2 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/></g>`).join('')
     + bs.map((b, i) => i % every === 0 || step === 'm' ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b)}</text>` : '').join('')
     + '</svg>';
 }
@@ -816,16 +830,17 @@ function userSeries(r) {
 }
 function usersChart(bs, series) {
   const avail = Math.max(300, ($('page')?.clientWidth || 360) - 34);
-  const W = Math.max(avail, bs.length * 34), H = 220, left = 46, bottom = 24, top = 10, right = 10;
-  const hi = Math.max(1, ...series.flatMap(s => bs.map(b => s.v[b.i])));
+  const W = Math.max(avail, bs.length * 34), H = 236, left = 46, bottom = 24, top = 26, right = 10;
+  const sc = niceScale(0, Math.max(1, ...series.flatMap(s => bs.map(b => s.v[b.i]))), 5, 1), hi = sc.hi;
   const y = v => top + (H - top - bottom) * (1 - v / hi);
   const slot = (W - left - right) / Math.max(1, bs.length), cx = i => left + slot * (i + 0.5);
   const every = Math.max(1, Math.ceil(bs.length / Math.max(4, Math.floor((W - left) / 46)))), step = view.cashStep;
   const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MSHORT[+b.key.slice(5) - 1].replace('.', '') + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Utilisatrices par produit">`
-    + [0, hi / 2, hi].map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${num(Math.round(v))}</text>`).join('')
-    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"><title>${esc(s.name)}</title></polyline>`
-      + (bs.length <= 24 ? bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="2.5" fill="${s.color}"><title>${esc(s.name)} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))}</title></circle>`).join('') : '')).join('')
+    + sc.ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${num(Math.round(v))}</text>`).join('')
+    + axes(left, W, top, y(0), 'nombre')
+    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>`).join('')
+    + series.map(s => bs.map((b, i) => `<g class="pt" data-tip="${esc(`${s.short} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))} ${s.kind}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(s.v[b.i])}" r="11"/><circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="${bs.length > 48 ? 2 : 3}" fill="${s.color}"/></g>`).join('')).join('')
     + bs.map((b, i) => i % every === 0 ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b) || MSHORT[+b.key.slice(5) - 1]?.replace('.', '') || ''}</text>` : '').join('')
     + '</svg>';
 }
@@ -848,7 +863,7 @@ function usersPage() {
       note: last ? `Fin ${monthName(months[last.i])} : ${series.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
       tiles: series.slice(0, 4).map(tile) })}
     ${bs.length ? `<details class="card" id="us-chart" open><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
-      ${legend}<div class="scroll chart-scroll">${usersChart(bs, series)}</div></details>
+      ${legend}<div class="chart">${usersChart(bs, series)}</div></details>
     <details class="card" id="us-table" ${view.open.has('us-table') || !view.open.has('us-table-closed') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
       <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
 }
@@ -1058,7 +1073,7 @@ function capacityChart(x) {
   }
   const list = [...months.values()];
   if (!list.length) return '';
-  const W = Math.max(320, list.length * 26), H = 170, left = 34, bottom = 22, top = 8;
+  const W = Math.max(320, list.length * 26), H = 186, left = 34, bottom = 22, top = 26;
   const raw = Math.max(5, ...list.map(m => Math.max(m.hours, m.limit === Infinity ? 0 : m.limit)));
   const tick = Math.max(5, Math.ceil(raw / 4 / 5) * 5), max = Math.ceil(raw / tick) * tick;
   const y = v => top + (H - top - bottom) * (1 - v / max), bw = (W - left) / list.length;
@@ -1070,10 +1085,10 @@ function capacityChart(x) {
     + list.map((m, i) => {
       const bx = left + i * bw + bw * .18, w = bw * .64, over = m.hours > m.limit + 1e-9;
       const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g><title>${monthName(m.month)} : ${m.hours.toFixed(1)} h de coaching par semaine${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h disponibles`} (${num(m.people)} clientes en même temps)</title>
+      return `<g data-tip="${esc(`${monthName(m.month)} : ${(Math.round(m.hours * 10) / 10).toLocaleString('fr-FR')} h de coaching par semaine${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h disponibles`} · ${num(m.people)} clientes en même temps`)}">
         <rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(0) - y(m.hours)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
     }).join('')
-    + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + '</svg>';
+    + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + axes(left, W, top, y(0), 'h / sem.') + '</svg>';
 }
 
 function capacityBlock(r) {
@@ -2194,3 +2209,40 @@ Sync.init({
 route();
 
 saveLabel();
+
+// Valeur d'un point ou d'une barre : on touche (iPhone, iPad) ou on survole (ordinateur), une bulle l'affiche. Même comportement sur tous les graphiques.
+(() => {
+  const tip = document.createElement('div'); tip.id = 'tip'; tip.hidden = true; document.body.appendChild(tip);
+  let cur = null, y0 = 0;
+  const hide = () => { tip.hidden = true; if (cur) cur.classList.remove('on'); cur = null; };
+  const show = (el, x, y) => {
+    if (cur !== el) { if (cur) cur.classList.remove('on'); cur = el; el.classList.add('on'); }
+    tip.textContent = el.dataset.tip; tip.hidden = false; y0 = window.scrollY;
+    const w = tip.offsetWidth, h = tip.offsetHeight, vw = document.documentElement.clientWidth;
+    tip.style.left = Math.max(8, Math.min(vw - w - 8, x - w / 2)) + 'px';
+    tip.style.top = Math.max(8, y - h - 14) + 'px';
+  };
+  const at = e => { const el = e.target.closest && e.target.closest('svg [data-tip]'); if (!el) return null; const b = el.getBoundingClientRect(); return { el, x: b.left + b.width / 2, y: b.top }; };
+  document.addEventListener('click', e => { const t = at(e); if (t) show(t.el, t.x, t.y); else hide(); }, true);
+  window.addEventListener('scroll', () => { if (cur && Math.abs(window.scrollY - y0) > 30) hide(); }, { passive: true });
+  let touch = false;
+  document.addEventListener('pointerdown', e => { touch = e.pointerType !== 'mouse'; }, true);
+  document.addEventListener('mouseover', e => { if (touch) return; const t = at(e); if (t) show(t.el, t.x, t.y); else if (cur) hide(); });
+})();
+
+// Menu vertical du téléphone : le bouton en haut à gauche ouvre le volet, un choix ou un appui à côté le referme.
+(() => {
+  const btn = document.getElementById('menuBtn'), shade = document.getElementById('menuShade');
+  if (!btn) return;
+  const set = open => {
+    document.body.classList.toggle('menu-open', open);
+    shade.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Fermer le menu' : 'Ouvrir le menu');
+  };
+  btn.addEventListener('click', () => set(!document.body.classList.contains('menu-open')));
+  shade.addEventListener('click', () => set(false));
+  document.getElementById('tabs').addEventListener('click', e => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+  window.addEventListener('hashchange', () => set(false));
+})();
