@@ -124,6 +124,9 @@ Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appare
 - **Charges** : compte d'exploitation de la période (CA, charges variables par nature, marge sur coûts variables, charges fixes par nature, quote-part de structure, résultat), dépliable ; fiches rangées en charges variables puis charges fixes.
 - **Indicateurs clés (investisseurs)** (Résultat) : MRR, ARR, croissance, churn, ARPU, LTV, CAC, LTV / CAC, retour sur CAC, marge brute, EBITDA, point mort, besoin de financement, burn rate, autonomie ; détail par programme.
 - **Repères investisseurs** (Réglages) : seuils « bon » et « correct » de chaque indicateur (croissance, churn, LTV / CAC, retour sur CAC, marge brute, règle des 40, autonomie), affichés en pastille verte, orange ou rouge.
+- **Trajectoire** (Résultat) : les indicateurs investisseurs année par année jusqu'en 2034, colorés selon les repères, avec l'année où chaque repère est atteint.
+- **Levée de fonds** (Résultat, une application choisie) : montant à demander (trésorerie à couvrir sur l'autonomie visée), ce que la valorisation permet (ARR × multiple, ou valorisation de pré-amorçage, et 15 à 25 % du capital cédé), stade estimé ; hypothèses modifiables dans la carte.
+- **Horizon** : les prévisions vont jusqu'à fin 2034 (au moins 5 ans après le lancement de chaque application).
 - **Chaque application comme une société à part** : en choisissant une application en haut, Trésorerie et indicateurs la montrent seule (quote-part de structure et impôts compris, sans apport ni ta rémunération), pour une levée de fonds par application. « Om Holistic · consolidé » montre toute la société.
 - **Réel face au prévu** (Chiffre d'affaires) : saisie mensuelle du CA et des charges réels, écart au prévu.
 - **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.

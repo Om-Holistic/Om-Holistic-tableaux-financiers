@@ -42,6 +42,9 @@ function weeklyRate(p, w) {
 // Taux de survie mensuel d'un abonnement : résiliation mensuelle = 1 / durée moyenne.
 const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 1;
 
+// Dernière année des prévisions (au moins 5 ans après le lancement de l'appli).
+const HORIZON_END = 2034;
+
 function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
@@ -59,7 +62,7 @@ function simulate(a, soloStock) {
   }
   soloStock = soloStock || new Map();
   const start = monthDate(appStart(a));
-  const end = new Date(Date.UTC(start.getUTCFullYear() + 5, 11, 31));
+  const end = new Date(Date.UTC(Math.max(HORIZON_END, start.getUTCFullYear() + 5), 11, 31));
   const months = new Map();
   for (let d = start; d <= end; d = shiftMonth(d, 1)) months.set(monthKey(d), emptyMonth(monthKey(d), a));
   // Ajoute une valeur hebdomadaire aux mois couverts par la semaine.

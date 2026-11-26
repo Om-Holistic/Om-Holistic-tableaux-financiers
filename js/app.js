@@ -513,6 +513,10 @@ function results(sc = currentScenario()) {
       m.cost = t.charges; m.net = t.result; m.caHT = t.ca;
     });
   });
+  return scoped({ all, st });
+}
+// Même simulation, restreinte à l'application et à la période affichées (servira aussi année par année).
+function scoped({ all, st }) {
   const scope = view.app === 'all' ? all : [all[+view.app] || all[0]];
   const rows = scope.flatMap(x => x.months.filter(m => inPeriod(m.month)));
   const keys = [...new Set(rows.map(r => r.month))].sort();
@@ -1251,9 +1255,10 @@ function progKpis(r, s) {
     <div class="scroll"><table>${table(['Programme', 'Inscriptions', 'CA HT / inscription', 'Coaching / inscription', 'Contribution / inscription', 'Contribution', 'Taux'], rows, [])}</table></div>
     <p class="muted">Contribution : ce que le programme laisse après ses coûts variables, son coaching et ses charges fixes propres, avant les charges communes et la structure.</p>`;
 }
-function kpiCard(r) {
+// Indicateurs investisseurs de la période affichée.
+function kpiValues(r, tr = scopeTreasury(r)) {
   const scope = r.scope, ms = r.byMonth;
-  if (!ms.length) return '';
+  if (!ms.length) return null;
   const ht = x => state.vat?.ttc ? x / (1 + (+state.vat.rate || 0) / 100) : x;
   const s = sumPnl(scope.flatMap(x => x.pnl.filter(e => inPeriod(e.month)))), t = s.total;
   const last = ms.at(-1), first = ms[0];
@@ -1276,29 +1281,44 @@ function kpiCard(r) {
   const mkt = s.cats.marketing || 0, cac = fresh > 0.5 ? mkt / fresh : null;
   const ratio = ltv !== null && cac ? ltv / cac : null, payback = cac && arpu * gm > 0 ? cac / (arpu * gm) : null;
   const ebitda = t.result;
-  const tr = scopeTreasury(r), need = tr.low.balance < 0 ? -tr.low.balance : 0;
+  const need = tr.low.balance < 0 ? -tr.low.balance : 0;
   const tm = tr.months.filter(m => inPeriod(m.month)), endCash = tm.at(-1)?.balance ?? 0;
   const flows = tm.map((m, k) => m.balance - (k ? tm[k - 1].balance : m.balance - (m.inflow - m.charges - m.taxes - m.pay)));
   const burn = flows.length ? -flows.reduce((a, v) => a + v, 0) / flows.length : 0;
   const runway = burn > 0 ? endCash / burn : null;
-  const f = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
-  // Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
-  const B = state.bench || defaultBench();
-  const mark = (k, v, unit, up = true, fmt = num) => {
-    const inf = v === Infinity;
-    if (v === null || v === undefined || (!isFinite(v) && !inf) || !B[k]) return '';
-    const { good, ok } = B[k], lvl = up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
-    // Jauge : zones faible / correct / bon, repère en trait, position de la valeur en point.
-    const max = Math.max(up ? good * 1.6 : ok * 1.5, inf ? 0 : v * 1.05, 1e-9), pos = x => x === Infinity ? '100.0' : Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
-    const zones = up ? `<i class="z low" style="width:${pos(ok)}%"></i><i class="z ok" style="width:${pos(good) - pos(ok)}%"></i><i class="z good" style="width:${100 - pos(good)}%"></i>`
-      : `<i class="z good" style="width:${pos(good)}%"></i><i class="z ok" style="width:${pos(ok) - pos(good)}%"></i><i class="z low" style="width:${100 - pos(ok)}%"></i>`;
-    const gap = v - good, gapTxt = inf ? 'sans limite' : (gap >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(gap * 10) / 10)) + unit;
-    return `<div class="gauge ${lvl}"><div class="g-track">${zones}<b class="g-dot" style="left:${pos(v)}%"></b></div>
-      <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${fmt(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
-  };
-  const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
   const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
   const rule40 = yearGrowth === null || ebitdaPct === null ? null : yearGrowth + ebitdaPct;
+  return { s, t, last, mrr, cmgr, churn, base, arpu, gm, ltv, cac, ratio, payback, ebitda, ebitdaPct, yearGrowth, rule40, tr, need, tm, endCash, burn, runway };
+}
+const fmtN = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+// Niveau d'un indicateur face au repère investisseur : good, ok, low (up : plus c'est haut, mieux c'est).
+function benchLevel(k, v, up = true) {
+  const B = state.bench || defaultBench();
+  if (v === null || v === undefined || Number.isNaN(v) || (!isFinite(v) && v !== Infinity) || !B[k]) return '';
+  const { good, ok } = B[k];
+  return up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
+}
+
+// Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
+function mark(k, v, unit, up = true, fmt = num) {
+  const B = state.bench || defaultBench();
+  const inf = v === Infinity;
+  if (v === null || v === undefined || (!isFinite(v) && !inf) || !B[k]) return '';
+  const { good, ok } = B[k], lvl = benchLevel(k, v, up);
+  // Jauge : zones faible / correct / bon, repère en trait, position de la valeur en point.
+  const max = Math.max(up ? good * 1.6 : ok * 1.5, inf ? 0 : v * 1.05, 1e-9), pos = x => x === Infinity ? '100.0' : Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
+  const zones = up ? `<i class="z low" style="width:${pos(ok)}%"></i><i class="z ok" style="width:${pos(good) - pos(ok)}%"></i><i class="z good" style="width:${100 - pos(good)}%"></i>`
+    : `<i class="z good" style="width:${pos(good)}%"></i><i class="z ok" style="width:${pos(ok) - pos(good)}%"></i><i class="z low" style="width:${100 - pos(ok)}%"></i>`;
+  const gap = v - good, gapTxt = inf ? 'sans limite' : (gap >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(gap * 10) / 10)) + unit;
+  return `<div class="gauge ${lvl}"><div class="g-track">${zones}<b class="g-dot" style="left:${pos(v)}%"></b></div>
+    <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${fmt(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
+}
+
+function kpiCard(r) {
+  const K = kpiValues(r);
+  if (!K) return '';
+  const { s, t, last, mrr, cmgr, churn, base, arpu, gm, ltv, cac, ratio, payback, ebitda, ebitdaPct, rule40, tr, need, tm, endCash, burn, runway } = K, f = fmtN;
+  const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
   const group = (title, items) => `<h4 class="kpi-h">${title}</h4><div class="kpis">${items.join('')}</div>`;
   return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
@@ -1327,6 +1347,115 @@ function kpiCard(r) {
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
     <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
     <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 %, marge EBITDA de 20 % et règle des 40 (références courantes du logiciel par abonnement) ; ARR d'environ 1 M€ pour une série A ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
+}
+
+// ---------- Trajectoire : les indicateurs année par année ----------
+// Les investisseurs regardent la tendance et l'année où chaque repère est franchi.
+function yearlyKpis(r) {
+  const tr = scopeTreasury(r);
+  const months = r.scope.flatMap(x => x.months.filter(m => m.caHT > 0).map(m => m.month)).sort();
+  if (!months.length) return [];
+  const y0 = +months[0].slice(0, 4), y1 = +r.scope[0].months.at(-1).month.slice(0, 4);
+  const keep = [view.year, view.period], out = [];
+  try {
+    for (let y = y0; y <= y1; y++) { view.year = y; view.period = 0; const K = kpiValues(scoped(r), tr); if (K) out.push({ y, K }); }
+  } finally { [view.year, view.period] = keep; }
+  return out;
+}
+const TRAJ_ROWS = [
+  ['Chiffre d\'affaires HT', K => short(K.t.ca)],
+  ['Croissance du CA', (K, P) => P && P.t.ca > 0 ? (K.t.ca >= P.t.ca ? '+' : '−') + fmtN(Math.abs(K.t.ca / P.t.ca - 1) * 100) + ' %' : '—', null, 'sur un an'],
+  ['ARR fin d\'année', K => short(K.mrr * 12), K => ['arr', K.mrr * 12]],
+  ['Croissance du MRR', K => K.cmgr === null ? '—' : fmtN(K.cmgr, 1) + ' %', K => ['growth', K.cmgr], 'par mois'],
+  ['Abonnées fin d\'année', K => num(K.last.direct + K.last.post)],
+  ['Churn mensuel', K => K.base ? fmtN(K.churn * 100, 1) + ' %' : '—', K => K.base ? ['churn', K.churn * 100, false] : null],
+  ['Marge brute', K => K.t.ca ? fmtN(K.gm * 100) + ' %' : '—', K => K.t.ca ? ['gm', K.gm * 100] : null],
+  ['Marge EBITDA', K => K.ebitdaPct === null ? '—' : fmtN(K.ebitdaPct) + ' %', K => ['ebitda', K.ebitdaPct]],
+  ['EBITDA', K => `<span class="${K.ebitda < 0 ? 'neg' : ''}">${short(K.ebitda)}</span>`],
+  ['LTV / CAC', K => K.ratio === null ? '—' : fmtN(K.ratio, 1), K => ['ltvcac', K.ratio]],
+  ['Retour sur CAC', K => K.payback === null ? '—' : fmtN(K.payback, 1) + ' mois', K => ['payback', K.payback, false]],
+  ['Règle des 40', K => K.rule40 === null || K.mrr * 12 < 1e6 ? '—' : fmtN(K.rule40), K => K.mrr * 12 >= 1e6 ? ['rule40', K.rule40] : null, 'dès 1 M€ d\'ARR'],
+  ['Trésorerie fin d\'année', K => `<span class="${K.endCash < 0 ? 'neg' : ''}">${short(K.endCash)}</span>`]
+];
+function trajectoryCard(r) {
+  const ys = yearlyKpis(r);
+  if (ys.length < 2) return '';
+  const B = state.bench || defaultBench();
+  const rep = (k, up) => k && B[k] ? `${up === false ? '≤' : '≥'} ${k === 'arr' ? short(B[k].good) : fmtN(B[k].good)}${{ growth: ' %', churn: ' %', gm: ' %', ebitda: ' %', payback: ' mois' }[k] || ''}` : '';
+  const rows = TRAJ_ROWS.map(([label, val, lvl, sub]) => {
+    const probe = lvl && ys.map(o => lvl(o.K)).find(Boolean);
+    const cells = ys.map((o, j) => {
+      const L = lvl && lvl(o.K), c = L ? benchLevel(L[0], L[1], L[2] !== false) : '';
+      return `<td class="${c ? 'lv ' + c : ''}">${val(o.K, j ? ys[j - 1].K : null)}</td>`;
+    }).join('');
+    return `<tr><th>${label}${sub ? `<small>${sub}</small>` : ''}</th><td class="rep">${probe ? rep(probe[0], probe[2]) : ''}</td>${cells}</tr>`;
+  }).join('');
+  // Première année où chaque repère clé est atteint.
+  const first = (k, f, up = true) => { const o = ys.find(x => benchLevel(k, f(x.K), up) === 'good'); return o ? o.y : null; };
+  const miles = [['marge EBITDA', first('ebitda', K => K.ebitdaPct)], ['LTV / CAC', first('ltvcac', K => K.ratio)], ['ARR 1 M€', first('arr', K => K.mrr * 12)]]
+    .map(([n, y]) => `${n} ${y ? 'dès ' + y : 'non atteint'}`).join(' · ');
+  return `<details class="card" id="r-traj" ${view.open.has('r-traj') ? 'open' : ''}><summary><span>Trajectoire ${ys[0].y} → ${ys.at(-1).y}<br><span class="sum-sub">${miles}</span></span></summary>
+    <div class="scroll"><table class="traj"><thead><tr><th></th><th class="rep">Repère</th>${ys.map(o => `<th>${o.y}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    <div class="legend"><span><i class="lv-good"></i>bon</span><span><i class="lv-ok"></i>correct</span><span><i class="lv-low"></i>faible</span></div></details>`;
+}
+
+// ---------- Levée de fonds : ce qu'il est raisonnable de demander ----------
+// Deux approches croisées : le besoin (trésorerie à couvrir pendant l'autonomie visée)
+// et ce que la valorisation permet sans céder trop de capital.
+function raiseValues(r) {
+  const x = r.scope[0], a = x.a, R = { ...defaultRaise(), ...(state.raise || {}) }, B = state.bench || defaultBench();
+  const tr = scopeTreasury(r), ms = tr.months;
+  const ht = v => state.vat?.ttc ? v / (1 + (+state.vat.rate || 0) / 100) : v;
+  const firstNeg = ms.find(m => m.balance < 0);
+  const auto = firstNeg ? firstNeg.month : (appDates([a]).launch || appStart(a));
+  const date = a.raiseDate && ms.some(m => m.month === a.raiseDate) ? a.raiseDate : auto;
+  const k = Math.max(0, ms.findIndex(m => m.month >= date));
+  const win = ms.slice(k, k + Math.max(1, +R.runway || 18));
+  const low = win.reduce((l, m) => Math.min(l, m.balance), Infinity);
+  const need = Math.max(0, -low);
+  const ask = need ? Math.ceil(need / 10000) * 10000 : 0;
+  // Revenus au moment de la levée : abonnements (récurrents) et programmes des 12 derniers mois.
+  const sm = x.months.findIndex(m => m.month >= date), m0 = x.months[sm] || x.months.at(-1);
+  const arr = ht(m0.directCA + m0.postCA) * 12;
+  const prog12 = x.months.slice(Math.max(0, sm - 11), sm + 1).reduce((t, m) => t + ht(m.products.reduce((s2, q) => s2 + q.sales, 0)), 0);
+  const stage = arr >= B.arr.good ? 'Série A' : arr >= B.arr.ok ? 'Amorçage (seed)' : 'Pré-amorçage (pre-seed)';
+  let vLo = arr * R.multMin + prog12, vHi = arr * R.multMax + prog12;
+  if (arr < B.arr.ok) { vLo = Math.max(vLo, R.preMin); vHi = Math.max(vHi, R.preMax); }
+  const take = (v, d) => v * d / (100 - d);
+  const lo = take(vLo, R.dilMin), hi = take(vHi, R.dilMax);
+  const dil = ask ? ask / ((vLo + vHi) / 2 + ask) * 100 : 0;
+  const verdict = !ask ? 'none' : ask > hi ? 'high' : ask < lo ? 'low' : 'ok';
+  return { a, i: x.i, R, date, auto, isAuto: date === auto, win, need, ask, arr, prog12, stage, vLo, vHi, lo, hi, dil, verdict, lowMonth: win.find(m => m.balance === low) };
+}
+function raiseCard(r) {
+  const id = 'r-raise', open = view.open.has(id) ? 'open' : '';
+  if (view.app === 'all') return `<details class="card" id="${id}" ${open}><summary><span>Levée de fonds<br><span class="sum-sub">par application : choisis-en une en haut</span></span></summary>
+    <p class="muted">Chaque application lève pour elle-même, comme une société à part. Choisis CHRYSALISS, Bujo ou Doodle Studio dans la liste en haut de page.</p></details>`;
+  const v = raiseValues(r), R = v.R;
+  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
+  const msg = {
+    none: `Le plan n'a pas besoin d'argent extérieur sur ${num(R.runway)} mois. Une levée servirait à accélérer : entre ${short(v.lo)} et ${short(v.hi)} reste raisonnable à ce stade.`,
+    ok: `Demander ${short(v.ask)} est cohérent : c'est dans la fourchette que ta valorisation permet, pour environ ${fmtN(v.dil)} % du capital.`,
+    low: `Ton besoin est modeste. Tu peux demander jusqu'à ${short(v.lo)}, voire ${short(v.hi)}, pour te donner de la marge, ou passer par un prêt d'honneur ou une aide publique sans céder de capital.`,
+    high: `${short(v.ask)}, c'est plus que ce que ta valorisation permet à ce stade (environ ${fmtN(v.dil)} % du capital). Pistes : lever ${short(v.hi)} maintenant et le reste au tour suivant, compléter par un prêt ou une aide publique, ou réduire le besoin.`
+  }[v.verdict];
+  const lvl = { none: 'good', ok: 'good', low: 'ok', high: 'bad' }[v.verdict];
+  return `<details class="card" id="${id}" ${open}><summary><span>Levée de fonds de ${esc(v.a.name)}<br><span class="sum-sub">${v.stage} · ${v.ask ? 'à demander ' + short(v.ask) : 'pas de besoin'} · possible ${short(v.lo)} – ${short(v.hi)}</span></span></summary>
+    <div class="kpis">
+      ${kpi('Montant à demander', v.ask ? short(v.ask) : '0 €', v.ask ? `trésorerie à couvrir sur ${num(R.runway)} mois dès ${monthName(v.date)}${v.lowMonth ? `, point bas en ${monthName(v.lowMonth.month)}` : ''}` : `aucun manque sur ${num(R.runway)} mois dès ${monthName(v.date)}`, v.ask ? '' : 'good')}
+      ${kpi('Ce que ta valorisation permet', `${short(v.lo)} – ${short(v.hi)}`, `${fmtN(R.dilMin)} à ${fmtN(R.dilMax)} % du capital cédé`)}
+      ${kpi('Valorisation indicative', `${short(v.vLo)} – ${short(v.vHi)}`, v.arr < (state.bench || defaultBench()).arr.ok ? 'avant levée · usage du pré-amorçage, l\'ARR est encore faible' : `avant levée · ARR × ${fmtN(R.multMin)} à ${fmtN(R.multMax)}${v.prog12 ? ' + programmes sur 12 mois' : ''}`)}
+      ${kpi('Stade', esc(v.stage), `ARR de ${short(v.arr)} en ${monthName(v.date)}`, 'txt')}
+    </div>
+    <p class="raise-v ${lvl}">${msg}</p>
+    ${section('r-raise-h', 'promo', 'Hypothèses de la levée', `${v.isAuto ? 'date : premier besoin' : monthName(v.date)} · ${num(R.runway)} mois · ARR × ${fmtN(R.multMin)}–${fmtN(R.multMax)}`, `
+      <div class="grid">${monthField('Date de la levée', `apps.${v.i}.raiseDate`, v.a.raiseDate || '', 'Au premier besoin')}
+      ${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
+      ${field('Capital cédé, au moins (%)', 'raise.dilMin', R.dilMin)}${field('Capital cédé, au plus (%)', 'raise.dilMax', R.dilMax)}
+      ${field('Multiple de l\'ARR, bas', 'raise.multMin', R.multMin)}${field('Multiple de l\'ARR, haut', 'raise.multMax', R.multMax)}
+      ${field('Valorisation pré-amorçage, basse (€)', 'raise.preMin', R.preMin)}${field('Valorisation pré-amorçage, haute (€)', 'raise.preMax', R.preMax)}</div>
+      <div class="row"><button id="raiseReset">Revenir aux valeurs par défaut</button></div>`)}
+    <p class="muted">Ordres de grandeur, pas une offre : la valorisation se négocie avec chaque investisseur. Sources : 15 à 25 % du capital cédé par tour (Carta, State of Pre-Seed et State of Seed 2025) ; valorisation des sociétés d'abonnement non cotées autour de 4 à 8 fois l'ARR (SaaS Capital, Private SaaS Company Valuations) ; stades fixés par l'ARR des Repères investisseurs (Réglages).</p></details>`;
 }
 
 function resultatPage() {
@@ -1362,6 +1491,8 @@ function resultatPage() {
       ] })}
     ${implantBar(r)}
     ${kpiCard(r)}
+    ${trajectoryCard(r)}
+    ${raiseCard(r)}
     ${scenarioCard()}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
@@ -1387,7 +1518,8 @@ function renderToolbar() {
   $('step').parentElement.hidden = view.page !== 'tresorerie';
   document.querySelector('.toolbar').classList.toggle('four', view.page === 'tresorerie');
   $('step').value = view.cashStep;
-  const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
+  const y0 = Math.min(...state.apps.map(a => +appStart(a).slice(0, 4))), y1 = Math.max(HORIZON_END, ...state.apps.map(a => +appStart(a).slice(0, 4) + 5));
+  const years = []; for (let y = y0; y <= y1; y++) years.push(y);
   if (!years.includes(view.year)) view.year = years[0];
   $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
   $('year').value = view.year;
@@ -1553,6 +1685,7 @@ document.addEventListener('click', e => {
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
   } else if (t.id === 'benchReset') { state.bench = defaultBench(); save(); render();
+  } else if (t.id === 'raiseReset') { state.raise = defaultRaise(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();

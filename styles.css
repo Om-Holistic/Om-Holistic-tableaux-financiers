@@ -541,3 +541,23 @@ dl.pl-lines dd { margin: 0; text-align: right; font-weight: 600; white-space: no
 .g-t .tgt { color: var(--clay); font-weight: 600; }
 .g-t .gap { font-weight: 700; white-space: nowrap; }
 .gauge.good .gap { color: var(--good); } .gauge.ok .gap { color: #b06f00; } .gauge.low .gap { color: var(--bad); }
+/* Trajectoire : indicateurs année par année */
+#r-traj .scroll { margin: 4px -4px 8px; }
+table.traj { border-collapse: separate; border-spacing: 0 3px; font-size: 13px; font-variant-numeric: tabular-nums; width: 100%; }
+table.traj th, table.traj td { padding: 6px 8px; text-align: right; white-space: nowrap; }
+table.traj thead th { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+table.traj tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; font-weight: 600; min-width: 128px; }
+table.traj tbody th small { display: block; font-size: 11px; font-weight: 500; color: var(--ink-soft); }
+table.traj .rep { color: var(--clay); font-weight: 600; font-size: 12px; }
+table.traj td.lv { border-radius: 6px; font-weight: 600; }
+table.traj td.lv.good, #r-traj .legend i.lv-good { background: #dff4ea; color: #1d7a4f; }
+table.traj td.lv.ok, #r-traj .legend i.lv-ok { background: #fdf0d3; color: #8a5800; }
+table.traj td.lv.low, #r-traj .legend i.lv-low { background: #fbe1dc; color: #b2392a; }
+@media (max-width: 767px) { table.traj { font-size: 12px; } table.traj tbody th { min-width: 108px; white-space: normal; } }
+/* Levée de fonds */
+#r-raise .kpi { background: var(--ground); }
+#r-raise .kpi b.txt { font-size: 1.05rem; }
+@media (min-width: 900px) { #r-raise .kpis { grid-template-columns: repeat(4, 1fr); } }
+.raise-v { margin: 12px 0; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+.raise-v.good { background: #dff4ea; } .raise-v.ok { background: #fdf0d3; } .raise-v.bad { background: #fbe1dc; }
+#r-raise details.sec { margin-bottom: 10px; }

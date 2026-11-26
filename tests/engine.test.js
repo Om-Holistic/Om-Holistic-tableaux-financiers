@@ -321,3 +321,11 @@ test('le temps de coaching par cliente peut baisser à une date', () => {
   assert.ok(h(after) < h(before) * 0.6, 'les heures de coaching baissent');
   assert.equal(Math.round(after.active), Math.round(before.active), 'mêmes clientes sans restriction');
 });
+
+test('les prévisions vont jusqu\'à fin 2034', () => {
+  const s = model.defaultState();
+  for (const a of s.apps) assert.equal(simulate(a).months.at(-1).month, '2034-12');
+  assert.equal(s.raise.runway, 18);
+  const old = model.defaultState(); delete old.raise; old.version = 16;
+  assert.equal(model.migrate(old).raise.dilMax, 25);
+});

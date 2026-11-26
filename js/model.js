@@ -254,10 +254,21 @@ function defaultBench() {
   };
 }
 
+// Levée de fonds : hypothèses de marché, indicatives et modifiables (valorisations en €, dilution en %).
+function defaultRaise() {
+  return {
+    runway: 18,                       // mois d'autonomie à financer après la levée
+    dilMin: 15, dilMax: 25,           // part du capital cédée à chaque tour
+    multMin: 4, multMax: 8,           // valorisation = ARR × multiple (abonnements)
+    preMin: 1000000, preMax: 3000000  // valorisation avant levée en pré-amorçage, quand l'ARR est encore faible
+  };
+}
+
 function defaultState() {
   return {
-    version: 16,
+    version: 17,
     bench: defaultBench(),
+    raise: defaultRaise(),
     vat: { ttc: false, rate: 20 },
     scenarios: defaultScenarios(),
     // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
@@ -450,7 +461,9 @@ function migrate(state) {
   if ((state.version || 1) < 15 && !state.scenarios) state.scenarios = defaultScenarios();
   if (!state.bench) state.bench = defaultBench();
   for (const [k, v] of Object.entries(defaultBench())) if (!state.bench[k]) state.bench[k] = v;
-  state.version = 16;
+  if (!state.raise) state.raise = defaultRaise();
+  for (const [k, v] of Object.entries(defaultRaise())) if (state.raise[k] === undefined) state.raise[k] = v;
+  state.version = 17;
   return state;
 }
 
@@ -458,4 +471,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultBench, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
