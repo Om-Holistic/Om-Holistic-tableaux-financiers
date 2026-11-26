@@ -1267,7 +1267,7 @@ function render(fresh = false) {
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
-  $('page').innerHTML = syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
+  $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
 
 // ---------- Événements ----------
@@ -1410,6 +1410,8 @@ document.addEventListener('click', e => {
     const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
     if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
     save(); render();
+  } else if (t.id === 'updateApp') {
+    location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
   } else if (t.dataset.step) {
     view.cashStep = t.dataset.step;
     try { localStorage.setItem('om-cash-step', view.cashStep); } catch { /* stockage indisponible */ }
@@ -1437,6 +1439,21 @@ document.addEventListener('click', e => {
     render();
   }
 });
+
+// Nouvelle version de l'appli : l'écran d'accueil de l'iPhone et de l'iPad garde parfois l'ancienne en mémoire.
+// À l'ouverture et au retour sur l'appli, on regarde la version en ligne ; si elle a changé, un bandeau propose de recharger.
+const appVersion = () => document.querySelector('meta[name="om-version"]')?.content || '';
+let newVersion = null;
+async function checkUpdate() {
+  if (!/^https?:/.test(location.protocol) || !appVersion()) return;
+  try {
+    const html = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
+    const v = (html.match(/name="om-version" content="([^"]+)"/) || [])[1];
+    if (v && v !== appVersion() && v !== newVersion) { newVersion = v; render(); }
+  } catch { /* hors ligne */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+setTimeout(checkUpdate, 1500);
 
 // Une version plus récente arrive d'un autre appareil : on la prend, sans la renvoyer.
 Sync.init({
