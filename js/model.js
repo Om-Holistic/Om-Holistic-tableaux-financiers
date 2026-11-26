@@ -146,6 +146,7 @@ function chrysalisApp() {
   a.coachRate = 35;
   a.capacitySteps = [{ date: '2027-01', hours: 5, hired: 0 }, { date: '2027-07', hours: 10, hired: 0 }, { date: '2028-01', hours: 15, hired: 10 }];
   a.sub.start = '2027-07';
+  a.raiseDate = '2027-05'; // levée et début de ta rémunération visés en avril-mai 2027 (dossier de levée)
   a.sub.directPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
   a.sub.postPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
   a.charges = exampleCharges(a);
@@ -245,10 +246,10 @@ function defaultImplantation() {
 function defaultBench() {
   return {
     growth: { good: 15, ok: 7 },   // croissance du MRR, % par mois (amorçage)
-    churn: { good: 5, ok: 10 },    // churn mensuel, %
-    ltvcac: { good: 3, ok: 1 },    // LTV / CAC
-    payback: { good: 6, ok: 12 },  // retour sur CAC, mois
-    gm: { good: 70, ok: 50 },      // marge brute, %
+    churn: { good: 8, ok: 15 },    // churn mensuel, % (étude Om Holistic 2026 : bon < 8 %, acceptable < 15 %)
+    ltvcac: { good: 3, ok: 1.5 },  // LTV / CAC (bon > 3, acceptable > 1,5)
+    payback: { good: 3, ok: 6 },   // retour sur CAC, mois (bon < 3, acceptable < 6)
+    gm: { good: 75, ok: 60 },      // marge brute, % (bon > 75 %, acceptable > 60 %)
     rule40: { good: 40, ok: 20 },  // règle des 40 : croissance annuelle % + marge EBITDA %
     ebitda: { good: 20, ok: 0 },   // marge EBITDA, % du CA
     arr: { good: 1000000, ok: 250000 }, // ARR : environ 1 M€ attendu pour une série A, 250 k€ en amorçage
@@ -259,7 +260,7 @@ function defaultBench() {
 // Levée de fonds : hypothèses de marché, indicatives et modifiables (valorisations en €, dilution en %).
 function defaultRaise() {
   return {
-    runway: 18,                       // mois d'autonomie à financer après la levée
+    runway: 12,                       // mois d'autonomie à financer après la levée (12 mois dans ton dossier)
     dilMin: 10, dilMax: 20,           // part du capital cédée (pré-amorçage : 10 à 20 %)
     multMin: 4, multMax: 8,           // valorisation = ARR × multiple (abonnements)
     preMin: 800000, preMax: 2500000,  // valorisation avant levée en pré-amorçage, quand l'ARR est encore faible
@@ -270,8 +271,8 @@ function defaultRaise() {
 // Plan ambitieux : ce qui change par rapport au plan avec levée (valeurs sourcées dans l'onglet Levée).
 function defaultAmbition(very = false) {
   return very
-    ? { target: 4000, growth: 50, organic: 30, fromSolo: 8, cac: 45, enDate: '2028-07', enTarget: 4000, enCost: 5000, amount: 500000 }
-    : { target: 2000, growth: 30, organic: 20, fromSolo: 5, cac: 50, enDate: '2029-07', enTarget: 1500, enCost: 3000, amount: 400000 };
+    ? { target: 4000, growth: 50, organic: 50, fromSolo: 8, toSolo: 70, cac: 45, enDate: '2028-07', enTarget: 4000, enCost: 5000, amount: 500000 }
+    : { target: 2000, growth: 30, organic: 35, fromSolo: 5, toSolo: 50, cac: 50, enDate: '2029-07', enTarget: 1500, enCost: 3000, amount: 400000 };
 }
 
 // Plan « avec levée » d'une application : ce que la levée finance (dès la date de levée de l'appli).
@@ -289,6 +290,7 @@ function defaultRaisePlan(on = false) {
     duration: 0,       // levier : durée moyenne d'abonnement en mois (0 = celle de Produits)
     organic: 0,        // levier : part de l'objectif apportée par le bouche-à-oreille et le parrainage, %
     fromSolo: 0,       // levier : abonnées qui achètent un programme chaque année, % (0 = comme dans Produits)
+    toSolo: 0,         // levier : clientes qui gardent l'abonnement après un programme, % (0 = comme dans Produits)
     growth: 0,         // hausse de l'objectif d'abonnées chaque année, %
     enDate: '',        // lancement de la version anglaise (vide = pas de version anglaise)
     enTarget: 0,       // nouvelles abonnées par an apportées par la version anglaise, première année
@@ -303,7 +305,7 @@ function defaultRaisePlan(on = false) {
 
 function defaultState() {
   return {
-    version: 18,
+    version: 19,
     bench: defaultBench(),
     raise: defaultRaise(),
     vat: { ttc: false, rate: 20 },
@@ -498,6 +500,9 @@ function migrate(state) {
   if ((state.version || 1) < 15 && !state.scenarios) state.scenarios = defaultScenarios();
   if (!state.bench) state.bench = defaultBench();
   for (const [k, v] of Object.entries(defaultBench())) if (!state.bench[k]) state.bench[k] = v;
+  // Repères encore aux anciennes valeurs par défaut : alignés sur l'étude de marché Om Holistic 2026.
+  const OLD = { churn: [5, 10], ltvcac: [3, 1], payback: [6, 12], gm: [70, 50] };
+  for (const [k, [g2, o2]] of Object.entries(OLD)) if (state.bench[k] && +state.bench[k].good === g2 && +state.bench[k].ok === o2) state.bench[k] = defaultBench()[k];
   if (!state.raise) state.raise = defaultRaise();
   for (const [k, v] of Object.entries(defaultRaise())) if (state.raise[k] === undefined) state.raise[k] = v;
   if (state.implantation && !state.implantation.scenarios.some(x => x.id === 'fr-sas')) {
@@ -509,7 +514,12 @@ function migrate(state) {
     if (!a.raisePlan) a.raisePlan = defaultRaisePlan(/chrysalis/i.test(a.name || ''));
     for (const [k, v] of Object.entries(defaultRaisePlan())) if (a.raisePlan[k] === undefined || ((k === 'ambi' || k === 'tres') && !a.raisePlan[k])) a.raisePlan[k] = v;
   }
-  state.version = 18;
+  // Version 19 : calé sur le dossier de levée de CHRYSALISS (12 mois à financer, levée en mai 2027).
+  if ((state.version || 1) < 19) {
+    if (+state.raise.runway === 18) state.raise.runway = 12;
+    for (const a of state.apps) if (/chrysalis/i.test(a.name || '') && !a.raiseDate) a.raiseDate = '2027-05';
+  }
+  state.version = 19;
   return state;
 }
 

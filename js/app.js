@@ -1466,6 +1466,7 @@ function applyRaisePlan(st, i, over = {}) {
   // Leviers : durée d'abonnement, achats de programmes par les abonnées (passerelle), bouche-à-oreille.
   if (+P.duration > 0) { a.sub.duration = +P.duration; if (+a.sub.postDuration > 0) a.sub.postDuration = +P.duration; }
   if (+P.fromSolo > 0) a.programs.forEach(q => { if (q.enabled !== false) q.fromSolo = Math.min(100, +P.fromSolo); });
+  if (+P.toSolo > 0) a.programs.forEach(q => { q.toSolo = Math.min(100, +P.toSolo); });
   // Nouvelles abonnées sans publicité supplémentaire, en moyenne sur l'année qui suit la levée.
   const base = simulate(a).months, k0 = Math.max(0, base.findIndex(m => m.month >= date));
   const yr = base.slice(k0, k0 + 12), organic = yr.length ? yr.reduce((t, m) => t + newSubs(a, m), 0) / yr.length : 0;
@@ -1659,7 +1660,11 @@ function refsCard() {
       ${li('Premier renouvellement d\'un abonnement mensuel : 57 % en médiane, 68 % pour le meilleur quart. Abonnement annuel renouvelé : 25 % en médiane, 37 % pour le meilleur quart.', 'RevenueCat 2026')}
       ${li('Deux tiers des abonnements vendus en bien-être et forme sont annuels, vendus environ 3 fois le prix mensuel. Une durée moyenne de 12 mois, comme dans ton plan, est déjà dans le haut de la fourchette.', 'RevenueCat State of Subscription Apps 2025 et 2026')}
       ${li('Sur les nouvelles applis, environ 20 % atteignent 1 000 $ par mois en 2 ans, 5 % atteignent 10 000 $ ; le meilleur quart augmente son revenu mensuel de 80 % par an.', 'RevenueCat 2025 et 2026')}
-      ${li('Aucune statistique publiée sur la part d\'abonnées qui achètent un programme coaché : c\'est une hypothèse à prouver avec tes premières cohortes.', '')}</ul>
+      ${li('Aucune statistique publiée sur la part d\'abonnées qui achètent un programme coaché : c\'est une hypothèse à prouver avec tes premières cohortes.', '')}
+      ${li('Tes repères : sur 100 clientes Refit, 70 finissent le programme, 50 gardent l\'abonnement et 25 achètent un deuxième programme. Maintien après Refit bon au-dessus de 50 %, excellent au-dessus de 70 % ; acquisition organique bonne au-dessus de 35 %, excellente au-dessus de 50 %.', 'ton étude de marché 2026')}</ul>
+    <h4 class="kpi-h">Concurrents cotés</h4><ul class="refs">
+      ${li('Flo (suivi du cycle) : 208,8 M$ de CA en 2025, marge EBITDA de −7,7 % : même le leader mondial n\'est pas encore rentable.', 'ton étude de marché 2026')}
+      ${li('Sleep Cycle (sommeil, cotée en Suède) : abonnées en baisse de 31 % entre fin 2024 et septembre 2026 : une appli à usage unique s\'use, d\'où l\'intérêt de tes programmes successifs.', 'ton étude de marché 2026')}</ul>
     <h4 class="kpi-h">Marché</h4><ul class="refs">
       ${li('348 millions de francophones dans le monde, dont 142 millions en Europe.', 'OIF, La langue française dans le monde 2026')}
       ${li('Marché mondial des applis de santé des femmes : environ 13 Md$ en 2030, + 18 % par an (estimation d\'un cabinet d\'études, à prendre comme ordre de grandeur).', 'Grand View Research')}</ul>
@@ -1706,10 +1711,11 @@ function leveePage() {
     const sensCard = `<details class="card" id="lv-sens" ${view.open.has('lv-sens') || !view.open.size ? 'open' : ''}><summary><span>Si la publicité coûte plus ou moins cher<br><span class="sum-sub">${worst.length ? `ta levée ne suffit plus dès ${money(worst[0].c)} par abonnée` : `ta levée suffit jusqu'à ${money(cacs.at(-1))} par abonnée`}</span></span></summary>
       <div class="scroll"><table class="traj cmpx"><thead><tr><th>Coût d'une abonnée</th>${sens.map(o => `<th class="${o.c === cac ? 'cur' : ''}">${money(o.c)}</th>`).join('')}</tr></thead><tbody>${sensRows}</tbody></table></div></details>`;
     const p = planPath(i);
-    const leversCard = section('lv-levers', 'promo', 'Leviers', `abonnement ${+P.duration > 0 ? num(+P.duration) + ' mois' : 'comme dans Produits'} · bouche-à-oreille ${num(+P.organic || 0)} % · passerelle ${+P.fromSolo > 0 ? num(+P.fromSolo) + ' % par an' : 'comme dans Produits'}`, `
+    const leversCard = section('lv-levers', 'promo', 'Leviers', `abonnement ${+P.duration > 0 ? num(+P.duration) + ' mois' : 'comme dans Produits'} · bouche-à-oreille ${num(+P.organic || 0)} % · passerelle ${+P.fromSolo > 0 ? num(+P.fromSolo) + ' % par an' : 'comme dans Produits'} · maintien après programme ${+P.toSolo > 0 ? num(+P.toSolo) + ' %' : 'comme dans Produits'}`, `
       <div class="grid">${field('Durée moyenne d\'abonnement (mois, 0 = celle de Produits)', `${p}.duration`, P.duration)}
       ${field('Part de l\'objectif venue du bouche-à-oreille et du parrainage (%)', `${p}.organic`, P.organic)}
-      ${field('Abonnées qui achètent un programme chaque année (%, 0 = comme dans Produits)', `${p}.fromSolo`, P.fromSolo)}</div>`);
+      ${field('Abonnées qui achètent un programme chaque année (%, 0 = comme dans Produits)', `${p}.fromSolo`, P.fromSolo)}
+      ${field('Clientes qui gardent l\'abonnement après un programme (%, 0 = comme dans Produits)', `${p}.toSolo`, P.toSolo)}</div>`);
     const marketCard = section('lv-market', 'cal', 'Repères du pré-amorçage', `${fmtN(R.dilMin)} à ${fmtN(R.dilMax)} % du capital · valorisation ${short(R.preMin)} à ${short(R.preMax)} · levée ${short(R.roundMin)} à ${short(R.roundMax)}`, `
       <div class="grid">${field('Capital cédé, au moins (%)', 'raise.dilMin', R.dilMin)}${field('Capital cédé, au plus (%)', 'raise.dilMax', R.dilMax)}
       ${field('Valorisation avant levée, basse (€)', 'raise.preMin', R.preMin)}${field('Valorisation avant levée, haute (€)', 'raise.preMax', R.preMax)}

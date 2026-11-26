@@ -325,9 +325,14 @@ test('le temps de coaching par cliente peut baisser à une date', () => {
 test('les prévisions vont jusqu\'à fin 2034', () => {
   const s = model.defaultState();
   for (const a of s.apps) assert.equal(simulate(a).months.at(-1).month, '2034-12');
-  assert.equal(s.raise.runway, 18);
+  assert.equal(s.raise.runway, 12);
+  assert.equal(s.apps[0].raiseDate, '2027-05');
   const old = model.defaultState(); delete old.raise; old.version = 16;
   assert.equal(model.migrate(old).raise.dilMax, 20);
+  const v18 = model.defaultState(); v18.version = 18; v18.raise.runway = 18; v18.apps[0].raiseDate = '';
+  const m = model.migrate(v18);
+  assert.equal(m.raise.runway, 12, 'ancienne autonomie par défaut alignée sur le dossier');
+  assert.equal(m.apps[0].raiseDate, '2027-05');
 });
 
 test('plan avec levée : abonnées apportées par la publicité, montée en charge', () => {
