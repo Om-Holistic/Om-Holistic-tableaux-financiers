@@ -1005,6 +1005,49 @@ function acquisitionCard(a, p) {
     <p class="muted">Une cliente doit rapporter au moins 3 fois ce qu'elle coûte à acquérir pour que la croissance soit saine. Les clientes venues de l'abonnement ne coûtent rien à acquérir.</p></details>`;
 }
 
+// Charges de la période choisie en haut, ligne par ligne, avec le même total que Résultat.
+function chargesPeriodCard(a, i, r) {
+  const x = r.all[i], entries = x.pnl.filter(e => inPeriod(e.month));
+  if (!entries.length) return `<div class="card" id="ch-period"><h4>Charges ${periodName()}</h4><p class="muted">${esc(a.name)} n'a encore aucun mois dans cette période.</p></div>`;
+  const s = sumPnl(entries), dates = appDates([a]), all = appDates(state.apps);
+  const appCharges = r.st.apps[i].charges || [], shared = r.st.shared.charges;
+  const startOf = (c, ds) => { const st = chargeStart(c, ds); return st ? monthName(st) : 'dès le début'; };
+  const line = (id, name, sub, v, per) => ({ id, name, sub, v, per });
+  const fixedType = c => c.type === 'fixe' || c.type === 'unique';
+  const groups = [
+    ['Ventes et acquisition', [
+      line(':store', 'Commission App Store / Google Play', `${num(+a.channels?.store || 0)} % des ventes`, s.lines[':store'] || 0, e => e.lines[':store'] || 0),
+      line(':acq', 'Acquisition de nouvelles clientes', 'coût par nouvelle cliente', s.lines[':acq'] || 0, e => e.lines[':acq'] || 0),
+      ...appCharges.filter(c => !fixedType(c)).map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · ${amountText(c, +c.amount || 0)}`, s.lines[c.id] || 0, e => e.lines[c.id] || 0))]],
+    ['Coaching', a.programs.length ? [line(':coaching', 'Heures de coachs', `${money(+a.coachRate || 0)} / h`, s.lines[':coaching'] || 0, e => e.lines[':coaching'] || 0)] : []],
+    [`Charges fixes de ${esc(a.name)}`, appCharges.filter(fixedType).map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · ${c.type === 'unique' ? 'une fois' : 'par mois'} · démarre ${startOf(c, dates)}`, s.lines[c.id] || 0, e => e.lines[c.id] || 0))],
+    ['Part de la structure Om Holistic', shared.map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · démarre ${startOf(c, all)} · ${r.st.shared.key === 'ca' ? 'au prorata du CA' : 'à parts égales'}`, s.structureLines[c.id] || 0, e => e.structureLines[c.id] || 0))]
+  ];
+  const total = s.total.charges;
+  const quiet = [];
+  const rows = groups.map(([title, ls]) => {
+    const on = ls.filter(l => l.v > 0.5);
+    quiet.push(...ls.filter(l => l.v <= 0.5 && !l.id.startsWith(':')).map(l => esc(l.name)));
+    if (!on.length) return '';
+    const sub = on.reduce((t, l) => t + l.v, 0);
+    return `<tr class="grp"><td>${title}</td><td>${money(sub)}</td><td>${pctOf(sub, total)}</td></tr>`
+      + on.sort((p, q) => q.v - p.v).map(l => `<tr><td><span class="cl-name">${esc(l.name)}</span><small>${l.sub}</small></td><td>${money(l.v)}</td><td>${pctOf(l.v, total)}</td></tr>`).join('');
+  }).join('');
+  // Mois par mois : une colonne par mois de la période.
+  const ms = entries.map(e => e.month), flat = groups.flatMap(([, ls]) => ls).filter(l => l.v > 0.5);
+  const monthly = `<div class="scroll"><table class="ch-months"><thead><tr><th>Charge</th>${ms.map(m => `<th>${monthShort(m)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`
+    + flat.map(l => `<tr><td>${esc(l.name)}</td>${entries.map(e => { const v = l.per(e); return `<td>${v > 0.5 ? num(v) : '·'}</td>`; }).join('')}<td><b>${num(l.v)}</b></td></tr>`).join('')
+    + `<tr class="total"><td>Total</td>${entries.map(e => `<td>${num(sumPnl([e]).total.charges)}</td>`).join('')}<td>${num(total)}</td></tr></tbody></table></div>`;
+  const sc = currentScenario();
+  return `<details class="card" id="ch-period" ${view.open.has('ch-period') || !view.open.size ? 'open' : ''}><summary><span>Charges ${periodName()}<br><span class="sum-sub">${money(total)} · ${entries.length} mois, de ${monthName(ms[0])} à ${monthName(ms.at(-1))}</span></span></summary>
+    <div class="scroll"><table class="ch-period"><thead><tr><th>Charge</th><th>Montant</th><th>Part</th></tr></thead><tbody>${rows}
+      <tr class="total"><td>Total des charges</td><td>${money(total)}</td><td>100 %</td></tr></tbody></table></div>
+    ${quiet.length ? `<p class="muted">Pas de coût sur cette période (pas encore démarrées ou déjà terminées) : ${quiet.join(', ')}.</p>` : ''}
+    ${sc && sc.id !== 'central' ? `<p class="muted">Scénario ${esc(sc.name)} : montants ajustés comme dans Résultat. Les fiches plus bas montrent le plan central.</p>` : ''}
+    <details class="sub-d" id="ch-monthly" ${view.open.has('ch-monthly') ? 'open' : ''}><summary>Mois par mois</summary>${monthly}</details>
+    <p class="muted">Change d'année ou de période (trimestre, semestre, tout) en haut de la page.</p></details>`;
+}
+
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
@@ -1013,15 +1056,16 @@ function chargesPage(a, i) {
   const ref = addMonths(dates.launch || dates.first, 12);
   const fixedAt = (list, ds) => list.reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, ref, ds) || 0 : 0), 0);
   const list = a.charges || [], todo = list.filter(c => badge(c).includes('todo')).length, est = list.filter(c => badge(c).includes('est')).length;
-  const r = results();
-  return `${banner({ label: `Charges fixes de ${esc(a.name)}`, chip: 'par mois', big: money(fixedAt(list, dates)),
-      note: `En ${monthName(ref)}, un an après le lancement, hors structure`,
+  const r = results(), cost = r.sum('cost');
+  return `${banner({ label: 'Charges', chip: periodChip(), big: money(cost),
+      note: `${pctOf(cost, r.sum('caHT'))} du CA HT ${periodName()}, structure comprise : le même total que dans Résultat. Détail juste en dessous.`,
       tiles: [
-        { label: 'Total des charges', mini: `Total ${periodChip()}`, value: money(r.sum('cost')), hint: `${periodName()} · ${pctOf(r.sum('cost'), r.sum('caHT'))} du CA HT`, go: { page: 'resultat', open: 'r-nature' } },
-        { label: 'Structure Om Holistic', value: money(fixedAt(sh.charges, all)), hint: 'par mois, toutes applis' },
+        { label: 'Charges fixes par mois', mini: 'Fixes / mois', value: money(fixedAt(list, dates)), hint: `en ${monthName(ref)}, un an après le lancement, hors structure` },
+        { label: 'Structure Om Holistic', mini: 'Structure', value: money(fixedAt(sh.charges, all)), hint: 'par mois, toutes applis' },
         { label: 'À compléter', value: num(todo), cls: todo ? 'warn-v' : '', hint: `sur ${list.length} charges` },
         { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
       ] })}
+    ${chargesPeriodCard(a, i, r)}
     ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     <h2>Charges de ${esc(a.name)}</h2>
@@ -1205,7 +1249,7 @@ function renderToolbar() {
   $('app').innerHTML = (settings ? '' : '<option value="all">Om Holistic · consolidé</option>')
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
   $('app').value = view.app;
-  document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings; });
+  document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
   // La trésorerie est celle de toute la société : pas de choix d'application.
   document.querySelector('.appsel').hidden = view.page === 'tresorerie';
   const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();

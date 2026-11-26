@@ -485,3 +485,12 @@ table.cash-t tr.low td:first-child { background: #fff4f2; }
 .cash-link small { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
 .cash-link b { font-size: 20px; margin-right: 6px; }
 @media print { .cash-ctl { display: none !important; } }
+/* Charges de la période */
+table.ch-period td:first-child { white-space: normal; min-width: 180px; }
+table.ch-period .cl-name { display: block; font-weight: 500; }
+table.ch-period small { display: block; color: var(--ink-soft); font-size: 12px; font-weight: 400; }
+table.ch-period tr.grp td { font-weight: 700; background: var(--sage-tint); padding-top: 10px; }
+table.ch-period tr.grp td:first-child { background: var(--sage-tint); }
+table.ch-months td, table.ch-months th { padding: 7px 6px; font-size: 12px; }
+details.sub-d { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.sub-d > summary { font-weight: 600; font-size: 14px; cursor: pointer; padding: 6px 0; }

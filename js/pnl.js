@@ -37,17 +37,18 @@ function monthPnl(a, m, vat) {
     const progs = a.programs.map(p => p.id), totalH = progs.reduce((t, k) => t + units[k].hours, 0);
     for (const k of progs) cols[k].coaching = hiredCost * (totalH ? units[k].hours / totalH : 1 / progs.length);
   }
-  const common = { fixed: 0 }, cats = {};
+  // lines : montant de chaque charge (par identifiant), plus le coaching, les stores et l'acquisition, pour le détail de la page Charges.
+  const common = { fixed: 0 }, cats = {}, lines = {};
   const dates = appDates([a]);
-  for (const k in cols) addCat(cats, 'coaching', cols[k].coaching);
+  for (const k in cols) { addCat(cats, 'coaching', cols[k].coaching); addCat(lines, ':coaching', cols[k].coaching); }
   // Canaux : la part vendue par l'App Store / Google Play paie leur commission, et pas les frais de paiement du site.
   const store = Math.min(100, pnlPos(a.channels?.store)) / 100, storeRate = Math.min(100, pnlPos(a.channels?.storeRate)) / 100;
   for (const k in cols) {
     const fee = cols[k].ca * store * storeRate;
-    cols[k].fees += fee; addCat(cats, 'paiement', fee);
+    cols[k].fees += fee; addCat(cats, 'paiement', fee); addCat(lines, ':store', fee);
     // Coût d'acquisition : par nouvelle cliente (inscription ou nouvelle abonnée payante).
     const acq = Math.max(0, units[k].fresh || 0) * (units[k].acq || 0);
-    cols[k].variable += acq; addCat(cats, 'marketing', acq);
+    cols[k].variable += acq; addCat(cats, 'marketing', acq); addCat(lines, ':acq', acq);
   }
   for (const c of a.charges || []) {
     const amount = chargeAt(c, m.month, dates);
@@ -58,17 +59,17 @@ function monthPnl(a, m, vat) {
     const web = cat === 'paiement' ? 1 - store : 1;
     if (c.type === 'fixe' || c.type === 'unique') {
       if (targets.length === 1 && c.scope !== 'app') cols[targets[0]].fixed += amount; else common.fixed += amount;
-      addCat(cats, cat, amount);
+      addCat(cats, cat, amount); addCat(lines, c.id, amount);
     } else {
       for (const k of targets) {
         const u = units[k];
         const v = web * (c.type === 'ca' ? u.ca * amount / 100 : c.type === 'cliente' ? u.clients * amount : c.type === 'inscription' ? u.inscriptions * amount : 0);
         if (c.type === 'ca') cols[k].fees += v; else cols[k].variable += v;
-        addCat(cats, cat, v);
+        addCat(cats, cat, v); addCat(lines, c.id, v);
       }
     }
   }
-  return { month: m.month, cols, common, structure: 0, cats, structureCats: {} };
+  return { month: m.month, cols, common, structure: 0, cats, structureCats: {}, lines, structureLines: {} };
 }
 
 // Pour chaque application, la liste mensuelle de ses comptes, structure répartie comprise.
@@ -79,7 +80,7 @@ function buildPnl(state, sims) {
   const shared = state.shared || { key: 'ca', charges: [] };
   const dates = appDates(state.apps);
   for (const month of months) {
-    const parts = shared.charges.map(c => [c.category || 'autre', chargeAt(c, month, dates) || 0]).filter(x => x[1]);
+    const parts = shared.charges.map(c => [c.category || 'autre', chargeAt(c, month, dates) || 0, c.id]).filter(x => x[1]);
     const amount = parts.reduce((t, x) => t + x[1], 0);
     if (!amount) continue;
     const entries = index.map(ix => ix.get(month));
@@ -90,7 +91,7 @@ function buildPnl(state, sims) {
       if (!e) return;
       const share = shared.key === 'ca' && totalCa > 0 ? ca[i] / totalCa : 1 / present;
       e.structure = amount * share;
-      for (const [cat, v] of parts) addCat(e.structureCats, cat, v * share);
+      for (const [cat, v, id] of parts) { addCat(e.structureCats, cat, v * share); addCat(e.structureLines, id, v * share); }
     });
   }
   return perApp;
@@ -98,7 +99,7 @@ function buildPnl(state, sims) {
 
 // Additionne des comptes mensuels et calcule marges, contributions et résultat.
 function sumPnl(entries) {
-  const cols = {}, out = { cols, commonFixed: 0, structure: 0, cats: {} };
+  const cols = {}, out = { cols, commonFixed: 0, structure: 0, cats: {}, lines: {}, structureLines: {} };
   for (const e of entries) {
     for (const k in e.cols) {
       const c = cols[k] = cols[k] || emptyCol();
@@ -108,6 +109,8 @@ function sumPnl(entries) {
     out.structure += e.structure;
     for (const k in e.cats || {}) addCat(out.cats, k, e.cats[k]);
     for (const k in e.structureCats || {}) addCat(out.cats, k, e.structureCats[k]);
+    for (const k in e.lines || {}) addCat(out.lines, k, e.lines[k]);
+    for (const k in e.structureLines || {}) addCat(out.structureLines, k, e.structureLines[k]);
   }
   for (const c of Object.values(cols)) {
     c.margin = c.ca - c.fees - c.variable - c.coaching;
