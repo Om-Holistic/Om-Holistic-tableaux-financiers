@@ -708,3 +708,15 @@ details.palier[open] .pstats { display: none; }
 .tag.bad { color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); }
 .tag.ok { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
 .tag.bad, .tag.ok { white-space: nowrap; display: inline-block; }
+
+/* Téléphone : les trois bandeaux du haut restent fixes, le contenu glisse dessous. */
+html, body { overscroll-behavior-y: none; }
+@media (max-width: 767px) {
+  .toolbar { top: calc(env(safe-area-inset-top, 0px) + var(--hdr-h, 56px)); }
+  #page > details.hero.banner:first-child {
+    position: sticky; z-index: 14;
+    top: calc(env(safe-area-inset-top, 0px) + var(--hdr-h, 56px) + var(--tb-h, 90px));
+    box-shadow: 0 0 0 12px var(--ground);
+  }
+  #page > details.hero.banner[open]:first-child { max-height: 60vh; overflow-y: auto; }
+}
