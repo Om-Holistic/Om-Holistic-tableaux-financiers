@@ -144,7 +144,7 @@ function chrysalisApp() {
   refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 250 }];
   a.programs = [refit, program('Better Sleep', '2027-10', [60, 100, 150], 8), program('Calm Inside', '2028-01', [60, 100, 150], 8)];
   a.coachRate = 35;
-  a.capacitySteps = [{ date: '2027-01', hours: 5, hired: 0 }, { date: '2027-07', hours: 10, hired: 0 }, { date: '2028-01', hours: 15, hired: 10 }];
+  a.capacitySteps = [{ date: '2027-01', hours: 5, hired: 0 }, { date: '2027-07', hours: 10, hired: 0 }, { date: '2028-01', hours: 15, hired: 0 }];
   a.sub.start = '2027-07';
   a.sub.directPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
   a.sub.postPricing = pricing('2027-07', [9.9, 9.9, 9.9]);

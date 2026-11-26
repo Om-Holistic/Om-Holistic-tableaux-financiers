@@ -90,7 +90,8 @@ function simulate(a, soloStock) {
     // Heures par cliente ce mois-ci : le temps de coaching peut baisser avec le temps (paliers du programme).
     const perH = i => coachAt(a.programs[i], monthKey(d)) / 60;
     // Une seule limite : les heures de coaching disponibles (les tiennes + celles des coachs embauchées).
-    const own = step ? pos(step.hours) : Infinity, hired = step ? pos(step.hired) : 0, limit = own + hired;
+    // Les heures des coachs ne se saisissent pas : ce sont les heures qui manquent, calculées (extraHours).
+    const own = step ? pos(step.hours) : Infinity, hired = 0, limit = own;
     let availableH = Math.max(0, limit - active.reduce((s, e) => s + e.count * perH(e.i), 0));
     let demand = 0, admitted = 0;
 
@@ -149,7 +150,8 @@ function simulate(a, soloStock) {
         mm.products[e.i].coachHours += e.count * perH(e.i) * share;
       }
     });
-    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, own, hired, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
+    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, own, hired, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0),
+      progs: a.programs.map((_, i) => { const n = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); return { people: n, hours: n * perH(i) }; }) });
 
     // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
@@ -254,7 +256,7 @@ function programGoalPlan(a, j, sim) {
     segs.push({ rate, weeks });
     used += weeks;
     out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * coachAt(q, at) / 60, minutes: coachAt(q, at),
-      capHours: step ? pos(step.hours) + pos(step.hired) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
+      capHours: step ? pos(step.hours) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
   }
   return { segs, steps: out };
 }
