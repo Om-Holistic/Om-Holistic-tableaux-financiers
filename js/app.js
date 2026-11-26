@@ -36,12 +36,19 @@ function select(label, path, value, options) {
 const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
 const monthName = k => k ? MONTHS[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : '';
 // Choix d'un mois en deux listes (mois, année) plutôt que le calendrier du navigateur.
-function monthField(label, path, value) {
+function monthField(label, path, value, emptyText = '—') {
   const [y, m] = value ? value.split('-') : ['', ''];
   const years = []; for (let k = 2025; k <= 2034; k++) years.push(String(k));
   return `<label class="wide">${esc(label)}<span class="monthpick" data-mpath="${esc(path)}">
-    <select aria-label="${esc(label)} : mois"><option value="">—</option>${MONTHS.map((n, i) => { const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === m ? 'selected' : ''}>${n}</option>`; }).join('')}</select>
+    <select aria-label="${esc(label)} : mois"><option value="">${esc(emptyText)}</option>${MONTHS.map((n, i) => { const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === m ? 'selected' : ''}>${n}</option>`; }).join('')}</select>
     <select aria-label="${esc(label)} : année"><option value="">—</option>${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select></span></label>`;
+}
+// Période d'une charge sur une ligne : « du … au … », avec « dès le début » et « sans fin ».
+function periodEditor(c, t) {
+  const text = !c.start && !c.end ? 'Toujours' : `${c.start ? 'De ' + monthName(c.start) : 'Dès le début'} ${c.end ? 'à ' + monthName(c.end) : 'et sans fin'}`;
+  return `<div class="period"><div class="period-head"><span>Période</span><b>${text}</b></div>
+    <div class="period-row"><span class="pw">du</span>${monthField('Début', t + '.start', c.start, 'dès le début')}</div>
+    <div class="period-row"><span class="pw">au</span>${monthField('Fin', t + '.end', c.end, 'sans fin')}</div></div>`;
 }
 function fields(obj, prefix, defs) {
   return '<div class="grid">' + defs.map(([k, l, t]) => t === 'month' ? monthField(l, prefix + '.' + k, obj[k]) : field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
@@ -51,13 +58,27 @@ function resolve(path) {
   return [keys.reduce((o, k) => o[k], state), last];
 }
 
-// Grille de prix en trois phases.
-function pricingEditor(grid, path, title) {
+// Une ligne compacte : champs côte à côte, bouton de suppression au bout de la ligne.
+const TRASH = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>';
+function lineEditor(obj, path, defs, removeLabel) {
+  const cells = defs.map(([k, l, t]) => t === 'month' ? monthField(l, path + '.' + k, obj[k]) : field(l, path + '.' + k, obj[k], t)).join('');
+  const del = removeLabel ? `<button class="icon danger" data-remove="${esc(path)}" aria-label="${esc(removeLabel)}" title="${esc(removeLabel)}">${TRASH}</button>` : '';
+  return `<div class="lrow">${cells}${del}</div>`;
+}
+
+// Sous-bloc dépliable, coloré selon son type (calendrier, prix, inscriptions, promotions, abonnement).
+function section(id, kind, title, summary, body) {
+  return `<details class="sec sec-${kind}" id="${esc(id)}" ${view.open.has(id) ? 'open' : ''}>
+    <summary><span class="sec-t">${esc(title)}</span><span class="sec-s">${summary}</span></summary><div class="sec-b">${body}</div></details>`;
+}
+
+// Grille de prix en trois phases : chaque phase est une pastille numérotée.
+function pricingEditor(grid, path, title, anchor) {
   const now = phaseAt(grid, thisMonth);
-  const rows = grid.map((ph, k) => `<div class="phase">${fields(ph, path + '.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('');
-  return `<fieldset><legend>${esc(title)}</legend>${rows}
-    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique.
-    Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p></fieldset>`;
+  const rows = grid.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, path + '.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('');
+  const summary = grid.map(ph => price(ph.price)).join(' › ');
+  return section(anchor, 'price', title, summary, `${rows}
+    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique. Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p>`);
 }
 
 const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine'], ['months', 'Progression (mois)'], ['step', 'Augmentation par palier']];
@@ -68,28 +89,29 @@ function programCard(a, q, j, p) {
   const t = p + '.programs.' + j;
   const open = view.open.has('p' + j) ? 'open' : '';
   const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
-  const cohorts = q.cohorts.map((c, k) => `<div class="phase">${fields(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['date', 'Démarrage', 'month'], ['size', 'Nombre de clientes']])}
-      <div class="row"><button class="danger" data-remove="${t}.cohorts.${k}">Retirer cette cohorte</button></div></div>`).join('');
-  return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${q.cohorts.length} cohorte(s) de test · ${launch}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
+  const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
+  const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
+  const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${num(q.initial)} → ${num(q.target)} / sem.`;
+  return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
       ${check('Programme actif', t + '.enabled', q.enabled)}
       ${fields(q, t, [['name', 'Nom', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes de coaching / cliente / semaine']])}
-      <fieldset><legend>Calendrier</legend>
+      ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
         <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
         ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
         <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
         ${fields(q, t, [['start', 'Lancement commercial', 'month']])}
-        <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>
-      </fieldset>
-      ${pricingEditor(q.pricing, t + '.pricing', 'Prix du programme (prix total payé à l\'inscription)')}
-      <fieldset><legend>Inscriptions après le lancement · premières semaines</legend>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
-        ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}</fieldset>
-      <fieldset><legend>Inscriptions ensuite · montée en puissance</legend>${fields(q, t, growth)}
+        <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>`)}
+      ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j)}
+      ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
+        <h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
+        ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
+        <h4>Ensuite, montée en puissance</h4>${fields(q, t, growth)}
         ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
-        ${q.palierMode ? q.paliers.map((r, k) => fields(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']]) + `<div class="row"><button class="danger" data-remove="${t}.paliers.${k}">Supprimer le palier</button></div>`).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}</fieldset>
-      <fieldset><legend>Promotions ponctuelles</legend>
-        ${q.promos.map((r, k) => fields(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']]) + `<div class="row"><button class="danger" data-remove="${t}.promos.${k}">Supprimer</button></div>`).join('')}
+        ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
+      ${section('promo-p' + j, 'promo', 'Promotions ponctuelles', q.promos.length ? `${q.promos.length} promotion${q.promos.length > 1 ? 's' : ''}` : 'aucune', `
+        ${q.promos.map((r, k) => lineEditor(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']], 'Supprimer la promotion')).join('')}
         <div class="row"><button data-add="${t}.promos">Ajouter une promotion</button></div>
-        <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p></fieldset>
+        <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p>`)}
       <div class="row"><button class="danger" data-remove="${t}">Supprimer le programme</button></div>
     </details>`;
 }
@@ -97,43 +119,47 @@ function programCard(a, q, j, p) {
 function productsPage(a, i) {
   const p = 'apps.' + i;
   const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
-  const post = a.programs.length ? `<details class="card" id="sp" ${view.open.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
-      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel')}
-      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>` : '';
+  const post = a.programs.length ? `<details class="card" id="sp" ${view.open.has('sp') ? 'open' : ''}><summary><span>Abonnement après un programme<br><span class="sum-sub">${num(a.sub.conversion)} % des clientes en fin de programme</span></span></summary>
+      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel', 'price-sp')}
+      ${section('conv-sp', 'sub', 'Conversion', `${num(a.sub.conversion)} % · ${num(a.sub.postDuration)} mois en moyenne`, fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']]))}</details>` : '';
   return `<h2>Programmes de ${esc(a.name)}</h2>${programs || '<p class="muted">Aucun programme.</p>'}
     <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
     <h2>Abonnements ${esc(a.name)}</h2>
     <div class="card">${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}</div>
-    <details class="card" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}</summary>
-      ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel')}
-      <fieldset><legend>Ouverture et rythme d'abonnements</legend>${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
-      <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p></fieldset></details>
+    <details class="card" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}<br><span class="sum-sub">${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
+      ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
+      ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${num(a.sub.initial)} → ${num(a.sub.target)} / sem.`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
+      <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}</details>
     ${post}`;
 }
 
 // Tous les jalons d'une application, dans l'ordre chronologique.
+// Chaque jalon indique où il se règle et y mène d'un geste.
 function timeline(a) {
   const items = [];
-  for (const q of a.programs) {
-    if (!q.enabled) continue;
-    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(q.name)}`, sub: `${num(c.size)} clientes` }));
-    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(q.name)}`, sub: '' });
-    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(q.name)}`, sub: price(ph.price) }));
-  }
-  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture de l'abonnement ${esc(a.name)}`, sub: '' });
-  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine` }));
+  a.programs.forEach((q, j) => {
+    if (!q.enabled) return;
+    const cal = { page: 'produits', open: 'p' + j, anchor: 'cal-p' + j, from: `Produits › ${esc(q.name)} › Calendrier` };
+    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(q.name)}`, sub: `${num(c.size)} clientes`, go: cal }));
+    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(q.name)}`, sub: '', go: cal });
+    const pr = { page: 'produits', open: 'p' + j, anchor: 'price-p' + j, from: `Produits › ${esc(q.name)} › Prix` };
+    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(q.name)}`, sub: price(ph.price), go: pr }));
+  });
+  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture de l'abonnement ${esc(a.name)}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › Abonnement ${esc(a.name)}` } });
+  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine`, go: { page: 'reglages', open: 'st-cap', anchor: 'st-cap', from: 'Réglages › Capacité de coaching' } }));
   items.sort((x, y) => x.date.localeCompare(y.date));
-  return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><span class="when">${monthName(it.date)}</span><span>${it.text}${it.sub ? `<br><span class="muted">${it.sub}</span>` : ''}</span></li>`).join('')}</ol>`;
+  if (!items.length) return '<p class="muted">Aucune date pour l\'instant : ajoute une cohorte de test ou une date de lancement dans Produits et prix.</p>';
+  return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><a href="#${it.go.page}" data-goto="${it.go.page}" data-open="${it.go.open}" data-anchor="${it.go.anchor}">
+      <span class="when">${monthName(it.date)}</span><span class="what">${it.text}${it.sub ? ` · <span class="muted">${it.sub}</span>` : ''}<span class="from">${it.go.from} ›</span></span></a></li>`).join('')}</ol>`;
 }
 
 function settingsPage(a, i) {
   const p = 'apps.' + i;
-  const steps = (a.capacitySteps || []).map((c, j) => `<div class="phase">${fields(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['capacity', 'Clientes en même temps'], ['hours', 'Heures de coaching / semaine']])}
-      <div class="row"><button class="danger" data-remove="${p}.capacitySteps.${j}">Retirer ce palier</button></div></div>`).join('');
+  const steps = (a.capacitySteps || []).map((c, j) => lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['capacity', 'Clientes en même temps'], ['hours', 'Heures / semaine']], 'Retirer ce palier')).join('');
   return `<h2>${esc(a.name)}</h2>
     <div class="card">${fields(a, p, [['name', 'Nom de l\'application', 'text']])}</div>
     <details class="card" id="st-cal" ${view.open.has('st-cal') || !view.open.size ? 'open' : ''}><summary>Calendrier de ${esc(a.name)}</summary>
-      <p class="muted">Les prévisions commencent automatiquement à la première date de ce calendrier. Chaque date se règle dans <a href="#produits">Produits et prix</a> (cohortes, lancement, phases de prix) ou ci-dessous (capacité).</p>
+      <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates que tu as saisies dans chaque programme, chaque abonnement et la capacité. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
       ${timeline(a)}</details>
     ${a.programs.length ? `<details class="card" id="st-cap" ${view.open.has('st-cap') ? 'open' : ''}><summary>Capacité de coaching</summary>
       <p class="muted">Ajoute un palier à chaque fois que tu peux accompagner plus de clientes : par exemple 10 pendant la cohorte alpha, 25 au lancement, 40 un an plus tard.</p>
@@ -299,7 +325,8 @@ const AMOUNT_LABEL = { fixe: 'Montant (€ / mois)', cliente: 'Montant (€ / cl
 function chargeSummary(c, a) {
   const scope = c.scope === 'sub' ? 'Abonnement ' + a.name : (a.programs.find(p => p.id === c.scope)?.name || 'Commune à ' + a.name);
   const amount = c.type === 'ca' ? `${price(c.amount).replace(' €', '')} % du CA` : `${price(c.amount)}${{ fixe: ' / mois', cliente: ' / cliente / mois', inscription: ' / inscription' }[c.type]}`;
-  return `${amount} · ${esc(scope)}`;
+  const when = c.start || c.end ? ` · ${c.start ? monthName(c.start) : '…'} → ${c.end ? monthName(c.end) : '…'}` : '';
+  return `${amount} · ${esc(scope)}${when}`;
 }
 
 function chargesPage(a, i) {
@@ -311,14 +338,15 @@ function chargesPage(a, i) {
       ${fields(c, t, [['name', 'Nom', 'text']])}
       <div class="grid">${select('Type', t + '.type', c.type, CHARGE_TYPES)}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
       ${select('Rattachée à', t + '.scope', c.scope || 'app', scopes)}
-      ${fields(c, t, [['start', 'À partir de (vide = toujours)', 'month'], ['end', 'Jusqu\'à (vide = sans fin)', 'month']])}
+      ${periodEditor(c, t)}
       <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
   }).join('');
   const sh = state.shared;
   const shared = sh.charges.map((c, j) => {
     const t = `shared.charges.${j}`, id = 'sh' + c.id;
     return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${price(c.amount)} / mois</span></span></summary>
-      ${fields(c, t, [['name', 'Nom', 'text'], ['amount', 'Montant (€ / mois)'], ['start', 'À partir de', 'month'], ['end', 'Jusqu\'à', 'month']])}
+      ${fields(c, t, [['name', 'Nom', 'text'], ['amount', 'Montant (€ / mois)']])}
+      ${periodEditor(c, t)}
       <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
   }).join('');
   return `<h2>Charges de ${esc(a.name)}</h2>
@@ -407,7 +435,7 @@ function renderToolbar() {
 
 function render(fresh = false) {
   // Garde ouvertes les zones dépliées, sauf en arrivant sur une nouvelle page.
-  view.open = fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
+  view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
@@ -420,7 +448,11 @@ function route() {
   const page = location.hash.slice(1);
   view.page = PAGES.includes(page) ? page : 'synthese';
   render(true);
-  window.scrollTo(0, 0);
+  // Arrivée depuis le calendrier : on ouvre la zone concernée et on la met en évidence.
+  const target = view.goto && document.getElementById(view.goto.anchor);
+  view.goto = null;
+  if (target) { target.scrollIntoView({ block: 'center' }); target.classList.add('flash'); setTimeout(() => target.classList.remove('flash'), 1600); }
+  else window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
 
@@ -452,7 +484,14 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('click', e => {
-  const t = e.target;
+  const go = e.target.closest?.('[data-goto]');
+  if (go) {
+    e.preventDefault();
+    view.goto = { open: go.dataset.open, anchor: go.dataset.anchor };
+    if (location.hash === '#' + go.dataset.goto) route(); else location.hash = go.dataset.goto;
+    return;
+  }
+  const t = e.target.closest?.('button') || e.target;
   if (t.dataset.add) {
     const [o, k] = resolve(t.dataset.add);
     const fresh = {

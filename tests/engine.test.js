@@ -65,7 +65,7 @@ test('une sauvegarde v1 est convertie en grilles de prix', () => {
   assert.strictEqual(p.price, undefined);
   assert.doesNotThrow(() => simulate(s.apps[0]));
   assert.ok(Array.isArray(s.apps[0].charges) && s.apps[0].cost === undefined);
-  assert.deepStrictEqual(s.apps.map(a => a.name), ['Chrysalis', 'Bujo', 'Doodle Studio']);
+  assert.deepStrictEqual(s.apps.map(a => a.name), ['CHRYSALISS', 'Bujo', 'Doodle Studio']);
   // Ancienne bêta (1 cohorte de 10) → cohorte nommée ; capacité unique → palier.
   assert.deepStrictEqual(p.cohorts, [{ name: 'Cohorte alpha', date: '2026-11', size: 10 }]);
   assert.deepStrictEqual(s.apps[0].capacitySteps, [{ date: '2026-11', capacity: 40, hours: 35 }]);

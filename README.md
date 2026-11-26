@@ -1,6 +1,6 @@
 # Om Holistic — Tableau de bord financier
 
-Prévisionnel des applications Om Holistic (Chrysalis d'abord, puis Bujo et Doodle Studio).
+Prévisionnel des applications Om Holistic (CHRYSALISS d'abord, puis Bujo et Doodle Studio).
 Application statique, sans serveur : ouvrir `index.html`, ou activer GitHub Pages sur `main` / racine.
 Pensée pour le téléphone d'abord (onglets en bas), puis l'iPad et l'ordinateur (barre latérale).
 
@@ -16,7 +16,7 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 - **Produits et prix** : programmes (durée, rythme d'inscriptions, promotions) et abonnements.
 - **Réglages** : calendrier de l'application (cohortes, lancements, phases de prix, capacité), paliers de capacité de coaching, TVA, import / export.
 
-Applications par défaut : Chrysalis, Bujo et Doodle Studio (abonnement mensuel à 9,90 €, avec une phase « Lancement » à ajuster).
+Applications par défaut : CHRYSALISS, Bujo et Doodle Studio (abonnement mensuel à 9,90 €, avec une phase « Lancement » à ajuster).
 
 ## Calendrier
 

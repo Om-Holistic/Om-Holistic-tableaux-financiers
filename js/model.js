@@ -69,7 +69,7 @@ function charge(name, type, amount, scope = 'app', start = '', end = '') {
 
 // Calendrier d'exemple : cohorte alpha, deuxième cohorte, puis lancement commercial.
 function chrysalisApp() {
-  const a = application('Chrysalis');
+  const a = application('CHRYSALISS');
   const refit = program('Refit', '2027-07', [60, 150, 250], 12);
   refit.cohorts = [{ name: 'Cohorte alpha', date: '2027-01', size: 8 }, { name: 'Deuxième cohorte', date: '2027-04', size: 15 }];
   refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 250 }];
@@ -109,7 +109,7 @@ function defaultShared() {
 
 function defaultState() {
   return {
-    version: 5,
+    version: 6,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
@@ -192,7 +192,9 @@ function migrate(state) {
       }
     }
   }
-  state.version = 5;
+  // Version 6 : le nom s'écrit CHRYSALISS, en majuscules avec deux S.
+  for (const a of state.apps) if (/^chrysal+is+$/i.test(a.name.trim())) a.name = 'CHRYSALISS';
+  state.version = 6;
   return state;
 }
 
