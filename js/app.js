@@ -130,6 +130,41 @@ function programCard(a, q, j, p) {
     </details>`;
 }
 
+// Objectif d'abonnées : quel rythme d'abonnements faut-il atteindre, et en combien de mois ?
+function goalNeed(a) {
+  const g = a.sub.goal, d = +a.sub.duration || 0, conv = +a.sub.trialDays > 0 ? Math.max(1, +a.sub.trialConversion || 0) / 100 : 1;
+  const count = Math.max(0, +g.count || 0);
+  // Nouvelles abonnées payantes par semaine nécessaires au rythme de croisière.
+  const paid = g.kind === 'new' ? count / 52 : d > 0 ? count / d * 12 / 52 : null;
+  if (paid === null) return { paid: null };
+  const weekly = Math.ceil(paid / conv - 1e-9);
+  const active = d > 0 ? weekly * conv * 52 / 12 * d : null;
+  return { paid, weekly, trial: conv < 1, active, perYear: weekly * conv * 52 };
+}
+function goalSection(a, p) {
+  const g = a.sub.goal, need = goalNeed(a);
+  const at = a.sub.start ? addMonths(a.sub.start, Math.round(+g.months || 0)) : '';
+  const m = at ? simulate(a).months.find(x => x.month === at) : null;
+  const planNew = m ? Math.round(m.newDirect.reduce((s, x) => s + x, 0) * 12) : 0;
+  const planActive = m ? Math.round(m.direct) : 0;
+  const unit = g.kind === 'new' ? 'nouvelles abonnées par an' : 'abonnées en même temps';
+  const priceNow = phaseAt(a.sub.directPricing, at || thisMonth).price;
+  const result = need.paid === null
+    ? `<p class="muted">Sans résiliation (durée d'abonnement à 0), le nombre d'abonnées ne fait que monter : n'importe quel rythme finit par l'atteindre. Indique une durée moyenne d'abonnement dans « Ouverture et rythme » pour calculer.</p>`
+    : `<div class="goal">
+        <div><span>Rythme de croisière nécessaire</span><b>${num(need.weekly)} ${need.trial ? 'essais' : 'abonnées'} / semaine</b>
+          <small>${need.trial ? `soit ${num(Math.round(need.paid * 10) / 10)} payantes / semaine après l'essai · ` : ''}${num(Math.round(need.perYear))} nouvelles abonnées par an</small></div>
+        ${need.active ? `<div><span>Abonnées en même temps, une fois stabilisé</span><b>${num(Math.round(need.active))}</b><small>soit environ ${money(need.active * priceNow)} de CA par mois au prix de ${price(priceNow)}</small></div>` : ''}
+        <div><span>Ton plan actuel ${at ? 'en ' + monthName(at) : ''}</span><b>${num(planActive)} abonnées</b><small>rythme d'environ ${num(planNew)} nouvelles abonnées par an</small></div>
+      </div>
+      <p class="muted">Le nombre d'abonnées continue de monter quelques mois après avoir atteint le rythme, le temps que les arrivées compensent les résiliations. Les abonnées qui viennent d'un programme s'ajoutent en plus.</p>
+      <div class="row"><button data-goal="${p}">Appliquer : ${num(need.weekly)} / semaine atteint en ${num(+g.months || 0)} mois</button></div>`;
+  return section('goal-sd', 'ins', 'Objectif d\'abonnées', `${num(+g.count || 0)} ${unit} dans ${num(+g.months || 0)} mois${need.weekly ? ' → ' + num(need.weekly) + ' / sem.' : ''}`, `
+    <div class="grid">${select('Je vise', p + '.sub.goal.kind', g.kind, [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}
+    ${field('Nombre d\'abonnées', p + '.sub.goal.count', g.count)}${field('Atteint en (mois après l\'ouverture)', p + '.sub.goal.months', g.months)}</div>
+    ${result}`);
+}
+
 function productsPage(a, i) {
   const p = 'apps.' + i;
   const g = a.sub.directPricing;
@@ -138,6 +173,7 @@ function productsPage(a, i) {
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
       ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${num(a.sub.initial)} → ${num(a.sub.target)} / sem.`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
         <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}
+      ${goalSection(a, p)}
       ${pricingEditor(g, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
       ${section('trial-sd', 'promo', 'Période d\'essai', +a.sub.trialDays > 0 ? `${num(a.sub.trialDays)} jours gratuits · ${num(a.sub.trialConversion)} % passent payantes` : 'aucune', `
         ${fields(a.sub, p + '.sub', [['trialDays', 'Durée de l\'essai gratuit (jours)'], ['trialConversion', 'Essais qui deviennent payants (%)']])}
@@ -543,6 +579,10 @@ document.addEventListener('click', e => {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
   } else if (t.id === 'resetNo') { view.confirmReset = false; render();
+  } else if (t.dataset.goal) {
+    const [o, k] = resolve(t.dataset.goal), a = o[k], need = goalNeed(a);
+    if (need.weekly) { a.sub.target = need.weekly; a.sub.months = Math.max(1, Math.round(+a.sub.goal.months || 1)); if (+a.sub.initial > need.weekly) a.sub.initial = need.weekly; }
+    save(); render();
   } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();

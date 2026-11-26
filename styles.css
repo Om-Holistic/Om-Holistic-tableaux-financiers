@@ -281,3 +281,9 @@ details.card.product > summary > span:first-child::before { content: ""; display
 details.card.product.solo > summary > span:first-child::before { background: var(--clay); }
 a.golink { color: inherit; text-decoration: underline; text-decoration-color: var(--sage); text-decoration-thickness: 2px; text-underline-offset: 3px; }
 a.golink::after { content: ' ›'; color: var(--sage); font-weight: 700; }
+.goal { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin: 12px 0 4px; }
+.goal > div { background: var(--surface, #fff); border-radius: 12px; padding: 12px 14px; display: flex; flex-direction: column; gap: 2px; border: 1px solid var(--line); }
+.goal > div:first-child { border-color: var(--clay); box-shadow: inset 4px 0 0 var(--clay); }
+.goal span { font-size: 13px; color: var(--ink-soft); }
+.goal b { font-family: Outfit, Inter, sans-serif; font-size: 22px; font-weight: 600; color: var(--ink); }
+.goal small { font-size: 12px; color: var(--ink-soft); }

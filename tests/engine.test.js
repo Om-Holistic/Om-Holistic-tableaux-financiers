@@ -173,3 +173,15 @@ test('passerelles : programme → abonnement seul, abonnement seul → programme
   assert.ok(Math.abs(y(r3) - 0.6 * y(r4)) < 0.01 * y(r4));
   assert.ok(r3.find(m => m.month === '2027-01').newDirect.reduce((t, v) => t + v, 0) < 0.6 * r4.find(m => m.month === '2027-01').newDirect.reduce((t, v) => t + v, 0));
 });
+
+test('objectif : le rythme appliqué donne le nombre d\'abonnées visé', () => {
+  const s = defaultState();
+  const a = s.apps[0];
+  a.programs.forEach(p => { p.enabled = false; });
+  Object.assign(a.sub, { start: '2027-01', duration: 12, initial: 1, months: 12, trialDays: 0 });
+  // 1000 abonnées en même temps avec 12 mois de durée : 1000 / 12 par mois, soit 20 par semaine.
+  const weekly = Math.ceil(1000 / 12 * 12 / 52);
+  a.sub.target = weekly;
+  const m = simulate(a).months.find(x => x.month === '2031-01');
+  assert.ok(m.direct > 950 && m.direct < 1250, String(m.direct));
+});

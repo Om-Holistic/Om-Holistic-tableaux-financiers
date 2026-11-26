@@ -57,7 +57,7 @@ function application(name) {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       postDuration: 12,
-      trialDays: 0, trialConversion: 100,
+      trialDays: 0, trialConversion: 100, goal: { kind: 'active', count: 1000, months: 24 },
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
     },
@@ -207,6 +207,8 @@ function migrate(state) {
       if (a.sub.trialDays === undefined) { a.sub.trialDays = 0; a.sub.trialConversion = 100; }
     }
   }
+  // Objectif d'abonnées (ajouté sans changer de version : simple valeur par défaut).
+  for (const a of state.apps) if (!a.sub.goal) a.sub.goal = { kind: 'active', count: 1000, months: 24 };
   state.version = 7;
   return state;
 }

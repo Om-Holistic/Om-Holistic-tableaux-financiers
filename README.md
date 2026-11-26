@@ -33,6 +33,13 @@ et tant d'heures par semaine.
   place de coaching et ne sont pas recomptées à la fin du programme.
 - L'abonnement seul peut avoir une **période d'essai** gratuite (en jours) et un % d'essais qui deviennent payants.
 
+## Objectif d'abonnées
+
+Dans la carte de l'abonnement seul, le bloc « Objectif d'abonnées » part d'un but (par exemple 1 000 abonnées
+en même temps, ou 1 000 nouvelles abonnées par an, dans 24 mois) et calcule le rythme hebdomadaire nécessaire,
+compte tenu de la durée moyenne d'abonnement et de la période d'essai. Il le compare au plan actuel et peut
+l'appliquer au rythme d'abonnements (objectif / semaine atteint en X mois).
+
 ## Prix en trois phases
 
 Chaque produit (programme, abonnement direct, abonnement après programme) a trois phases de prix,
