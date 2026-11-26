@@ -124,3 +124,13 @@ Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appare
 - **Réel face au prévu** (Prévisionnel) : saisie mensuelle du CA et des charges réels, écart au prévu.
 - **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.
 - **Export PDF** : bouton en bas de Résultat et de Prévisionnel (sur iPad : Partager › Enregistrer en PDF).
+
+## Synchronisation entre appareils
+
+Réglages › « Synchronisation entre appareils » : tape la même phrase secrète sur l'iPhone, l'iPad et l'ordinateur.
+Les paramètres sont chiffrés sur l'appareil (AES-GCM, clé tirée de la phrase par PBKDF2) avant d'être envoyés ;
+le serveur ne range que des boîtes illisibles et garde les 20 dernières versions en secours.
+Si deux appareils ont modifié sans se voir, l'appli demande laquelle garder au lieu d'écraser.
+
+Le serveur (`sync-server/`) tourne sur Fly (`om-holistic-finances-sync`, Paris, arrêt automatique quand il ne sert pas).
+Il est déployé par l'action GitHub « Serveur de synchro » à chaque changement sur `main`, avec le secret de dépôt `FLY_API_TOKEN`.
