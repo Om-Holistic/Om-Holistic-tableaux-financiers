@@ -55,6 +55,8 @@ function application(name) {
     channels: { store: 0, storeRate: 15 },
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
     capacitySteps: [], coachRate: 0, charges: [],
+    // Chiffres réels saisis mois par mois : { 'AAAA-MM': { ca, charges } }.
+    actuals: {},
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),

@@ -20,7 +20,16 @@ try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (isValidState(saved)) state = migrate(saved);
 } catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
-const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ } };
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } };
+const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
+// Rappel de sauvegarde : des modifications non exportées depuis plus de 14 jours (ou jamais exportées, modifiées il y a plus d'un jour).
+function backupDue() {
+  const edit = stored('om-last-edit'), exp = stored('om-last-export');
+  if (!edit || (exp && exp >= edit)) return null;
+  const days = d => (Date.now() - new Date(d)) / 86400000;
+  if (exp ? days(exp) > 14 : days(edit) > 1) return exp ? `Dernière sauvegarde il y a ${Math.floor(days(exp))} jours` : 'Tes paramètres n\'ont jamais été exportés';
+  return null;
+}
 
 const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0 };
 const PAGES = ['synthese', 'resultat', 'previsionnel', 'charges', 'produits', 'reglages'];
@@ -514,6 +523,49 @@ function chart(byMonth) {
     }).join('') + '</svg>';
 }
 
+// ---------- Tableau de bord : ce qui demande ton attention ----------
+function alertsCard(r) {
+  const items = [];
+  const t = cashData();
+  if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  for (const x of r.all) {
+    const sf = capacityShortfall(x.a, x.weekly);
+    if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'produits', open: 'pr-cap', app: x.i }]);
+    const a = state.apps[x.i];
+    const pending = a.programs.filter((q, j) => { if (!q.enabled || !(q.goal?.steps || []).length) return false; const gp = programGoalPlan(a, j, simulate(a).months); return gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)); }).length
+      + (() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? 1 : 0; })();
+    if (pending) items.push(['mid', `${esc(a.name)} : ${pending} objectif${pending > 1 ? 's' : ''} pas encore appliqué${pending > 1 ? 's' : ''}.`, { page: 'produits', app: x.i }]);
+    const todo = (a.charges || []).filter(c => badge(c).includes('todo')).length;
+    if (todo) items.push(['mid', `${esc(a.name)} : ${todo} charge${todo > 1 ? 's' : ''} à compléter.`, { page: 'charges', app: x.i }]);
+  }
+  const shTodo = state.shared.charges.filter(c => badge(c).includes('todo')).length;
+  if (shTodo) items.push(['mid', `Structure Om Holistic : ${shTodo} charge${shTodo > 1 ? 's' : ''} à compléter (loyer, salaires…).`, { page: 'charges' }]);
+  const b = backupDue();
+  if (b) items.push(['mid', `${b} : exporte-les pour ne pas les perdre.`, { page: 'reglages', open: 'st-save' }]);
+  if (t.breakEven) items.push(['ok', `Point mort en ${monthName(t.breakEven)} ; ton revenu de ${money(t.goal)} par mois ${t.payReached ? 'est atteint en ' + monthName(t.payReached) : 'n\'est pas encore atteint'}.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  const go = g => `href="#${g.page}" data-goto="${g.page}" data-open="${g.open || ''}" data-anchor="${g.open || ''}"${g.app !== undefined ? ` data-app="${g.app}"` : ''}`;
+  return `<details class="card" id="s-alerts" ${view.open.has('s-alerts') || !view.open.size ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">${items.filter(x => x[0] !== 'ok').length} point${items.filter(x => x[0] !== 'ok').length > 1 ? 's' : ''} d'attention · toutes applications</span></span></summary>
+    <ul class="alerts">${items.map(([k, text, g]) => `<li class="${k}"><a ${go(g)}>${text}<span class="from">›</span></a></li>`).join('') || '<li class="ok">Rien à signaler.</li>'}</ul></details>`;
+}
+
+// ---------- Réel face au prévu ----------
+function actualsCard(r) {
+  if (view.app === 'all') return `<details class="card" id="pv-real"><summary><span>Réel face au prévu<br><span class="sum-sub">choisis une application pour saisir ses chiffres réels</span></span></summary><p class="muted">Les chiffres réels se saisissent application par application : choisis-en une en haut de la page.</p></details>`;
+  const x = r.scope[0], a = state.apps[x.i], act = a.actuals || {};
+  const ms = x.months.filter(m => inPeriod(m.month));
+  const inp = (month, f) => `<input class="real" type="number" min="0" step="any" inputmode="decimal" data-actual="${x.i}|${month}|${f}" value="${act[month]?.[f] ?? ''}" placeholder="—" aria-label="${f === 'ca' ? 'Chiffre d\'affaires' : 'Charges'} réel ${monthName(month)}">`;
+  const gap = (real, plan) => real === undefined || real === '' ? '' : `<span class="${+real < plan ? 'neg' : 'pos'}">${+real - plan >= 0 ? '+' : ''}${short(+real - plan)}</span>`;
+  const done = ms.filter(m => act[m.month] && (act[m.month].ca !== undefined && act[m.month].ca !== '')), sumPlan = done.reduce((t, m) => t + m.caHT, 0), sumReal = done.reduce((t, m) => t + +act[m.month].ca, 0);
+  return `<details class="card" id="pv-real" ${view.open.has('pv-real') ? 'open' : ''}><summary><span>Réel face au prévu<br><span class="sum-sub">${done.length ? `${done.length} mois saisis · CA réel ${short(sumReal)} pour ${short(sumPlan)} prévus (${sumPlan ? (sumReal >= sumPlan ? '+' : '') + Math.round((sumReal / sumPlan - 1) * 100) + ' %' : '—'})` : 'saisis tes chiffres réels dès les premières ventes'}</span></span></summary>
+    <p class="muted">Pour ${esc(a.name)}, ${periodName()}. Saisis chaque mois le chiffre d'affaires HT et les charges réellement constatés (dans ta comptabilité). L'écart te dit quelles hypothèses recaler.</p>
+    <div class="scroll"><table class="real-t"><thead><tr><th>Mois</th><th>CA prévu</th><th>CA réel</th><th>Écart</th><th>Charges prévues</th><th>Charges réelles</th><th>Écart</th></tr></thead><tbody>
+      ${ms.map(m => `<tr><td>${monthName(m.month)}</td><td>${money(m.caHT)}</td><td>${inp(m.month, 'ca')}</td><td>${gap(act[m.month]?.ca, m.caHT)}</td><td>${money(m.cost)}</td><td>${inp(m.month, 'charges')}</td><td>${act[m.month]?.charges === undefined || act[m.month]?.charges === '' ? '' : `<span class="${+act[m.month].charges > m.cost ? 'neg' : 'pos'}">${+act[m.month].charges - m.cost >= 0 ? '+' : ''}${short(+act[m.month].charges - m.cost)}</span>`}</td></tr>`).join('')}
+    </tbody></table></div></details>`;
+}
+
+// Export PDF : ouvre toutes les zones, puis la fenêtre d'impression (sur iPad : Partager › Enregistrer en PDF).
+const printButton = () => `<div class="row print-row"><button class="print-btn" id="printPdf">Exporter en PDF</button></div>`;
+
 // ---------- Trésorerie ----------
 // Solde de trésorerie mois par mois (toutes les applications), avec le point bas et la ligne zéro.
 function cashChart(t) {
@@ -588,6 +640,7 @@ function synthesePage() {
         { label: 'Inscriptions', value: num(r.sum('admissions')), hint: `${num(last.active || 0)} en programme en fin de période`, go: { page: 'previsionnel' } },
         { label: 'Abonnées', value: num(subsEnd), hint: `en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}`, go: { page: 'previsionnel' } }
       ] })}
+    ${alertsCard(r)}
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
@@ -635,11 +688,13 @@ function previsionnelPage() {
         { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
       ] })}
     ${cashCard()}
+    ${actualsCard(r)}
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
     <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
     <details class="card" id="pv-prod" ${view.open.has('pv-prod') || !view.open.size ? 'open' : ''}><summary>Par produit</summary><p class="muted">Touche un produit pour ouvrir ses réglages.</p><div>${productLines(r)}</div></details>
-    ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}`;
+    ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}
+    ${printButton()}`;
 }
 
 // Manque d'heures : premier mois dépassé et besoin jusqu'au palier suivant.
@@ -1008,7 +1063,8 @@ function resultatPage() {
     ${implantCard(r)}
     <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
         <p class="muted">La <b>contribution</b> d'un produit, c'est ce qu'il rapporte une fois payés ses propres coûts : frais de paiement, coûts par cliente, coaching et charges fixes qui lui sont rattachées.
-        Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>`;
+        Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>
+    ${printButton()}`;
 }
 
 // ---------- Rendu ----------
@@ -1034,7 +1090,8 @@ function render(fresh = false) {
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
-  $('page').innerHTML = pages[view.page]();
+  const due = backupDue();
+  $('page').innerHTML = (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
 
 // ---------- Événements ----------
@@ -1065,6 +1122,13 @@ document.addEventListener('change', async e => {
       o[k] = m && y ? `${y}-${m}` : '';
       save(); render();
     }
+  } else if (t.dataset.actual) {
+    const [ai, month, f] = t.dataset.actual.split('|'), a = state.apps[+ai];
+    a.actuals = a.actuals || {};
+    const cur = a.actuals[month] = a.actuals[month] || {};
+    if (t.value === '') delete cur[f]; else cur[f] = Math.max(0, +t.value || 0);
+    if (!Object.keys(cur).length) delete a.actuals[month];
+    save(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
@@ -1168,6 +1232,9 @@ document.addEventListener('click', e => {
   } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
+  } else if (t.id === 'printPdf') {
+    document.querySelectorAll('#page details').forEach(d => { d.open = true; });
+    setTimeout(() => window.print(), 50);
   } else if (t.id === 'export') {
     const link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
