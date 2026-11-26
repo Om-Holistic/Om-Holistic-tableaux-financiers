@@ -31,7 +31,7 @@ function monthPnl(a, m, vat) {
     cols[k].ca = ht(units[k].ca);
   }
   // Coaching : seules les heures des coachs embauchées coûtent (coût horaire), réparties selon les heures de chaque programme.
-  const hiredCost = (m.hiredHours || 0) * pnlPos(a.coachRate);
+  const hiredCost = ((m.hiredHours || 0) + (a.payMissing ? m.extraHours || 0 : 0)) * pnlPos(a.coachRate);
   if (hiredCost) {
     const progs = a.programs.map(p => p.id), totalH = progs.reduce((t, k) => t + units[k].hours, 0);
     for (const k of progs) cols[k].coaching = hiredCost * (totalH ? units[k].hours / totalH : 1 / progs.length);

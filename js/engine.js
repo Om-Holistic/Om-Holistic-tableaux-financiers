@@ -46,7 +46,7 @@ function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
     newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
-    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0
+    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0, extraHours: 0
   };
 }
 
@@ -132,6 +132,9 @@ function simulate(a, soloStock) {
     m.products.forEach((p, i) => { p.active = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); });
     // Clientes moyennes du mois (semaines-clientes / semaines du mois) et heures de coaching, par programme.
     if (hired) credit(d, (mm, share) => { mm.hiredHours += hired * share; });
+    // Heures qui dépassent la capacité (inscriptions non refusées) : comptées à part, payées comme des heures de coach si demandé.
+    const extra = Number.isFinite(limit) ? Math.max(0, hours - limit) : 0;
+    if (extra) credit(d, (mm, share) => { mm.extraHours += extra * share; });
     credit(d, (mm, share) => {
       const weeksInMonth = new Date(Date.UTC(+mm.month.slice(0, 4), +mm.month.slice(5), 0)).getUTCDate() / 7;
       for (const e of active) {

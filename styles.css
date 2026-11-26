@@ -412,3 +412,8 @@ details.card.product.solo .ps.hi { background: color-mix(in srgb, var(--clay) 12
 details.card.product.solo .ps.hi b { color: var(--clay); }
 details.card.product > summary .tag { margin-left: 6px; vertical-align: 2px; }
 details.card.product[open] .pstats { display: none; }
+
+/* Objectif calculé mais pas encore appliqué */
+.goal-pending { border-radius: 12px; padding: 10px 12px; background: var(--sage-tint); border-left: 4px solid var(--bad); display: flex; flex-direction: column; gap: 8px; }
+.goal-pending p { margin: 0; font-size: 14px; }
+.goal-pending button { background: var(--bad); color: #fff; font-weight: 600; }

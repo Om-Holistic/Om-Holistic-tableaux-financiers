@@ -124,7 +124,8 @@ function programCard(a, q, j, p) {
   const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
   const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
-  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span><br><span class="sum-sub">${calSummary}</span>
+  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span>${(() => { const gp = q.enabled && (q.goal?.steps || []).length ? programGoalPlan(a, j, (prodSim || simulate(a)).months) : null;
+        return gp && gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">${calSummary}</span>
       ${pstats([['Prix', priceRange(q.pricing)], ['Durée', `${num(q.duration)} sem.`], ['Coaching', `${num(+q.coach || 0)}${(q.coachSteps || []).length ? ' → ' + num(coachAt(q, '9999-12')) : ''} min`],
         q.enabled && q.start ? ['1re année', `${num(firstYear(q.start, m => m.products[j].admissions) || 0)} inscr.`, 'hi'] : null,
         q.enabled && q.start ? ['CA 1re année', money(firstYear(q.start, m => m.products[j].sales) || 0), 'hi'] : null])}</span></summary>
@@ -183,7 +184,9 @@ function programGoalSection(a, q, j, t) {
   }).join('');
   const applied = q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(plan.segs);
   const last = plan.segs[plan.segs.length - 1];
-  return section('goal-p' + j, 'ins', 'Objectif d\'inscriptions', g.steps.map(st => `${num(+st.count || 0)} / an à ${num(+st.months || 0)} mois`).join(' · '), `
+  return section('goal-p' + j, 'ins', 'Objectif d\'inscriptions', g.steps.map(st => `${num(+st.count || 0)} / an à ${num(+st.months || 0)} mois`).join(' · ') + (last && !applied ? ' · <b class="neg">pas encore appliqué</b>' : ''), `
+    ${last && !applied ? `<div class="goal-pending"><p><b>Objectif pas encore appliqué.</b> Les résultats suivent toujours ton rythme actuel. Un objectif est un calcul : il ne change rien tant que tu ne l'appliques pas.</p>
+      <div class="row"><button data-pgoal="${t}">Appliquer maintenant</button></div></div>` : ''}
     <h4>Paliers, comptés depuis le lancement commercial (${q.start ? monthName(q.start) : 'date à fixer'})</h4>
     ${rows}
     <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
@@ -217,7 +220,9 @@ function goalSection(a, p) {
   const after = !last ? '' : `<div class="goal"><div><span>Rythme final</span><b>${num(last.rate)} / semaine</b><small>${num(Math.round(last.paid * 52))} nouvelles abonnées payantes par an</small></div>
       ${stable ? `<div><span>Abonnées une fois stabilisé</span><b>${num(Math.round(stable))}</b><small>soit environ ${money(stable * priceAt)} de CA par mois au prix de ${price(priceAt)}</small></div>` : ''}</div>`;
   const applied = a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(plan.segs);
-  return section('goal-sd', 'ins', 'Objectif d\'abonnées', g.steps.map(st => `${num(+st.count || 0)} à ${num(+st.months || 0)} mois`).join(' · ') + (g.kind === 'new' ? ' (nouvelles / an)' : ''), `
+  return section('goal-sd', 'ins', 'Objectif d\'abonnées', g.steps.map(st => `${num(+st.count || 0)} à ${num(+st.months || 0)} mois`).join(' · ') + (g.kind === 'new' ? ' (nouvelles / an)' : '') + (plan.segs.length && !applied ? ' · <b class="neg">pas encore appliqué</b>' : ''), `
+    ${plan.segs.length && !applied ? `<div class="goal-pending"><p><b>Objectif pas encore appliqué.</b> Les résultats suivent toujours ton rythme actuel. Un objectif est un calcul : il ne change rien tant que tu ne l'appliques pas.</p>
+      <div class="row"><button data-goal="${p}">Appliquer maintenant</button></div></div>` : ''}
     <div class="grid">${select('Je vise', p + '.sub.goal.kind', g.kind, [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>
     <h4>Paliers, comptés depuis l'ouverture (${a.sub.start ? monthName(a.sub.start) : 'date à fixer'})</h4>
     ${rows}
@@ -233,7 +238,7 @@ function productsPage(a, i) {
   const p = 'apps.' + i;
   const g = a.sub.directPricing;
   // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
-  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
+  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}${(() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
       ${pstats([['Prix', priceRange(g) + ' / mois'], +a.sub.trialDays > 0 ? ['Essai', `${num(a.sub.trialDays)} j`] : null,
         a.sub.start ? ['Abonnées à 1 an', num(((m => m ? m.direct + m.post : 0)(prodSim && prodSim.months.find(m => m.month === addMonths(a.sub.start, 11))))), 'hi'] : null,
         a.sub.start ? ['CA 1re année', money(firstYear(a.sub.start, m => m.directCA + m.postCA) || 0), 'hi'] : null])}</span></summary>
@@ -354,7 +359,8 @@ function capacityCard(a, p) {
       <p class="muted">Les heures de coachs embauchées sont payées chaque semaine à ce coût, utilisées ou non. Tes propres heures ne coûtent rien ici (ta rémunération est dans Charges).</p>
       ${check('Refuser les inscriptions quand les heures ne suffisent plus', p + '.restrict', a.restrict)}
       ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}
-      <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
+      ${a.restrict ? '' : check('Payer les heures qui manquent au coût horaire des coachs', p + '.payMissing', a.payMissing)}
+      <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent${a.payMissing ? ' ; ces heures en trop sont alors comptées comme des heures de coachs embauchées, au coût horaire ci-dessus, pour que le résultat reste réaliste' : ''}. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
 }
 
 function implantSection() {

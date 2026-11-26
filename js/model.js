@@ -50,7 +50,7 @@ function program(name, start, prices, duration) {
 
 function application(name) {
   return {
-    name, restrict: false, waitlist: false,
+    name, restrict: false, waitlist: false, payMissing: true,
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
     capacitySteps: [], coachRate: 0, charges: [],
     sub: {
@@ -236,7 +236,7 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 11,
+    version: 12,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     implantation: defaultImplantation(),
@@ -381,7 +381,8 @@ function migrate(state) {
   // Version 10 : la capacité ne se règle plus qu'en heures (les tiennes + coachs embauchées).
   if ((state.version || 1) < 10) for (const a of state.apps) for (const c of a.capacitySteps || []) { if (c.hired === undefined) c.hired = 0; delete c.capacity; }
   if ((state.version || 1) < 11) for (const a of state.apps) for (const q of a.programs || []) if (!Array.isArray(q.coachSteps)) q.coachSteps = [];
-  state.version = 11;
+  if ((state.version || 1) < 12) for (const a of state.apps) if (a.payMissing === undefined) a.payMissing = true;
+  state.version = 12;
   return state;
 }
 
