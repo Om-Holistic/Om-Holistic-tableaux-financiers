@@ -390,6 +390,46 @@ function coachTimeBlock(a, p) {
       <p class="muted">C'est le premier levier : moins de minutes par cliente, c'est plus de clientes avec les mêmes heures. Si l'application prend le relais, prévois une baisse à une date. Elle s'applique à toutes les clientes en cours à partir de ce mois.</p>
       ${rows || '<p class="muted">Aucun programme actif.</p>'}</div>`;
 }
+// Besoin de coaching mois par mois, tous programmes confondus : heures nécessaires par semaine,
+// tes heures, et ce qu'il faut déléguer à des coachs (au coût horaire). Une ligne à chaque palier.
+function coachMonths(a, weekly) {
+  const by = new Map();
+  for (const w of weekly) {
+    const k = w.date.slice(0, 7), m = by.get(k) || { month: k, h: 0, n: 0, people: 0, own: w.own, hired: w.hired };
+    m.h += w.hours; m.n++; m.people = Math.max(m.people, w.people); m.own = w.own; m.hired = w.hired; by.set(k, m);
+  }
+  return [...by.values()].map(m => ({ ...m, need: m.h / m.n, deleg: Number.isFinite(m.own) ? Math.max(0, m.h / m.n - m.own - (m.hired || 0)) : 0 }));
+}
+function coachSteps(a, weekly) {
+  const ms = coachMonths(a, weekly).filter(m => m.need > 0.05), out = [];
+  for (const m of ms) {
+    const prev = out.at(-1);
+    const changed = !prev || m.own !== prev.own || m.hired !== prev.hired
+      || (m.deleg > 0.25) !== (prev.deleg > 0.25) || Math.abs(m.deleg - prev.deleg) >= 2 || Math.abs(m.need - prev.need) >= 3;
+    if (changed) out.push(m);
+  }
+  return out.slice(0, 14);
+}
+function coachNeedBlock(a, weekly) {
+  const rows = coachSteps(a, weekly), rate = +a.coachRate || 0;
+  if (!rows.length) return '';
+  const wk = 52 / 12, first = rows.find(m => m.deleg > 0.25);
+  const h = v => `${(Math.round(v * 2) / 2).toLocaleString('fr-FR')} h`;
+  const fit = m => Number.isFinite(m.own) && m.people > 0 ? Math.floor(((m.own || 0) + (m.hired || 0)) * 60 / m.people) : null;
+  const body = rows.map(m => {
+    const block = m.deleg > 0.25, f = fit(m);
+    return `<div class="cstep ${block ? 'block' : ''}"><p><b>${monthName(m.month)}</b><span class="muted"> · ${num(m.people)} clientes en même temps</span></p>
+      <dl><div><dt>Besoin</dt><dd>${h(m.need)} / sem.<small>${h(m.need * wk)} / mois</small></dd></div>
+      <div><dt>Disponibles</dt><dd>${Number.isFinite(m.own) ? h(m.own + (m.hired || 0)) + ' / sem.' : 'illimité'}<small>${m.hired ? `dont ${h(m.hired)} de coachs` : 'tes heures'}</small></dd></div>
+      <div><dt>À déléguer</dt><dd class="${block ? 'neg' : 'pos'}">${block ? h(m.deleg) + ' / sem.' : 'rien'}<small>${block && rate ? money(Math.round(m.deleg * rate * wk)) + ' / mois' : '&nbsp;'}</small></dd></div>
+      <div><dt>Sans déléguer</dt><dd>${block && f !== null ? num(f) + ' min' : '—'}<small>${block && f !== null ? 'par cliente' : '&nbsp;'}</small></dd></div></dl></div>`;
+  }).join('');
+  return `<h3 class="cap-h">Heures nécessaires et heures à déléguer</h3>
+    <p class="cap-sum">${first ? `<b class="neg">Tes heures ne suffisent plus à partir de ${monthName(first.month)}</b> : il faut ${h(first.need)} de coaching par semaine pour ${num(first.people)} clientes, tu en as ${h(first.own + (first.hired || 0))}${first.hired ? ` (dont ${h(first.hired)} de coachs déjà engagées)` : ''}. Il faut déléguer ${h(first.deleg)} par semaine${rate ? `, soit ${money(Math.round(first.deleg * rate * wk))} par mois` : ''}.` : '<b class="pos">Tes heures suffisent sur toute la période.</b>'}</p>
+    <div class="csteps">${body}</div>
+    <p class="muted">Heures nécessaires = clientes en cours × minutes par cliente, tous programmes ensemble. À déléguer = heures nécessaires − tes heures${rate ? `, payées ${money(rate)} de l'heure` : ''}. « Sans déléguer » : le temps par cliente qui tiendrait avec les heures disponibles.</p>`;
+}
+
 // Capacité de coaching : des heures par semaine (les tiennes + celles des coachs embauchées), communes à tous les programmes.
 function capacityCard(a, p) {
   const progs = a.programs.filter(q => q.enabled);
@@ -397,7 +437,7 @@ function capacityCard(a, p) {
     const mins = progs.map(q => coachAt(q, c.date || appStart(a))).filter(x => x > 0);
     const avgMin = mins.length ? mins.reduce((t, x) => t + x, 0) / mins.length : 0;
     const total = (+c.hours || 0) + (+c.hired || 0);
-    return lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['hours', 'Mes heures / semaine'], ['hired', 'Coachs embauchées (h / semaine)']], 'Retirer ce palier')
+    return lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['hours', 'Mes heures / semaine'], ['hired', 'Coachs déjà engagées, payées même sans clientes (h / sem.)']], 'Retirer ce palier')
       + `<p class="muted cap-derived">${num(total)} h par semaine${avgMin ? ` · environ ${num(Math.floor(total * 60 / avgMin))} clientes en même temps à ${num(Math.round(avgMin))} min chacune` : ''}${+c.hired && +a.coachRate ? ` · coachs : ${money(+c.hired * a.coachRate * 52 / 12)} / mois` : ''}</p>`;
   }).join('');
   const last = (a.capacitySteps || [])[a.capacitySteps.length - 1];
@@ -408,8 +448,9 @@ function capacityCard(a, p) {
           ms.length ? ['Temps / cliente', `${num(Math.min(...ms))}${Math.max(...ms) !== Math.min(...ms) ? '–' + num(Math.max(...ms)) : ''} min`] : null,
           hired && +a.coachRate ? ['Coachs', `${money(hired * a.coachRate * 52 / 12)} / mois`] : null,
           peak !== null ? ['Pic de clientes', num(peak)] : null]); })()}</span></summary>
+      ${prodSim && prodSim.weekly ? coachNeedBlock(a, prodSim.weekly) : ''}
       ${coachTimeBlock(a, p)}
-      <h3 class="cap-h">Heures de coaching disponibles</h3>
+      <h3 class="cap-h">Tes heures de coaching par semaine</h3>
       <p class="muted">Indique les heures que tu consacres au coaching chaque semaine (pas tes autres heures de travail), et celles de coachs embauchées. Le nombre de clientes possible en découle, selon le temps par cliente de chaque programme. Ajoute un palier à chaque changement.</p>
       ${steps || '<p class="muted">Aucun palier : capacité illimitée.</p>'}
       <div class="row"><button data-add="${p}.capacitySteps">Ajouter un palier</button></div>
@@ -417,7 +458,7 @@ function capacityCard(a, p) {
       <p class="muted">Les heures de coachs embauchées sont payées chaque semaine à ce coût, utilisées ou non. Tes propres heures ne coûtent rien ici (ta rémunération est dans Charges).</p>
       ${check('Refuser les inscriptions quand les heures ne suffisent plus', p + '.restrict', a.restrict)}
       ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}
-      ${a.restrict ? '' : check('Payer les heures qui manquent au coût horaire des coachs', p + '.payMissing', a.payMissing)}
+      ${a.restrict ? '' : check('Déléguer automatiquement les heures qui manquent à des coachs, au coût horaire', p + '.payMissing', a.payMissing)}
       <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent${a.payMissing ? ' ; ces heures en trop sont alors comptées comme des heures de coachs embauchées, au coût horaire ci-dessus, pour que le résultat reste réaliste' : ''}. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
 }
 
@@ -1020,6 +1061,7 @@ function capacityBlock(r) {
     </div>
     ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Heures de coaching nécessaires / semaine</span><span><i style="background:var(--bad)"></i>Heures insuffisantes</span><span><i class="dash"></i>Heures disponibles</span></div>
       <div class="chart cap-chart">${capacityChart(x)}</div>
+      ${coachNeedBlock(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7))))}
       ${(() => { const ai = x.i, sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
       <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${x.i}">Voir la capacité de coaching</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
