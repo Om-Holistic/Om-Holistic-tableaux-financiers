@@ -502,9 +502,36 @@ const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 
 // Scénario affiché partout (Résultat, Chiffre d'affaires, Trésorerie, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
 const currentScenario = () => (state.scenarios?.list || []).find(x => x.id === state.scenarios.current);
+// Simulation d'une application mémorisée (même réglages, même résultat) ; chaque appel reçoit ses propres mois,
+// que la suite peut compléter (charges, résultat) sans toucher à la copie gardée.
+const simMemo = new Map(), simulateRaw = simulate;
+simulate = function (a, soloStock) {
+  if (soloStock) return simulateRaw(a, soloStock);
+  // Les charges, la levée et le nom ne changent pas la simulation des ventes : hors de la clé.
+  const k = JSON.stringify(a, (key, v2) => key === 'charges' || key === 'funding' || key === 'raisePlan' ? undefined : v2);
+  let v = simMemo.get(k);
+  if (!v) { v = simulateRaw(a); if (simMemo.size > 60) simMemo.delete(simMemo.keys().next().value); simMemo.set(k, v); }
+  return { ...v, months: v.months.map(m => ({ ...m })) };
+};
+
+// Mémoire des simulations : une page en demande souvent plusieurs fois les mêmes (plans, années, sensibilité).
+// La clé contient tout l'état, donc la moindre modification recalcule.
+const simCache = new Map();
+function cached(key, fn) {
+  const k = JSON.stringify(state) + '|' + key;
+  if (simCache.has(k)) return simCache.get(k);
+  const v = fn();
+  if (simCache.size > 40) simCache.delete(simCache.keys().next().value);
+  simCache.set(k, v);
+  return v;
+}
 function results(sc = currentScenario()) {
+  const plan = view.plan !== 'sans' && view.app !== 'all' ? view.plan + ':' + view.app : 'sans';
+  return scoped(cached(`results|${sc ? sc.id + JSON.stringify(sc) : ''}|${plan}`, () => simulateAll(sc)));
+}
+function simulateAll(sc) {
   let st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
-  if (view.plan === 'avec' && view.app !== 'all') st = applyRaisePlan(st, +view.app);
+  if (view.plan !== 'sans' && view.app !== 'all') st = applyRaisePlan(st, +view.app, planOver(state.apps[+view.app]));
   const all = st.apps.map((a, i) => ({ a, i, ...simulate(a) }));
   const pnl = buildPnl(st, all);
   // Charges et résultat de chaque mois, à partir du compte d'exploitation.
@@ -515,7 +542,7 @@ function results(sc = currentScenario()) {
       m.cost = t.charges; m.net = t.result; m.caHT = t.ca;
     });
   });
-  return scoped({ all, st });
+  return { all, st };
 }
 // Même simulation, restreinte à l'application et à la période affichées (servira aussi année par année).
 function scoped({ all, st }) {
@@ -1416,8 +1443,14 @@ function trajectoryCard(r) {
 
 // ---------- Plan avec levée ----------
 // Implantation affichée et modifiée : celle du plan avec levée quand il est choisi, sinon celle de la société.
-const planApp = () => view.plan === 'avec' && view.app !== 'all' ? state.apps[+view.app] : null;
-const curImplant = () => { const a = planApp(), id = a?.raisePlan?.implant; return id && state.implantation.scenarios.some(x => x.id === id) ? id : state.implantation.current; };
+const planApp = () => view.plan !== 'sans' && view.app !== 'all' ? state.apps[+view.app] : null;
+// Plan ambitieux : mêmes réglages que le plan avec levée, remplacés par ceux de raisePlan.ambi.
+const planOver = a => view.plan === 'ambi' || view.plan === 'tres' ? { ...(a?.raisePlan?.[view.plan] || {}) } : {};
+const planP = a => ({ ...defaultRaisePlan(), ...a.raisePlan, ...planOver(a) });
+const planPath = i => `apps.${i}.raisePlan${view.plan === 'ambi' || view.plan === 'tres' ? '.' + view.plan : ''}`;
+const PLAN_NAMES = { avec: 'avec levée', ambi: 'avec levée ambitieuse', tres: 'avec levée très ambitieuse' };
+const planLabel = () => PLAN_NAMES[view.plan] || 'sans levée';
+const curImplant = () => { const a = planApp(), id = a && planP(a).implant; return id && state.implantation.scenarios.some(x => x.id === id) ? id : state.implantation.current; };
 const implantPath = () => planApp() ? `apps.${view.app}.raisePlan.implant` : 'implantation.current';
 // Copie de l'état où l'application i lève des fonds : ta rémunération, un budget de communication
 // calculé pour atteindre l'objectif d'abonnées (au coût d'acquisition choisi), d'autres dépenses,
@@ -1436,16 +1469,38 @@ function applyRaisePlan(st, i, over = {}) {
   // Nouvelles abonnées sans publicité supplémentaire, en moyenne sur l'année qui suit la levée.
   const base = simulate(a).months, k0 = Math.max(0, base.findIndex(m => m.month >= date));
   const yr = base.slice(k0, k0 + 12), organic = yr.length ? yr.reduce((t, m) => t + newSubs(a, m), 0) / yr.length : 0;
-  const perMonth = Math.max(0, (+P.target || 0) / 12 * (1 - Math.min(100, +P.organic || 0) / 100) - organic), budget = perMonth * Math.max(0, +P.cac || 0);
-  const word = (+P.target || 0) / 12 * Math.min(100, +P.organic || 0) / 100;
+  // Calendrier mois par mois depuis la levée : objectif francophone (qui grandit chaque année), puis version anglaise.
+  const org = Math.min(100, +P.organic || 0) / 100, g = 1 + (+P.growth || 0) / 100, N = Math.max(1, monthsFrom(date, base.at(-1).month) + 1);
+  const en = P.enDate && P.enDate >= date ? monthsFrom(date, P.enDate) : null;
+  const paidArr = [], schedule = [], budgets = [];
+  for (let t = 0; t < N; t++) {
+    const fr = (+P.target || 0) * Math.pow(g, Math.floor(t / 12)) * Math.min(1, (t + 1) / ramp);
+    const te = en !== null && t >= en ? t - en : null, eng = te === null ? 0 : (+P.enTarget || 0) * Math.pow(g, Math.floor(te / 12)) * Math.min(1, (te + 1) / ramp);
+    const paidM = Math.max(0, fr / 12 * (1 - org) - organic * Math.min(1, (t + 1) / ramp)) + eng / 12 * (1 - org);
+    paidArr.push(paidM); schedule.push(paidM + (fr + eng) / 12 * org); budgets.push(Math.round(paidM * Math.max(0, +P.cac || 0)));
+  }
+  const word = (+P.target || 0) / 12 * org, perMonth = paidArr[Math.min(N, Math.max(12, ramp)) - 1], budget = budgets[Math.min(N, Math.max(12, ramp)) - 1];
   // Les abonnées du bouche-à-oreille arrivent comme celles de la publicité, sans coût d'acquisition.
-  a.paid = { from: date, perMonth: perMonth + word, ramp };
+  a.paid = { from: date, schedule };
+  const steps = []; budgets.forEach((v, t) => { if (t && v !== budgets[t - 1]) steps.push({ after: t, amount: v }); });
   const extra = { scope: 'app', anchor: 'date', start: date, estimate: false, plan: true };
   a.charges = [...(a.charges || []),
     charge('Ta rémunération (plan avec levée)', 'fixe', Math.round((+P.salary || 0) * (1 + (+P.social || 0) / 100)), 'app', date, '', { ...extra, category: 'personnel' }),
-    charge('Communication et publicité (plan avec levée)', 'fixe', Math.round(budget / ramp), 'app', date, '', { ...extra, category: 'marketing',
-      steps: Array.from({ length: ramp - 1 }, (_, j) => ({ after: j + 1, amount: Math.round(budget * (j + 2) / ramp) })) }),
-    ...(+P.extra > 0 ? [charge('Autres dépenses (plan avec levée)', 'fixe', +P.extra, 'app', date, '', { ...extra, category: 'autre' })] : [])];
+    charge('Communication et publicité (plan avec levée)', 'fixe', budgets[0], 'app', date, '', { ...extra, category: 'marketing', steps }),
+    ...(+P.extra > 0 ? [charge('Autres dépenses (plan avec levée)', 'fixe', +P.extra, 'app', date, '', { ...extra, category: 'autre' })] : []),
+    ...(en !== null && +P.enCost > 0 ? [charge('Version anglaise : traduction, contenus, support', 'fixe', +P.enCost, 'app', P.enDate, '', { ...extra, start: P.enDate, category: 'contenu' })] : [])];
+  // Équipe : on recrute quand le chiffre d'affaires annualisé dépasse ce qu'une personne de plus peut porter (toi comprise),
+  // sans licencier ensuite. Plus des frais généraux qui suivent l'activité.
+  const ht = v2 => s.vat?.ttc ? v2 / (1 + (+s.vat.rate || 0) / 100) : v2;
+  const sim1 = simulate(a).months, kd = Math.max(0, sim1.findIndex(m => m.month >= date)), perFte = Math.max(1, +P.revPerFte || 150000);
+  let fte = 0; const team = [];
+  for (let t = kd; t < sim1.length; t++) {
+    const rr = sim1.slice(Math.max(kd, t - 2), t + 1).reduce((u, m) => u + ht(m.total), 0) / Math.min(3, t - kd + 1) * 12;
+    fte = Math.max(fte, Math.ceil(rr / perFte) - 1); team.push(fte);
+  }
+  const teamSteps = []; team.forEach((n2, t) => { if (t && n2 !== team[t - 1]) teamSteps.push({ after: t, amount: n2 * (+P.fteCost || 0) }); });
+  if (team.some(n2 => n2 > 0)) a.charges.push(charge('Équipe recrutée (selon le chiffre d\'affaires)', 'fixe', team[0] * (+P.fteCost || 0), 'app', date, '', { ...extra, category: 'personnel', steps: teamSteps }));
+  if (+P.overhead > 0) a.charges.push(charge('Frais généraux qui suivent l\'activité', 'ca', +P.overhead, 'app', date, '', { ...extra, category: 'honoraires' }));
   if (P.implant && s.implantation.scenarios.some(x => x.id === P.implant)) s.implantation.current = P.implant;
   // Montant à lever : ce qui manque pour que la trésorerie de l'appli reste positive pendant l'autonomie visée.
   a.funding = null;
@@ -1455,7 +1510,7 @@ function applyRaisePlan(st, i, over = {}) {
   // Au moins l'autonomie visée, et jusqu'au bout des prévisions : la trésorerie ne doit plus repasser sous zéro ensuite.
   const low = ms.slice(k).reduce((l, m) => Math.min(l, m.balance), 0);
   const need = Math.ceil(-low / 10000) * 10000;
-  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic, word, breakEven: tr0.breakEven };
+  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic, word, breakEven: tr0.breakEven, budgets, enDate: en !== null ? P.enDate : '', team, teamFrom: date };
   return s;
 }
 
@@ -1491,7 +1546,7 @@ function raiseValues(r) {
 function dossierCard(r) {
   const id = 'r-raise', x = r.scope[0], a = x.a, F = a.funding;
   if (!F) return '';
-  const P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r), n = Math.max(1, +R.runway || 18);
+  const P = planP(a), R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r), n = Math.max(1, +R.runway || 18);
   const tr = scopeTreasury(r), k = Math.max(0, tr.months.findIndex(m => m.month >= F.month)), win = tr.months.slice(k, k + n);
   const winSet = new Set(win.map(m => m.month)), lines = sumPnl(x.pnl.filter(e => winSet.has(e.month))).lines || {};
   const planCost = cat => a.charges.filter(c => c.plan && c.category === cat).reduce((t, c) => t + (lines[c.id] || 0), 0);
@@ -1542,14 +1597,73 @@ function dossierCard(r) {
     </div>
     <h4 class="kpi-h">Sans levée ou avec levée</h4>
     <div class="scroll"><table class="traj cmp"><thead><tr><th></th><th></th>${ysA.map(o => `<th>${o.y}</th>`).join('')}</tr></thead><tbody>${cmpRows}</tbody></table></div>
-    ${section('r-raise-h', 'promo', 'Hypothèses du plan avec levée', `${monthName(F.month)} · ${money(+P.salary)} net · CAC ${money(+P.cac)} · ${num(+P.target)} abonnées / an`, `
+    ${section('r-raise-h', 'promo', `Hypothèses du plan ${planLabel()}`, `${monthName(F.month)} · ${money(+P.salary)} net · CAC ${money(+P.cac)} · ${num(+P.target)} abonnées / an`, `
       <div class="grid">${monthField('Date de la levée', `apps.${x.i}.raiseDate`, a.raiseDate || '', 'Au lancement')}
-      ${field('Montant que tu veux lever (€, 0 = ce que le plan demande)', `apps.${x.i}.raisePlan.amount`, P.amount)}${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
-      ${field('Ta rémunération nette (€ / mois)', `apps.${x.i}.raisePlan.salary`, P.salary)}${field('Charges sur ce salaire (% du net)', `apps.${x.i}.raisePlan.social`, P.social)}
-      ${field('Nouvelles abonnées visées par an', `apps.${x.i}.raisePlan.target`, P.target)}${field('Coût d\'acquisition d\'une abonnée payante (€)', `apps.${x.i}.raisePlan.cac`, P.cac)}
-      ${field('Montée en charge de la communication (mois)', `apps.${x.i}.raisePlan.ramp`, P.ramp)}${field('Autres dépenses (€ / mois)', `apps.${x.i}.raisePlan.extra`, P.extra)}
-      ${select('Statut de la société', `apps.${x.i}.raisePlan.implant`, P.implant, implants)}</div>`)}
+      ${field('Montant que tu veux lever (€, 0 = ce que le plan demande)', `${planPath(x.i)}.amount`, P.amount)}${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
+      ${field('Ta rémunération nette (€ / mois)', `${planPath(x.i)}.salary`, P.salary)}${field('Charges sur ce salaire (% du net)', `${planPath(x.i)}.social`, P.social)}
+      ${field('Nouvelles abonnées visées par an', `${planPath(x.i)}.target`, P.target)}${field('Coût d\'acquisition d\'une abonnée payante (€)', `${planPath(x.i)}.cac`, P.cac)}
+      ${field('Montée en charge de la communication (mois)', `${planPath(x.i)}.ramp`, P.ramp)}${field('Autres dépenses (€ / mois)', `${planPath(x.i)}.extra`, P.extra)}
+      ${field('Hausse de l\'objectif chaque année (%)', `${planPath(x.i)}.growth`, P.growth)}
+      ${monthField('Lancement de la version anglaise', `${planPath(x.i)}.enDate`, P.enDate || '', 'Pas de version anglaise')}
+      ${field('Version anglaise : nouvelles abonnées la 1re année', `${planPath(x.i)}.enTarget`, P.enTarget)}${field('Version anglaise : coût mensuel (€)', `${planPath(x.i)}.enCost`, P.enCost)}
+      ${field('CA annuel par personne avant de recruter (€)', `${planPath(x.i)}.revPerFte`, P.revPerFte)}${field('Coût mensuel d\'une recrue, charges comprises (€)', `${planPath(x.i)}.fteCost`, P.fteCost)}
+      ${field('Frais généraux (% du CA)', `${planPath(x.i)}.overhead`, P.overhead)}
+      ${select('Statut de la société', `${planPath(x.i)}.implant`, P.implant, implants)}</div>`)}
     <p class="muted">Coût d'acquisition : une application bien-être paie en général 3 à 6 $ par installation et 20 à 40 $ par essai, et 3 à 4 % des installations deviennent payantes ; compter de 40 à 120 € par abonnée payante selon les canaux (Adapty, Customer acquisition cost 2026 ; Airbridge, Cost per trial and cost per subscription ; RevenueCat, State of Subscription Apps 2025). Commence prudemment et ajuste avec tes vrais chiffres dès les premières campagnes. Ordres de grandeur, à valider avec ton expert-comptable.</p></details>`;
+}
+
+// Les trois plans avec levée côte à côte : modeste, ambitieux, très ambitieux.
+function tiersCard(i) {
+  const keep = view.plan, cols = [];
+  try {
+    for (const k of ['avec', 'ambi', 'tres']) {
+      view.plan = k;
+      const r = results(), a = r.scope[0].a, F = a.funding, P = planP(state.apps[i]), ys = yearlyKpis(r), at = y => (ys.find(o => o.y === y) || {}).K;
+      const teamAt = y => F.team.length ? F.team[Math.max(0, Math.min(F.team.length - 1, monthsFrom(F.teamFrom, y + '-12')))] : 0;
+      cols.push({ k, F, P, at, teamAt });
+    }
+  } finally { view.plan = keep; }
+  const yrs = [2030, 2034];
+  const row = (label, f) => `<tr><th>${label}</th>${cols.map(c => `<td class="${c.k === (view.levPlan || 'avec') ? 'cur' : ''}">${f(c)}</td>`).join('')}</tr>`;
+  const K = (c, y, f) => { const v = c.at(y); return v ? f(v) : '—'; };
+  const rows = [
+    row('Levée', c => `${short(c.F.amount)}<small class="stg">besoin ${short(c.F.need)}</small>`),
+    row('Nouvelles abonnées / an', c => `${num(+c.P.target)}<small class="stg">${+c.P.growth ? `+${num(+c.P.growth)} % par an` : 'stable'}</small>`),
+    row('Version anglaise', c => c.P.enDate ? shortMonth(c.P.enDate) : 'non'),
+    row('Coût d\'une abonnée', c => money(+c.P.cac)),
+    ...yrs.flatMap(y => [
+      row(`Abonnées fin ${y}`, c => K(c, y, v => num(v.last.direct + v.last.post))),
+      row(`Chiffre d'affaires ${y}`, c => K(c, y, v => short(v.t.ca))),
+      row(`Résultat ${y}`, c => K(c, y, v => `<span class="${v.ebitda < 0 ? 'neg' : ''}">${short(v.ebitda)}</span>`)),
+      row(`Équipe fin ${y}`, c => `${num(1 + c.teamAt(y))} pers.`)]),
+    row('LTV / CAC', c => K(c, 2030, v => v.ratio === null ? '—' : `<span class="lvt ${benchLevel('ltvcac', v.ratio)}">${fmtN(v.ratio, 1)}</span>`)),
+    row('Point mort', c => c.F.breakEven ? shortMonth(c.F.breakEven) : 'non atteint')
+  ].join('');
+  const id = 'lv-tiers';
+  return `<details class="card" id="${id}" ${view.open.has(id) || !view.open.size ? 'open' : ''}><summary><span>Les trois plans côte à côte<br><span class="sum-sub">${cols.map(c => `${{ avec: 'modeste', ambi: 'ambitieux', tres: 'très ambitieux' }[c.k]} ${K(c, 2030, v => short(v.t.ca))} en 2030`).join(' · ')}</span></span></summary>
+    <div class="scroll"><table class="traj cmpx"><thead><tr><th></th>${cols.map(c => `<th class="${c.k === (view.levPlan || 'avec') ? 'cur' : ''}">${{ avec: 'Modeste', ambi: 'Ambitieux', tres: 'Très ambitieux' }[c.k]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="muted">Équipe : toi, plus une personne recrutée chaque fois que le chiffre d'affaires annualisé dépasse ${short(+planP(state.apps[i]).revPerFte)} de plus, à ${money(+planP(state.apps[i]).fteCost)} par mois charges comprises ; les coachs des programmes sont payées à l'heure à part. S'y ajoutent les frais généraux (${num(+planP(state.apps[i]).overhead)} % du CA), la publicité, les frais de paiement et les coûts par abonnée.</p></details>`;
+}
+
+// Repères du marché qui servent à calibrer les plans.
+function refsCard() {
+  const id = 'lv-refs';
+  const li = (t, src) => `<li>${t} <span class="muted">(${src})</span></li>`;
+  return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Ce que font les autres applis<br><span class="sum-sub">Petit BamBou 85 000 abonnées en 3 ans et demi · rétention · taille du marché</span></span></summary>
+    <h4 class="kpi-h">Applis comparables</h4><ul class="refs">
+      ${li('Petit BamBou (méditation, française, sans levée, rentable la 1re année) : environ 85 000 abonnées payantes et 1,5 million d\'utilisatrices 3 ans et demi après son lancement ; 12 millions d\'utilisatrices en 2026, dont 42 % hors de France ; version américaine lancée 9 ans après.', 'Viuz 2018, La Gazette France 2026')}
+      ${li('Trainsweateat (Sissy Mua, fitness pour femmes, 9 € par mois) : environ 2 millions d\'utilisatrices, 80 % de femmes ; 15 M€ de CA pour tout le groupe en 2025, porté par une très grande audience Instagram.', 'Paris Match 2026')}
+      ${li('FizzUp (fitness, française) : plus de 1 M€ de CA en 2016 et une levée de 1,4 M€ ; environ 10 % du CA hors de France.', 'Sport Buzz Business 2016')}
+      ${li('Calm : 2 M$ de CA en 2015, 37 M$ en 2017, 150 M$ en 2019. Clue : 500 000 abonnées payantes en 2024, 1 million en 2025.', 'Business of Apps, GlobeNewswire 2025')}</ul>
+    <h4 class="kpi-h">Abonnements bien-être et forme</h4><ul class="refs">
+      ${li('Premier renouvellement d\'un abonnement mensuel : 57 % en médiane, 68 % pour le meilleur quart. Abonnement annuel renouvelé : 25 % en médiane, 37 % pour le meilleur quart.', 'RevenueCat 2026')}
+      ${li('Deux tiers des abonnements vendus en bien-être et forme sont annuels, vendus environ 3 fois le prix mensuel. Une durée moyenne de 12 mois, comme dans ton plan, est déjà dans le haut de la fourchette.', 'RevenueCat State of Subscription Apps 2025 et 2026')}
+      ${li('Sur les nouvelles applis, environ 20 % atteignent 1 000 $ par mois en 2 ans, 5 % atteignent 10 000 $ ; le meilleur quart augmente son revenu mensuel de 80 % par an.', 'RevenueCat 2025 et 2026')}
+      ${li('Aucune statistique publiée sur la part d\'abonnées qui achètent un programme coaché : c\'est une hypothèse à prouver avec tes premières cohortes.', '')}</ul>
+    <h4 class="kpi-h">Marché</h4><ul class="refs">
+      ${li('348 millions de francophones dans le monde, dont 142 millions en Europe.', 'OIF, La langue française dans le monde 2026')}
+      ${li('Marché mondial des applis de santé des femmes : environ 13 Md$ en 2030, + 18 % par an (estimation d\'un cabinet d\'études, à prendre comme ordre de grandeur).', 'Grand View Research')}</ul>
+    <p class="muted">Lecture : le plan modeste correspond à une appli qui marche bien ; l'ambitieux suppose de faire partie des quelques pour cent d'applis qui décollent ; le très ambitieux vise environ la moitié de Petit BamBou au même âge, avec une version anglaise. Plus le plan est ambitieux, plus il faut le prouver par les chiffres réels des premiers mois.</p></details>`;
 }
 
 // ---------- Page Levée de fonds : le dossier de l'application, toujours avec le plan avec levée ----------
@@ -1558,9 +1672,9 @@ function leveePage() {
   if (!a0.raisePlan?.on) return `${banner({ label: 'Levée de fonds', chip: esc(a0.name), big: 'Pas de plan', note: 'Aucun plan avec levée pour cette application', tiles: [] })}
     <div class="card"><p>Prépare un plan avec levée pour ${esc(a0.name)} : ta rémunération, un budget de communication pour ton objectif d'abonnées, et le montant à lever.</p>
     <div class="row"><button id="raiseOn" data-app="${i}">Préparer le plan avec levée de ${esc(a0.name)}</button></div></div>`;
-  const keep = view.plan; view.plan = 'avec';
+  const keep = view.plan; view.plan = view.levPlan || 'avec';
   try {
-    const r = results(), x = r.scope[0], a = x.a, F = a.funding, P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r);
+    const r = results(), x = r.scope[0], a = x.a, F = a.funding, P = planP(a), R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r);
     // Valeur d'une abonnée, sur la première année pleine après la levée.
     const ys = yearlyKpis(r), y1 = +F.month.slice(0, 4) + 1, Y = (ys.find(o => o.y === y1) || ys.at(-1) || {}).K;
     const ht = v2 => state.vat?.ttc ? v2 / (1 + (+state.vat.rate || 0) / 100) : v2;
@@ -1579,7 +1693,7 @@ function leveePage() {
     // Sensibilité au coût d'acquisition.
     const sc = currentScenario(), base = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
     const cacs = [...new Set([40, 60, 80, 100, 120, cac].map(Number))].sort((p1, p2) => p1 - p2);
-    const sens = cacs.map(c => ({ c, F: c === cac ? F : applyRaisePlan(base, i, { cac: c }).apps[i].funding }));
+    const sens = cacs.map(c => ({ c, F: c === cac ? F : cached(`sens|${view.plan}|${i}|${c}|${sc ? JSON.stringify(sc) : ''}`, () => applyRaisePlan(base, i, { ...planOver(state.apps[i]), cac: c }).apps[i].funding) }));
     const cell = (o, h) => `<td class="${o.c === cac ? 'cur' : ''}">${h}</td>`;
     const sensRows = [
       ['Communication / mois', o => short(o.F.budget)],
@@ -1590,8 +1704,8 @@ function leveePage() {
     ].map(([l, f]) => `<tr><th>${l}</th>${sens.map(o => cell(o, f(o))).join('')}</tr>`).join('');
     const worst = sens.filter(o => o.F.need > F.amount);
     const sensCard = `<details class="card" id="lv-sens" ${view.open.has('lv-sens') || !view.open.size ? 'open' : ''}><summary><span>Si la publicité coûte plus ou moins cher<br><span class="sum-sub">${worst.length ? `ta levée ne suffit plus dès ${money(worst[0].c)} par abonnée` : `ta levée suffit jusqu'à ${money(cacs.at(-1))} par abonnée`}</span></span></summary>
-      <div class="scroll"><table class="traj sens"><thead><tr><th>Coût d'une abonnée</th>${sens.map(o => `<th class="${o.c === cac ? 'cur' : ''}">${money(o.c)}</th>`).join('')}</tr></thead><tbody>${sensRows}</tbody></table></div></details>`;
-    const p = `apps.${i}.raisePlan`;
+      <div class="scroll"><table class="traj cmpx"><thead><tr><th>Coût d'une abonnée</th>${sens.map(o => `<th class="${o.c === cac ? 'cur' : ''}">${money(o.c)}</th>`).join('')}</tr></thead><tbody>${sensRows}</tbody></table></div></details>`;
+    const p = planPath(i);
     const leversCard = section('lv-levers', 'promo', 'Leviers', `abonnement ${+P.duration > 0 ? num(+P.duration) + ' mois' : 'comme dans Produits'} · bouche-à-oreille ${num(+P.organic || 0)} % · passerelle ${+P.fromSolo > 0 ? num(+P.fromSolo) + ' % par an' : 'comme dans Produits'}`, `
       <div class="grid">${field('Durée moyenne d\'abonnement (mois, 0 = celle de Produits)', `${p}.duration`, P.duration)}
       ${field('Part de l\'objectif venue du bouche-à-oreille et du parrainage (%)', `${p}.organic`, P.organic)}
@@ -1610,12 +1724,15 @@ function leveePage() {
           { label: 'Point mort', value: F.breakEven ? shortMonth(F.breakEven) : 'non atteint', hint: 'rémunération comprise' },
           { label: 'LTV / CAC', value: ratio === null ? '—' : fmtN(ratio, 1), cls: ratio !== null && ratio < 1 ? 'neg-hero' : '', hint: 'repère ≥ 3' }
         ] })}
+      <div class="seg" role="tablist">${[['avec', 'Modeste'], ['ambi', 'Ambitieux'], ['tres', 'Très ambitieux']].map(([k, l]) => `<button class="${view.plan === k ? 'on' : ''}" data-levplan="${k}">${l}</button>`).join('')}</div>
+      ${tiersCard(i)}
       ${dossierCard(r)}
       ${sensCard}
       ${valueCard}
       ${leversCard}
       ${marketCard}
-      <p class="muted">Toutes les autres pages montrent ce plan quand tu choisis « ${esc(a.name)} · avec levée » dans la liste en haut.</p>`;
+      ${refsCard()}
+      <p class="muted">Toutes les autres pages montrent ce plan quand tu choisis « ${esc(a.name)} · ${planLabel()} » dans la liste en haut.</p>`;
   } finally { view.plan = keep; }
 }
 
@@ -1682,9 +1799,9 @@ function renderToolbar() {
   }
   $('app').innerHTML = (settings ? '' : '<option value="all">Om Holistic · consolidé</option>')
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`
-      + (!settings || view.page === 'charges' ? (a.raisePlan?.on ? `<option value="${i}+">${esc(a.name)} · avec levée</option>` : '') : '')).join('');
-  if (view.plan === 'avec' && (view.app === 'all' || !state.apps[+view.app]?.raisePlan?.on || (settings && view.page !== 'charges'))) view.plan = 'sans';
-  $('app').value = view.app + (view.plan === 'avec' ? '+' : '');
+      + (!settings || view.page === 'charges' ? (a.raisePlan?.on ? `<option value="${i}+">${esc(a.name)} · avec levée</option><option value="${i}*">${esc(a.name)} · avec levée ambitieuse</option><option value="${i}**">${esc(a.name)} · avec levée très ambitieuse</option>` : '') : '')).join('');
+  if (view.plan !== 'sans' && (view.app === 'all' || !state.apps[+view.app]?.raisePlan?.on || (settings && view.page !== 'charges'))) view.plan = 'sans';
+  $('app').value = view.app + ({ avec: '+', ambi: '*', tres: '**' }[view.plan] || '');
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
   $('step').parentElement.hidden = view.page !== 'tresorerie';
   document.querySelector('.toolbar').classList.toggle('four', view.page === 'tresorerie');
@@ -1755,7 +1872,7 @@ document.addEventListener('change', async e => {
       render();
       if (next) document.querySelector(`[data-path="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
     }, 0);
-  } else if (t.id === 'app') { if (view.page !== 'levee') view.plan = t.value.endsWith('+') ? 'avec' : 'sans'; view.app = t.value.replace('+', ''); render(true); }
+  } else if (t.id === 'app') { if (view.page !== 'levee') view.plan = t.value.endsWith('+') ? 'avec' : t.value.endsWith('**') ? 'tres' : t.value.endsWith('*') ? 'ambi' : 'sans'; view.app = t.value.replace(/[+*]+/, ''); render(true); }
   else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'step') {
@@ -1856,6 +1973,7 @@ document.addEventListener('click', e => {
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
   } else if (t.id === 'benchReset') { state.bench = defaultBench(); save(); render();
+  } else if (t.dataset.levplan) { view.levPlan = t.dataset.levplan; render();
   } else if (t.id === 'raiseOn') { const a = state.apps[+t.dataset.app]; a.raisePlan = { ...defaultRaisePlan(), ...(a.raisePlan || {}), on: true }; save(); render();
   } else if (t.id === 'raiseReset') { state.raise = defaultRaise(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();

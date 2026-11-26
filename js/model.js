@@ -267,6 +267,13 @@ function defaultRaise() {
   };
 }
 
+// Plan ambitieux : ce qui change par rapport au plan avec levée (valeurs sourcées dans l'onglet Levée).
+function defaultAmbition(very = false) {
+  return very
+    ? { target: 4000, growth: 50, organic: 30, fromSolo: 8, cac: 45, enDate: '2028-07', enTarget: 4000, enCost: 5000, amount: 500000 }
+    : { target: 2000, growth: 30, organic: 20, fromSolo: 5, cac: 50, enDate: '2029-07', enTarget: 1500, enCost: 3000, amount: 400000 };
+}
+
 // Plan « avec levée » d'une application : ce que la levée finance (dès la date de levée de l'appli).
 function defaultRaisePlan(on = false) {
   return {
@@ -281,7 +288,16 @@ function defaultRaisePlan(on = false) {
     amount: 250000,    // montant que tu comptes lever (0 = juste ce que le plan demande)
     duration: 0,       // levier : durée moyenne d'abonnement en mois (0 = celle de Produits)
     organic: 0,        // levier : part de l'objectif apportée par le bouche-à-oreille et le parrainage, %
-    fromSolo: 0        // levier : abonnées qui achètent un programme chaque année, % (0 = comme dans Produits)
+    fromSolo: 0,       // levier : abonnées qui achètent un programme chaque année, % (0 = comme dans Produits)
+    growth: 0,         // hausse de l'objectif d'abonnées chaque année, %
+    enDate: '',        // lancement de la version anglaise (vide = pas de version anglaise)
+    enTarget: 0,       // nouvelles abonnées par an apportées par la version anglaise, première année
+    enCost: 0,         // coût mensuel de la version anglaise (traduction, contenus, support), €
+    revPerFte: 200000, // chiffre d'affaires annuel par personne dans l'équipe, au-delà duquel on recrute (toi comprise)
+    fteCost: 5000,     // coût mensuel d'une personne recrutée, charges comprises, €
+    overhead: 3,       // frais généraux qui suivent l'activité (comptable, juridique, outils, locaux), % du CA
+    ambi: defaultAmbition(), // plan ambitieux : réglages qui remplacent ceux-ci
+    tres: defaultAmbition(true) // plan très ambitieux
   };
 }
 
@@ -491,7 +507,7 @@ function migrate(state) {
   }
   for (const a of state.apps) {
     if (!a.raisePlan) a.raisePlan = defaultRaisePlan(/chrysalis/i.test(a.name || ''));
-    for (const [k, v] of Object.entries(defaultRaisePlan())) if (a.raisePlan[k] === undefined) a.raisePlan[k] = v;
+    for (const [k, v] of Object.entries(defaultRaisePlan())) if (a.raisePlan[k] === undefined || ((k === 'ambi' || k === 'tres') && !a.raisePlan[k])) a.raisePlan[k] = v;
   }
   state.version = 18;
   return state;
@@ -501,4 +517,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultRaisePlan, defaultAmbition, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
