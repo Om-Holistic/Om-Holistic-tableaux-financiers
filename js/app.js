@@ -427,8 +427,12 @@ function palierCard(a, ai, p, st, last) {
         : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`);
   } else if (st && st.own !== null) verdict = `<p class="pal-ok"><b>Tes heures suffisent sur tout ce palier.</b></p>`;
   else if (st) verdict = `<p class="muted">Indique tes heures par semaine pour voir à partir de quand ça bloque.</p>`;
-  return `<div class="card palier ${st && st.block ? 'blocked' : ''}" id="pal-${ai}-${p.k}">
-      <p class="pal-head">${head}</p>${datePick}
+  const id = `pal-${ai}-${p.date || 'debut'}`, bm = st && st.block ? st.block.date.slice(0, 7) : '';
+  const folded = pstats([['Besoin', `${hrs(total)} / sem.`], ['Mes heures', cap ? `${hrs(+cap.hours || 0)} / sem.` : '—'],
+    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem.${rate ? ' · ' + money(Math.round(pay * rate * wk)) + ' / mois' : ''}` : 'rien', pay > 0.05 ? 'bad' : '']]);
+  return `<details class="card palier ${st && st.block ? 'blocked' : ''}" id="${id}" ${view.open.has(id) ? 'open' : ''}>
+      <summary><span>${head}${bm ? ` <span class="tag bad">Bloque en ${MSHORT[+bm.slice(5) - 1]} ${bm.slice(0, 4)}</span>` : st && st.own !== null ? ' <span class="tag ok">Ça tient</span>' : ''}${folded}</span></summary>
+      <div class="pal-body">${datePick}
       <div class="scroll"><table class="pal-t"><thead><tr><th>Programme</th><th>Min. / cliente / sem.</th><th>Clientes</th><th>Heures / sem.</th></tr></thead>
         <tbody>${rows}<tr class="total"><td>Total</td><td></td><td>${num(people)}</td><td>${hrs(total)}</td></tr></tbody></table></div>
       <dl class="pal-sum">
@@ -438,7 +442,7 @@ function palierCard(a, ai, p, st, last) {
       <p class="muted">Chiffres de la semaine la plus chargée du palier${st ? `, en ${monthName(st.peak.date.slice(0, 7))}` : ''}.</p>
       ${verdict}
       ${last && !(st && st.block) ? `<div class="row"><button data-paladd="${ai}|${addMonths(p.from > thisMonth ? p.from : thisMonth, 6)}">Ajouter un palier</button></div>` : ''}
-    </div>`;
+    </div></details>`;
 }
 function coachingPage() {
   const r = results();
@@ -2054,8 +2058,11 @@ document.addEventListener('click', e => {
   } else if (t.dataset.paladd) {
     const [ai, month] = t.dataset.paladd.split('|');
     addPalier(state.apps[+ai], month);
+    // Le nouveau palier s'ouvre, les autres gardent leur état.
+    const keep = [...document.querySelectorAll('#page details[open]')].map(d => d.id);
     save(); render();
-    document.querySelector(`[data-palmove="${ai}|${month}"]`)?.closest('.palier')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    const nd = document.getElementById(`pal-${ai}-${month}`);
+    if (nd) { keep.forEach(k => document.getElementById(k)?.setAttribute('open', '')); nd.open = true; nd.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
   } else if (t.dataset.paldel) {
     const [ai, date] = t.dataset.paldel.split('|');
     removePalier(state.apps[+ai], date);
