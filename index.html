@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="om-version" content="2026.11.26-34">
+  <meta name="om-version" content="2026.11.26-37">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Om Finances</title>
   <meta name="theme-color" content="#1f1636">
@@ -13,10 +13,11 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600&display=swap">
-  <link rel="stylesheet" href="styles.css?v=2026.11.26-34">
+  <link rel="stylesheet" href="styles.css?v=2026.11.26-37">
 </head>
 <body>
   <header>
+    <button id="menuBtn" class="menubtn" type="button" aria-label="Ouvrir le menu" aria-expanded="false" aria-controls="tabs"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg></button>
     <div class="head">
       <h1>Om Holistic</h1>
       <p>Prévisionnel des applications</p>
@@ -34,6 +35,7 @@
       <a href="#reglages" aria-label="Réglages"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/></svg><span class="s">Réglages</span><span class="l">Réglages</span></a>
     </nav>
   </header>
+  <div id="menuShade" class="menushade" hidden></div>
   <main>
     <section class="toolbar">
       <label class="appsel"><span class="sr">Application</span><select id="app"></select></label>
@@ -59,10 +61,10 @@
     <p class="muted foot">Hypothèses modifiables, enregistrées dans ce navigateur. Prévisions et non résultats observés. Pense à exporter tes paramètres régulièrement (page Réglages).</p>
   </main>
   <button id="saveBtn" class="savebtn" type="button"></button>
-  <script src="js/model.js?v=2026.11.26-34"></script>
-  <script src="js/engine.js?v=2026.11.26-34"></script>
-  <script src="js/pnl.js?v=2026.11.26-34"></script>
-  <script src="js/sync.js?v=2026.11.26-34"></script>
-  <script src="js/app.js?v=2026.11.26-34"></script>
+  <script src="js/model.js?v=2026.11.26-37"></script>
+  <script src="js/engine.js?v=2026.11.26-37"></script>
+  <script src="js/pnl.js?v=2026.11.26-37"></script>
+  <script src="js/sync.js?v=2026.11.26-37"></script>
+  <script src="js/app.js?v=2026.11.26-37"></script>
 </body>
 </html>

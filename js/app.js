@@ -2176,3 +2176,20 @@ saveLabel();
   document.addEventListener('pointerdown', e => { touch = e.pointerType !== 'mouse'; }, true);
   document.addEventListener('mouseover', e => { if (touch) return; const t = at(e); if (t) show(t.el, t.x, t.y); else if (cur) hide(); });
 })();
+
+// Menu vertical du téléphone : le bouton en haut à gauche ouvre le volet, un choix ou un appui à côté le referme.
+(() => {
+  const btn = document.getElementById('menuBtn'), shade = document.getElementById('menuShade');
+  if (!btn) return;
+  const set = open => {
+    document.body.classList.toggle('menu-open', open);
+    shade.hidden = !open;
+    btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+    btn.setAttribute('aria-label', open ? 'Fermer le menu' : 'Ouvrir le menu');
+  };
+  btn.addEventListener('click', () => set(!document.body.classList.contains('menu-open')));
+  shade.addEventListener('click', () => set(false));
+  document.getElementById('tabs').addEventListener('click', e => { if (e.target.closest('a')) set(false); });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
+  window.addEventListener('hashchange', () => set(false));
+})();
