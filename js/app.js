@@ -367,7 +367,11 @@ function productLines(r) {
     lines.push({ name: esc(soloName(a)), go: { open: 'sd', app: ai }, color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
       detail: a.programs.length ? `${num(direct + post)} abonnées en fin de période, dont ${num(post)} après un programme` : `${num(direct)} abonnées en fin de période` });
     a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), go: { open: 'p' + i, app: ai }, off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
-      detail: `${num(ms.reduce((s, m) => s + m.products[i].admissions, 0))} inscriptions · ${num(last?.products[i].active || 0)} en cours en fin de période` }));
+      detail: (() => {
+        const ins = ms.reduce((s, m) => s + m.products[i].admissions, 0), solo = ms.reduce((s, m) => s + m.products[i].fromSolo, 0);
+        const ca = ms.reduce((s, m) => s + m.products[i].sales, 0);
+        return `${num(Math.round(ins))} inscriptions${solo >= 1 ? `, dont <b>${num(Math.round(solo))} venues de ${esc(soloName(a))}</b> (${num(+p.fromSolo || 0)} % par an)` : ''} · prix moyen ${ins ? price(Math.round(ca / ins)) : '—'} · ${num(last?.products[i].active || 0)} en cours en fin de période`;
+      })() }));
   }
   const max = Math.max(1, ...lines.map(l => l.ca));
   const link = l => `<a class="golink" href="#produits" data-goto="produits" data-open="${l.go.open}" data-anchor="${l.go.open}"${view.app === 'all' ? ` data-app="${l.go.app}"` : ''}>${l.name}</a>`;
