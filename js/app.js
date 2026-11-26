@@ -683,11 +683,11 @@ function implantCalc(r) {
 function implantBar(r) {
   const { im, ca, result, cur, best, over } = implantCalc(r);
   const gap = best.net - cur.net;
-  return `<div class="card implant-bar">
+  return `<details class="card implant-bar" id="r-imp" ${view.open.has('r-imp') ? 'open' : ''}><summary><span>Implantation : ${esc(cur.sc.name)}<br><span class="sum-sub">Net pour toi ${money(cur.net)} · frais, cotisations et impôts ${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</span></span></summary>
     <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="net-split"><div><span>Résultat d'exploitation${view.app === 'all' ? '' : ' de toutes les applications'}</span><b>${money(result)}</b></div><div><span>Frais, cotisations et impôts</span><b>${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b>${money(cur.net)}</b></div></div>
     <p class="muted">${over(cur) ? '<b class="neg">Plafond de chiffre d\'affaires dépassé pour ce statut.</b> ' : ''}${gap > 0.5 ? `Le scénario « ${esc(best.sc.name)} » donnerait ${money(gap)} de plus.` : 'C\'est le scénario le plus favorable avec les taux saisis.'} Taux indicatifs à valider. <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Comparer les implantations</a></p>
-  </div>`;
+  </details>`;
 }
 
 function implantCard(r) {
