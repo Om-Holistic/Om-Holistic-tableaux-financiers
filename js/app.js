@@ -20,8 +20,22 @@ try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (isValidState(saved)) state = migrate(saved);
 } catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
-const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } Sync.changed(); };
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } snapshot('travail'); Sync.changed(); };
 const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
+// Versions précédentes gardées sur cet appareil : avant chaque synchro, import, remise à zéro ou retour,
+// à l'ouverture, et toutes les 20 minutes pendant que tu travailles. On garde les 15 dernières.
+const HIST_KEY = 'om-history';
+const history = () => { try { return JSON.parse(localStorage.getItem(HIST_KEY)) || []; } catch { return []; } };
+function snapshot(why, st = state, force = false) {
+  const list = history(), data = JSON.stringify(st), last = list[0];
+  if (last && last.data === data) return;
+  if (!force && why === 'travail' && last && Date.now() - new Date(last.at) < 20 * 60000) return;
+  list.unshift({ at: new Date().toISOString(), why, data });
+  for (let n = Math.min(list.length, 15); n > 0; n--) {
+    try { localStorage.setItem(HIST_KEY, JSON.stringify(list.slice(0, n))); return; } catch { /* stockage plein : on garde moins de versions */ }
+  }
+}
+snapshot('ouverture');
 // Rappel de sauvegarde : des modifications non exportées depuis plus de 14 jours (ou jamais exportées, modifiées il y a plus d'un jour).
 function backupDue() {
   const edit = stored('om-last-edit'), exp = stored('om-last-export');
@@ -437,7 +451,15 @@ function syncSection() {
       <div class="grid"><label class="wide"><span>Phrase secrète (au moins 12 caractères)</span><input id="syncPhrase" type="password" autocomplete="new-password" autocapitalize="off" spellcheck="false" placeholder="par exemple : quatre mots que tu retiens"></label></div>
       <div class="row"><button id="syncOn">Activer la synchro</button></div>
       <p id="syncMsg" class="warn">${view.syncMsg ? esc(view.syncMsg) : ''}</p>`;
-  return section('st-sync', 'cal', 'Synchronisation entre appareils', summary, body);
+  return section('st-sync', 'cal', 'Synchronisation entre appareils', summary, body) + historySection();
+}
+function historySection() {
+  const list = history();
+  const when = d => new Date(d).toLocaleString('fr-FR', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  const cur = JSON.stringify(state);
+  const rows = list.map((h, k) => `<li><span>${when(h.at)} · ${esc(h.why)}</span>${h.data !== cur ? `<button data-restore="${k}">Revenir à cette version</button>` : '<span class="muted">version actuelle</span>'}</li>`).join('');
+  return section('st-hist', 'cal', 'Versions précédentes', list.length ? `${list.length} gardées sur cet appareil · la dernière ${when(list[0].at)}` : 'aucune pour l\'instant',
+    list.length ? `<ul class="hist">${rows}</ul>` : '<p class="muted">Les versions apparaîtront ici au fil de ton travail.</p>');
 }
 
 function settingsPage(a, i) {
@@ -1772,7 +1794,7 @@ document.addEventListener('change', async e => {
     try {
       const x = JSON.parse(await t.files[0].text());
       if (!isValidState(x)) throw Error('Ce fichier ne ressemble pas à un export de ce tableau de bord.');
-      state = migrate(x); view.app = '0'; save(); render();
+      snapshot('avant import', state, true); state = migrate(x); view.app = '0'; save(); render();
     } catch (err) { $('importMsg').textContent = err.message; }
   }
 });
@@ -1859,14 +1881,17 @@ document.addEventListener('click', e => {
   } else if (t.id === 'raiseOn') { const a = state.apps[+t.dataset.app]; a.raisePlan = { ...defaultRaisePlan(), ...(a.raisePlan || {}), on: true }; save(); render();
   } else if (t.id === 'raiseReset') { state.raise = defaultRaise(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
-  } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
+  } else if (t.dataset.restore !== undefined) {
+    const h = history()[+t.dataset.restore];
+    if (h) { const x = JSON.parse(h.data); if (isValidState(x)) { snapshot('avant retour', state, true); state = migrate(x); view.app = '0'; save(); render(); } }
+  } else if (t.dataset.sync) { snapshot('avant de départager', state, true); Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();
   } else if (t.id === 'syncOff') { Sync.disable(); render();
   } else if (t.id === 'syncOn') {
     const phrase = $('syncPhrase').value;
     t.disabled = true; t.textContent = 'Connexion…'; view.syncMsg = '';
     Sync.enable(phrase, !!stored('om-last-edit')).then(() => render(), err => { view.syncMsg = err.message; render(); });
-  } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
+  } else if (t.id === 'resetYes') { view.confirmReset = false; snapshot('avant remise à zéro', state, true); state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
   } else if (t.id === 'printPdf') {
@@ -1902,6 +1927,7 @@ Sync.init({
   state: () => state,
   apply(x) {
     if (!isValidState(x)) return false;
+    snapshot('avant synchro', state, true);
     state = migrate(x);
     if (!state.apps[+view.app]) view.app = '0';
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ }
