@@ -321,3 +321,9 @@ details.quarter > summary .sum-sub b { font-weight: 600; }
 .mcard small { font-size: 12px; color: var(--ink-soft); }
 .card .chart { margin: 10px 0; }
 @media (min-width: 768px) { .cap-chart svg { max-height: 260px; } }
+.cap-alert { margin-top: 10px; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--bad) 10%, var(--surface)); border-left: 4px solid var(--bad); display: flex; flex-direction: column; gap: 10px; }
+.cap-alert p { margin: 0; }
+.levers { display: flex; flex-wrap: wrap; gap: 8px; }
+.levers button { background: var(--bad); color: #fff; border-color: transparent; font-weight: 600; }
+a.lever { display: inline-flex; align-items: center; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); text-decoration: none; font-weight: 500; font-size: 15px; }
+.cap-alert details.fold > summary { font-weight: 600; }

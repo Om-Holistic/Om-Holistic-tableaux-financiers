@@ -133,7 +133,7 @@ function programCard(a, q, j, p) {
 
 // Objectif d'inscriptions d'un programme : rythme nécessaire et capacité de coaching qu'il demande.
 function programGoalSection(a, q, j, t) {
-  const g = q.goal, plan = programGoalPlan(a, j, simulate(a).months);
+  const g = q.goal, sim = simulate(a).months, plan = programGoalPlan(a, j, sim);
   const byStep = new Map(plan.steps.map(s => [s.months + ':' + s.count, s]));
   const rows = g.steps.map((st, k) => {
     const r = byStep.get(+st.months + ':' + +st.count);
@@ -143,7 +143,14 @@ function programGoalSection(a, q, j, t) {
       const overH = r.capHours !== null && r.hours > r.capHours;
       res = `<div class="goal-res"><b>${num(r.rate)} inscription${r.rate > 1 ? 's' : ''} / semaine</b><span>${monthName(r.at)} · plan actuel : ${num(Math.round(r.planYear))} / an${r.fromSoloYear >= 1 ? ` · dont ${num(Math.round(r.fromSoloYear))} / an venues de ${esc(soloName(a))}` : ''}</span></div>
         <div class="goal-cap ${over || overH ? 'bad' : 'ok'}">${num(Math.ceil(r.parallel))} clientes en même temps · ${num(Math.round(r.hours * 10) / 10)} h de coaching / semaine pour ce programme.
-        ${r.capacity === null ? 'Capacité illimitée.' : `Capacité prévue à cette date, tous programmes : ${num(r.capacity)} clientes et ${num(r.capHours)} h.${over || overH ? ' <b>Insuffisante : ajoute un palier de capacité.</b>' : ''}`}</div>`;
+        ${r.capacity === null ? 'Capacité illimitée.' : `Capacité prévue à cette date, tous programmes : ${num(r.capacity)} clientes et ${num(r.capHours)} h.${over || overH ? ' <b>Insuffisante.</b>' : ''}`}</div>
+        ${over || overH ? (() => {
+          // Besoin total à cette date : ce programme à l'objectif, plus les autres programmes tels que simulés.
+          const m = sim.find(x => x.month === r.at), others = a.programs.reduce((s2, p2, k2) => s2 + (k2 !== j && m ? m.products[k2].active : 0), 0);
+          const othersH = a.programs.reduce((s2, p2, k2) => s2 + (k2 !== j && m ? m.products[k2].active * (+p2.coach || 0) / 60 : 0), 0);
+          const people = Math.ceil(r.parallel + others), hours = Math.ceil((r.hours + othersH) * 10) / 10;
+          return capacityAlert(a, state.apps.indexOf(a), { month: r.at, next: '', people, hours, cap: r.capacity, limit: r.capHours, places: Math.max(0, people - r.capacity), missingHours: Math.max(0, hours - r.capHours) }, `goal-alert-${j}-${k}`);
+        })() : ''}`;
     }
     return `<div class="goal-step"><span class="badge">${k + 1}</span><div>${lineEditor(st, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', 'Inscriptions par an']], 'Supprimer ce palier')}${res}</div></div>`;
   }).join('');
@@ -428,6 +435,38 @@ function previsionnelPage() {
     ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}`;
 }
 
+// Manque de capacité : premier mois dépassé et besoin jusqu'au palier de capacité suivant.
+function capacityShortfall(a, weekly) {
+  const isOver = w => w.people > w.cap || w.hours > w.limit;
+  const first = weekly.find(isOver);
+  if (!first) return null;
+  const month = first.date.slice(0, 7);
+  const next = (a.capacitySteps || []).map(c => c.date).filter(d => d && d > month).sort()[0];
+  const win = weekly.filter(w => w.date.slice(0, 7) >= month && (!next || w.date.slice(0, 7) < next));
+  const people = Math.ceil(Math.max(...win.map(w => w.people))), hours = Math.ceil(Math.max(...win.map(w => w.hours)) * 10) / 10;
+  return { month, next, people, hours, cap: first.cap, limit: first.limit,
+    places: first.cap === Infinity ? 0 : Math.max(0, people - first.cap), missingHours: first.limit === Infinity ? 0 : Math.max(0, hours - first.limit) };
+}
+// Alerte avec les trois leviers : capacité, temps par cliente, coût d'une embauche.
+function capacityAlert(a, ai, sf, id) {
+  const p = 'apps.' + ai;
+  const what = [sf.places > 0 ? `il manque <b>${num(sf.places)} place${sf.places > 1 ? 's' : ''}</b> (${num(sf.people)} clientes en même temps pour ${num(sf.cap)})` : '',
+    sf.missingHours > 0 ? `il manque <b>${num(Math.round(sf.missingHours * 10) / 10)} h</b> de coaching par semaine (${num(sf.hours)} h pour ${num(sf.limit)} h)` : ''].filter(Boolean).join(' et ');
+  const progs = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled);
+  return `<div class="cap-alert" id="${id}">
+      <p><b>${monthName(sf.month).replace(/^./, c => c.toUpperCase())}</b>${sf.next ? ` (jusqu'à ton palier de ${monthName(sf.next)})` : ''} : ${what}.</p>
+      <div class="levers">
+        <button data-capfix="${ai}" data-month="${sf.month}" data-people="${sf.people}" data-hours="${Math.ceil(sf.hours)}">Augmenter la capacité en ${monthName(sf.month)}</button>
+        <a class="lever" href="#charges" data-goto="charges" data-open="" data-anchor="ch-coach" data-app="${ai}">Coût d'une embauche</a>
+      </div>
+      <details class="fold" id="${id}-time" ${view.open.has(id + '-time') ? 'open' : ''}><summary>Réduire le temps par cliente</summary>
+        ${sf.places > 0 ? '<p class="muted">Utile pour les heures seulement : moins de temps par cliente ne crée pas de places en plus.</p>' : ''}
+        <div class="grid">${progs.map(({ q, j }) => field(`${progName(a, q)} (minutes / cliente / semaine)`, `${p}.programs.${j}.coach`, q.coach)).join('')}</div>
+      </details>
+      <p class="muted">« Augmenter la capacité » ajoute un palier en ${monthName(sf.month)} avec ${num(sf.people)} places et ${num(Math.ceil(sf.hours))} h par semaine, puis t'emmène dans « Capacité de coaching » pour l'ajuster.</p>
+    </div>`;
+}
+
 // Capacité de coaching : par mois, le pic de clientes en même temps face à la capacité prévue.
 function capacityChart(x) {
   const months = new Map();
@@ -462,7 +501,6 @@ function capacityBlock(r) {
   const apps = r.scope.filter(x => x.a.programs.length);
   const wr = apps.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name })));
   const over = wr.filter(w => w.people > w.cap || w.hours > w.limit).length;
-  const firstOver = wr.find(w => w.people > w.cap || w.hours > w.limit);
   return `<h2>Capacité de coaching</h2><div class="kpis">
       <div class="kpi"><small>Pic de clientes en même temps</small><b>${num(Math.max(0, ...wr.map(w => w.people)))}</b></div>
       <div class="kpi"><small>Pic d'heures de coaching / semaine</small><b>${Math.max(0, ...wr.map(w => w.hours)).toFixed(1)} h</b></div>
@@ -471,8 +509,8 @@ function capacityBlock(r) {
     </div>
     ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Clientes en même temps (pic du mois)</span><span><i style="background:var(--bad)"></i>Au-dessus de la capacité</span><span><i class="dash"></i>Capacité prévue</span></div>
       <div class="chart cap-chart">${capacityChart(x)}</div>
-      <p class="muted">${firstOver ? `Ta capacité est dépassée à partir de ${monthName(firstOver.date.slice(0, 7))}. Ajoute un palier de capacité, ou coche « Refuser les inscriptions au-delà de la capacité ».` : 'La capacité prévue suffit sur toute la période.'}
-      <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap"${view.app === 'all' ? ` data-app="${state.apps.indexOf(x.a)}"` : ''}>Modifier la capacité de coaching</a></p></div>`).join('')}
+      ${(() => { const ai = state.apps.indexOf(x.a), sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">La capacité prévue suffit sur toute la période.</p>'; })()}
+      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${state.apps.indexOf(x.a)}">Voir la capacité de coaching</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Capacité', 'Heures', 'En attente'],
         wr.map(w => [w.date, esc(w.name), num(w.demand), num(w.admitted), num(w.people), w.cap === Infinity ? '—' : w.cap, w.hours.toFixed(1) + (w.limit === Infinity ? '' : ' / ' + w.limit), num(w.waiting)]))}</table></div></details>`;
@@ -515,8 +553,8 @@ function chargesPage(a, i) {
     Un pourcentage, un coût par cliente ou par inscription commun est réparti exactement entre les produits.</p>
     ${list || '<p class="muted">Aucune charge.</p>'}
     <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
-    ${a.programs.length ? `<div class="card">${fields(a, p, [['coachRate', 'Coût du coaching (€ / heure)']])}
-      <p class="muted">Multiplié par les heures de coaching de chaque programme (minutes par cliente et par semaine, dans Produits). Laisse 0 si tu coaches toi-même et ne te rémunères pas à l'heure.</p></div>` : ''}
+    ${a.programs.length ? `<div class="card" id="ch-coach">${fields(a, p, [['coachRate', 'Coût du coaching (€ / heure)']])}
+      <p class="muted">Multiplié par les heures de coaching de chaque programme (minutes par cliente et par semaine, dans Produits). Laisse 0 si tu coaches toi-même et ne te rémunères pas à l'heure. Si tu embauches, indique ici le coût horaire moyen (ou ajoute une charge fixe pour un salaire).</p></div>` : ''}
     <h2>Charges de structure Om Holistic</h2>
     <p class="muted">Charges communes à toutes les applications (comptable, banque, assurance…), réparties entre elles.</p>
     <div class="card">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']])}</div>
@@ -681,6 +719,21 @@ document.addEventListener('click', e => {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
   } else if (t.id === 'resetNo') { view.confirmReset = false; render();
+  } else if (t.dataset.capfix) {
+    const a = state.apps[+t.dataset.capfix], month = t.dataset.month;
+    a.capacitySteps = a.capacitySteps || [];
+    const step = a.capacitySteps.find(c => c.date === month);
+    const people = +t.dataset.people, hours = +t.dataset.hours;
+    if (step) { step.capacity = Math.max(+step.capacity || 0, people); step.hours = Math.max(+step.hours || 0, hours); }
+    else {
+      const before = capacityAt(a, month);
+      a.capacitySteps.push({ date: month, capacity: Math.max(people, +before?.capacity || 0), hours: Math.max(hours, +before?.hours || 0) });
+      a.capacitySteps.sort((x, y) => x.date.localeCompare(y.date));
+    }
+    save();
+    view.app = t.dataset.capfix;
+    view.goto = { open: 'pr-cap', anchor: 'pr-cap' };
+    if (location.hash === '#produits') route(); else location.hash = 'produits';
   } else if (t.dataset.pgoal) {
     const [o, k] = resolve(t.dataset.pgoal), q = o[k], a = state.apps[+t.dataset.pgoal.split('.')[1]];
     const plan = programGoalPlan(a, a.programs.indexOf(q), simulate(a).months);
