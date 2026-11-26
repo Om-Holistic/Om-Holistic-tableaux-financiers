@@ -139,9 +139,9 @@ function chargeAt(c, month, dates) {
 // Calendrier d'exemple : cohorte alpha, deuxième cohorte, puis lancement commercial.
 function chrysalisApp() {
   const a = application('CHRYSALISS');
-  const refit = program('Refit', '2027-07', [60, 150, 250], 12);
+  const refit = program('Refit', '2027-07', [60, 150, 240], 12);
   refit.cohorts = [{ name: 'Cohorte alpha', date: '2027-01', size: 8 }, { name: 'Deuxième cohorte', date: '2027-04', size: 15 }];
-  refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 250 }];
+  refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 240 }];
   a.programs = [refit, program('Better Sleep', '2027-10', [60, 100, 150], 8), program('Calm Inside', '2028-01', [60, 100, 150], 8)];
   a.coachRate = 35;
   a.capacitySteps = [{ date: '2027-01', hours: 5, hired: 0 }, { date: '2027-07', hours: 10, hired: 0 }, { date: '2028-01', hours: 15, hired: 10 }];
@@ -279,14 +279,18 @@ function defaultAmbition(very = false) {
 function defaultRaisePlan(on = false) {
   return {
     on,
-    salary: 6000,   // ta rémunération nette, € par mois
+    salary: 4000,   // ta rémunération nette la première année, € par mois
+    salary2: 6000,  // ta rémunération nette ensuite, € par mois (0 = la même)
     social: 80,     // cotisations et charges sur ce salaire, % du net (dirigeante assimilée salariée en France : environ 80 %)
     target: 1000,   // nouvelles abonnées visées par an
     cac: 60,        // coût d'acquisition d'une abonnée payante par la publicité, €
     ramp: 6,        // mois pour atteindre le plein budget de communication
+    tech: 2000,     // soutien technique pour la maintenance de l'appli (prestataire, environ 4 jours par mois), € par mois
+    tools: 400,     // outils d'IA (Claude, ChatGPT), € par mois
+    equipment: 3000, // matériel informatique acheté au moment de la levée (ordinateur, écran…), € une fois
     extra: 0,       // autres dépenses financées par la levée (freelances, contenus…), € par mois
     implant: 'fr-sas', // statut de la société une fois la levée faite
-    amount: 250000,    // montant que tu comptes lever (0 = juste ce que le plan demande)
+    amount: 200000,    // montant que tu comptes lever (0 = juste ce que le plan demande)
     duration: 0,       // levier : durée moyenne d'abonnement en mois (0 = celle de Produits)
     organic: 0,        // levier : part de l'objectif apportée par le bouche-à-oreille et le parrainage, %
     fromSolo: 0,       // levier : abonnées qui achètent un programme chaque année, % (0 = comme dans Produits)
@@ -305,10 +309,10 @@ function defaultRaisePlan(on = false) {
 
 function defaultState() {
   return {
-    version: 19,
+    version: 20,
     bench: defaultBench(),
     raise: defaultRaise(),
-    vat: { ttc: false, rate: 20 },
+    vat: { ttc: true, rate: 20 },
     scenarios: defaultScenarios(),
     // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
     cash: { start: 0, payGoal: 2000, payFrom: '' },
@@ -519,7 +523,17 @@ function migrate(state) {
     if (+state.raise.runway === 18) state.raise.runway = 12;
     for (const a of state.apps) if (/chrysalis/i.test(a.name || '') && !a.raiseDate) a.raiseDate = '2027-05';
   }
-  state.version = 19;
+  // Version 20 : prix TTC, Refit à 240 € en vitesse de croisière, premier tour à 200 k€ avec 4 000 € net la première année.
+  if ((state.version || 1) < 20) {
+    if (state.vat) state.vat.ttc = true;
+    for (const a of state.apps) {
+      for (const q of a.programs || []) if (/refit/i.test(q.name || '')) (q.pricing || []).forEach(ph => { if (+ph.price === 250) ph.price = 240; });
+      const P = a.raisePlan;
+      if (P && +P.salary === 6000) P.salary = 4000;
+      if (P && +P.amount === 250000) P.amount = 200000;
+    }
+  }
+  state.version = 20;
   return state;
 }
 

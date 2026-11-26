@@ -1486,7 +1486,11 @@ function applyRaisePlan(st, i, over = {}) {
   const steps = []; budgets.forEach((v, t) => { if (t && v !== budgets[t - 1]) steps.push({ after: t, amount: v }); });
   const extra = { scope: 'app', anchor: 'date', start: date, estimate: false, plan: true };
   a.charges = [...(a.charges || []),
-    charge('Ta rémunération (plan avec levée)', 'fixe', Math.round((+P.salary || 0) * (1 + (+P.social || 0) / 100)), 'app', date, '', { ...extra, category: 'personnel' }),
+    charge('Ta rémunération (plan avec levée)', 'fixe', Math.round((+P.salary || 0) * (1 + (+P.social || 0) / 100)), 'app', date, '', { ...extra, category: 'personnel',
+      steps: +P.salary2 > 0 && +P.salary2 !== +P.salary ? [{ after: 12, amount: Math.round(+P.salary2 * (1 + (+P.social || 0) / 100)) }] : [] }),
+    ...(+P.tech > 0 ? [charge('Soutien technique : maintenance de l\'appli (plan avec levée)', 'fixe', +P.tech, 'app', date, '', { ...extra, category: 'tech', use: 'tech' })] : []),
+    ...(+P.tools > 0 ? [charge('Outils d\'IA : Claude, ChatGPT (plan avec levée)', 'fixe', +P.tools, 'app', date, '', { ...extra, category: 'logiciels', use: 'tech' })] : []),
+    ...(+P.equipment > 0 ? [charge('Matériel informatique (plan avec levée)', 'unique', +P.equipment, 'app', date, '', { ...extra, category: 'autre', use: 'tech' })] : []),
     charge('Communication et publicité (plan avec levée)', 'fixe', budgets[0], 'app', date, '', { ...extra, category: 'marketing', steps }),
     ...(+P.extra > 0 ? [charge('Autres dépenses (plan avec levée)', 'fixe', +P.extra, 'app', date, '', { ...extra, category: 'autre' })] : []),
     ...(en !== null && +P.enCost > 0 ? [charge('Version anglaise : traduction, contenus, support', 'fixe', +P.enCost, 'app', P.enDate, '', { ...extra, start: P.enDate, category: 'contenu' })] : [])];
@@ -1550,11 +1554,12 @@ function dossierCard(r) {
   const P = planP(a), R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r), n = Math.max(1, +R.runway || 18);
   const tr = scopeTreasury(r), k = Math.max(0, tr.months.findIndex(m => m.month >= F.month)), win = tr.months.slice(k, k + n);
   const winSet = new Set(win.map(m => m.month)), lines = sumPnl(x.pnl.filter(e => winSet.has(e.month))).lines || {};
-  const planCost = cat => a.charges.filter(c => c.plan && c.category === cat).reduce((t, c) => t + (lines[c.id] || 0), 0);
-  const sal = planCost('personnel'), com = planCost('marketing'), ext = planCost('autre');
+  const planCost = cat => a.charges.filter(c => c.plan && (c.use || c.category) === cat).reduce((t, c) => t + (lines[c.id] || 0), 0);
+  const sal = planCost('personnel'), com = planCost('marketing'), ext = planCost('autre'), tec = planCost('tech');
   const tot = f => win.reduce((t, m) => t + (m[f] || 0), 0), charges = tot('charges'), taxes = tot('taxes'), sales = tot('inflow') - tot('raised');
-  const run = Math.max(0, charges - sal - com - ext), endCash = win.at(-1)?.balance ?? 0;
-  const uses = [['Ta rémunération', sal, `${money(+P.salary)} net par mois, charges comprises`], ['Communication et publicité', com, `${num(Math.round(F.perMonth))} abonnées payantes par mois à ${money(+P.cac)} l'une`],
+  const run = Math.max(0, charges - sal - com - ext - tec), endCash = win.at(-1)?.balance ?? 0;
+  const uses = [['Ta rémunération', sal, `${money(+P.salary)} net par mois${+P.salary2 > 0 && +P.salary2 !== +P.salary ? `, puis ${money(+P.salary2)} après un an` : ''}, charges comprises`],
+    ['Soutien technique, outils et matériel', tec, `${money(+P.tech || 0)} par mois de maintenance, ${money(+P.tools || 0)} d'outils d'IA, ${money(+P.equipment || 0)} de matériel`], ['Communication et publicité', com, `${num(Math.round(F.perMonth))} abonnées payantes par mois à ${money(+P.cac)} l'une`],
     ...(ext ? [['Autres dépenses', ext, `${money(+P.extra)} par mois`]] : []), ['Fonctionnement de l\'appli', run, 'charges du plan sans levée'], ['Impôts et cotisations', taxes, '']].filter(u => u[1] > 0.5);
   const useMax = Math.max(1, ...uses.map(u => u[1]));
   // Jalons : objectif d'abonnées (sur 12 mois glissants), ARR et abonnées à la fin de l'autonomie, point mort.
@@ -1581,7 +1586,7 @@ function dossierCard(r) {
   return `<details class="card" id="${id}" ${view.open.has(id) || !view.open.size ? 'open' : ''}><summary><span>Dossier de levée de ${esc(a.name)}<br><span class="sum-sub">${short(F.amount)} en ${monthName(F.month)} (le plan demande ${short(F.need)}) · ${num(n)} mois d'autonomie · ${num(+P.target)} nouvelles abonnées par an ${hit ? 'dès ' + monthName(hit.month) : 'non atteint'}</span></span></summary>
     <div class="kpis">
       ${kpi('Montant levé', short(F.amount), F.amount === F.need ? `en ${monthName(F.month)}, juste ce que le plan demande` : `en ${monthName(F.month)} · le plan demande ${short(F.need)} : ${F.amount >= F.need ? `${short(F.amount - F.need)} de marge` : `il manque ${short(F.need - F.amount)}`}`, F.amount >= F.need ? 'good' : 'bad')}
-      ${kpi('Ta rémunération', money(+P.salary) + ' net', `${money(Math.round(+P.salary * (1 + (+P.social || 0) / 100)))} par mois pour la société`)}
+      ${kpi('Ta rémunération', money(+P.salary) + ' net', `${money(Math.round(+P.salary * (1 + (+P.social || 0) / 100)))} par mois pour la société${+P.salary2 > 0 && +P.salary2 !== +P.salary ? `, puis ${money(+P.salary2)} net après un an` : ''}`)}
       ${kpi('Communication', short(F.budget) + ' / mois', `à plein régime après ${num(+P.ramp)} mois · ${num(Math.round(F.organic))} abonnées par mois viennent déjà sans publicité`)}
       ${kpi('Objectif', num(+P.target) + ' / an', hit ? `nouvelles abonnées, atteint dès ${monthName(hit.month)}` : 'nouvelles abonnées, non atteint : augmente le budget ou baisse le CAC', hit ? 'good' : 'bad')}
     </div>
@@ -1601,7 +1606,9 @@ function dossierCard(r) {
     ${section('r-raise-h', 'promo', `Hypothèses du plan ${planLabel()}`, `${monthName(F.month)} · ${money(+P.salary)} net · CAC ${money(+P.cac)} · ${num(+P.target)} abonnées / an`, `
       <div class="grid">${monthField('Date de la levée', `apps.${x.i}.raiseDate`, a.raiseDate || '', 'Au lancement')}
       ${field('Montant que tu veux lever (€, 0 = ce que le plan demande)', `${planPath(x.i)}.amount`, P.amount)}${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
-      ${field('Ta rémunération nette (€ / mois)', `${planPath(x.i)}.salary`, P.salary)}${field('Charges sur ce salaire (% du net)', `${planPath(x.i)}.social`, P.social)}
+      ${field('Ta rémunération nette la 1re année (€ / mois)', `${planPath(x.i)}.salary`, P.salary)}${field('Ta rémunération nette ensuite (€ / mois)', `${planPath(x.i)}.salary2`, P.salary2)}
+      ${field('Charges sur ce salaire (% du net)', `${planPath(x.i)}.social`, P.social)}${field('Soutien technique, maintenance (€ / mois)', `${planPath(x.i)}.tech`, P.tech)}
+      ${field('Outils d\'IA (€ / mois)', `${planPath(x.i)}.tools`, P.tools)}${field('Matériel informatique (€, une fois)', `${planPath(x.i)}.equipment`, P.equipment)}
       ${field('Nouvelles abonnées visées par an', `${planPath(x.i)}.target`, P.target)}${field('Coût d\'acquisition d\'une abonnée payante (€)', `${planPath(x.i)}.cac`, P.cac)}
       ${field('Montée en charge de la communication (mois)', `${planPath(x.i)}.ramp`, P.ramp)}${field('Autres dépenses (€ / mois)', `${planPath(x.i)}.extra`, P.extra)}
       ${field('Hausse de l\'objectif chaque année (%)', `${planPath(x.i)}.growth`, P.growth)}

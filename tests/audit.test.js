@@ -55,7 +55,7 @@ test('abonnements : le CA du mois = abonnées × prix mensuel (prix unique)', ()
 });
 
 test('compte d\'exploitation : résultat = CA − toutes les charges, par mois et par application', () => {
-  const s = fresh();
+  const s = fresh(); s.vat.ttc = false;
   const sims = s.apps.map(a => E.simulate(a));
   const pnl = P.buildPnl(s, sims);
   pnl.forEach((list, i) => list.forEach(e => {
