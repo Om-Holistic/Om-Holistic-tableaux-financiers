@@ -361,6 +361,14 @@ function timeline(a, keep = () => true) {
 
 // Calendrier de l'application : rassemble les dates saisies dans chaque produit (lecture seule).
 const timelineCount = a => (timeline(a).match(/<li /g) || []).length;
+// Choix de ce qui s'affiche : des cases sur ordinateur ; sur téléphone, un bouton qui ouvre une fenêtre de choix.
+let pickOpen = null;
+function pickPop(id, title, list, names, total) {
+  const sum = names.length === total ? 'Tout' : names.length ? names.join(' · ') : 'Rien';
+  return `<div class="picker${pickOpen === id ? ' open' : ''}" id="${id}"><button class="pick-btn" type="button" data-pickopen="${id}"><small>${esc(title)}</small><span>${esc(sum)}</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button>
+    <div class="pick-sheet" data-pickclose><div class="pick-box" role="dialog" aria-label="${esc(title)}"><b class="pick-t">${esc(title)}</b>${list}<button class="pick-ok" type="button" data-pickclose>OK</button></div></div></div>`;
+}
+
 // ---------- Calendrier : toutes les dates d'une application, et les dates qui se saisissent ici ----------
 const calHidden = (() => { try { return new Set(JSON.parse(localStorage.getItem('om-cal-hidden') || '[]')); } catch { return new Set(); } })();
 const saveCalHidden = () => { try { localStorage.setItem('om-cal-hidden', JSON.stringify([...calHidden])); } catch { /* stockage indisponible */ } };
@@ -370,6 +378,7 @@ function calendarPage(a, i) {
   const shown = k => !calHidden.has(k), all = prods.every(x => shown(x.key));
   const items = timelineItems(a), nx = items.find(it => it.date >= thisMonth && shown(it.key)), launches = items.filter(it => it.kind === 'launch');
   const picker = `<div class="ucheck"><label class="uc"><input type="checkbox" data-calall ${all ? 'checked' : ''}><span>Tout</span></label>${prods.map(x => `<label class="uc"><input type="checkbox" data-calshow="${esc(x.key)}" ${shown(x.key) ? 'checked' : ''}><span>${esc(x.key === 'sub' ? soloName(a) : x.key === ':coach' ? 'Coaching' : x.q.name)}</span></label>`).join('')}</div>`;
+  const pickerPop = pickPop('pk-cal', 'Produits affichés', picker, prods.filter(x => shown(x.key)).map(x => x.key === 'sub' ? 'Abonnement' : x.key === ':coach' ? 'Coaching' : x.q.name), prods.length);
   const n = items.filter(it => shown(it.key)).length;
   const solo = shown('sub') ? `<details class="card product solo" id="cal-sd" ${view.open.has('cal-sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
       <div class="grid">${field('Ouverture des abonnements', p + '.sub.start', a.sub.start, 'month')}</div></details>` : '';
@@ -391,7 +400,7 @@ function calendarPage(a, i) {
         { label: 'Prochaine date', mini: 'Prochaine', value: nx ? shortMonth(nx.date) : '—', hint: nx ? nx.text.replace(/<[^>]+>/g, '').split(' · ')[0] : '' },
         { label: 'Dates affichées', mini: 'Dates', value: num(n), hint: all ? 'tous les produits' : 'produits choisis' }
       ] })}
-    ${picker}
+    ${pickerPop}
     <details class="card tool-cal" id="cal-line" ${view.open.has('cal-line') ? 'open' : ''}><summary><span>Toutes les dates<br><span class="sum-sub">${num(n)} dates · à partir de ${monthName(appStart(a))}</span></span></summary>
       ${timeline(a, shown)}</details>
     ${solo}${progs}`;
@@ -947,6 +956,7 @@ function usersPage() {
   // Cases à cocher : chaque courbe, et « Tout » pour tout afficher ou tout masquer.
   const all = shown.length === series.length;
   const legend = `<div class="ucheck"><label class="uc"><input type="checkbox" data-userall ${all ? 'checked' : ''}><span>Tout</span></label>${series.map(s => `<label class="uc"><input type="checkbox" data-usershow="${esc(s.key)}" ${usersHidden.has(s.key) ? '' : 'checked'}><i style="background:${s.color}"></i><span>${esc(s.short)}</span></label>`).join('')}</div>`;
+  const legendPop = pickPop('pk-users', 'Courbes affichées', legend, shown.map(s => s.short), series.length);
   const heads = ['Période', ...shown.map(s => `<span class="dotk" style="background:${s.color}"></span>${esc(s.short)}`)];
   const rows = bs.map(b => [bucketName(b.key, view.cashStep), ...shown.map(s => num(Math.round(s.v[b.i])))]);
   const tile = s => ({ label: esc(s.short), value: num(end(s)), hint: `${s.kind} fin ${last ? monthName(months[last.i]) : ''} · au plus haut ${num(Math.round(peak(s)))}` });
@@ -954,7 +964,7 @@ function usersPage() {
       note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
       tiles: base.slice(0, 4).map(tile) })}
     ${bs.length ? `<details class="card" id="us-chart" ${view.open.has('us-chart') ? 'open' : ''}><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
-      ${legend}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
+      ${legendPop}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
     <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
       <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
 }
@@ -1981,6 +1991,7 @@ function renderToolbar() {
 }
 
 function render(fresh = false) {
+  if (fresh) pickOpen = null;
   // Garde ouvertes les zones dépliées, sauf en arrivant sur une nouvelle page.
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
@@ -2087,6 +2098,11 @@ document.addEventListener('change', async e => {
 
 document.addEventListener('click', e => {
   if (e.target.closest && e.target.closest('#saveBtn')) { saveNow(); return; }
+  // Fenêtre de choix (téléphone) : ouverture, fermeture par OK ou en touchant le fond.
+  const po = e.target.closest?.('[data-pickopen]');
+  if (po) { pickOpen = po.dataset.pickopen; po.closest('.picker').classList.add('open'); return; }
+  const pc = e.target.closest?.('[data-pickclose]');
+  if (pc && (e.target === pc || pc.classList.contains('pick-ok'))) { pickOpen = null; pc.closest('.picker')?.classList.remove('open'); return; }
   const go = e.target.closest?.('[data-goto]');
   if (go) {
     e.preventDefault();
