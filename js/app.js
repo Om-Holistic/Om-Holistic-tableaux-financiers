@@ -1513,9 +1513,9 @@ function applyRaisePlan(st, i, over = {}) {
   all.forEach((x, k) => { x.pnl = pnl[k]; });
   const tr0 = treasury(s, [all[i]], true), ms = tr0.months, k = Math.max(0, ms.findIndex(m => m.month >= date));
   // Au moins l'autonomie visée, et jusqu'au bout des prévisions : la trésorerie ne doit plus repasser sous zéro ensuite.
-  const low = ms.slice(k).reduce((l, m) => Math.min(l, m.balance), 0);
+  const lowRow = ms.slice(k).reduce((l, m) => m.balance < l.balance ? m : l, { balance: 0, month: '' }), low = lowRow.balance;
   const need = Math.ceil(-low / 10000) * 10000;
-  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic, word, breakEven: tr0.breakEven, budgets, enDate: en !== null ? P.enDate : '', team, teamFrom: date };
+  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic, word, breakEven: tr0.breakEven, lowMonth: lowRow.month, budgets, enDate: en !== null ? P.enDate : '', team, teamFrom: date };
   return s;
 }
 
@@ -1636,6 +1636,7 @@ function tiersCard(i) {
   const K = (c, y, f) => { const v = c.at(y); return v ? f(v) : '—'; };
   const rows = [
     row('Levée', c => `${short(c.F.amount)}<small class="stg">besoin ${short(c.F.need)}</small>`),
+    row('Trésorerie au plus bas, sans la levée', c => c.F.lowMonth ? `${monthName(c.F.lowMonth)}<small class="stg">−${short(c.F.need)}, puis ${c.F.lowMonth >= '2034-12' ? 'ne remonte pas' : 'remonte'}</small>` : 'jamais négative'),
     row('Nouvelles abonnées / an', c => `${num(+c.P.target)}<small class="stg">${+c.P.growth ? `+${num(+c.P.growth)} % par an` : 'stable'}</small>`),
     row('Version anglaise', c => c.P.enDate ? shortMonth(c.P.enDate) : 'non'),
     row('Coût d\'une abonnée', c => money(+c.P.cac)),
