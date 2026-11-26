@@ -109,6 +109,7 @@ function programCard(a, q, j, p) {
         ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
         ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
       ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / mois`, `
+        <p class="muted">Aussi réglable dans la carte ${esc(soloName(a))}, bloc « Passerelles avec les programmes ».</p>
         ${fields(q, t, [['toSolo', `Clientes qui gardent ${soloName(a)} à la fin du programme (%)`], ['fromSolo', `Abonnées ${soloName(a)} qui achètent ce programme, par mois (%)`]])}
         <p class="muted">Les abonnées qui achètent le programme gardent leur abonnement. Elles occupent une place de coaching et ne sont pas recomptées à la fin du programme.</p>`)}
       ${section('promo-p' + j, 'promo', 'Promotions ponctuelles', q.promos.length ? `${q.promos.length} promotion${q.promos.length > 1 ? 's' : ''}` : 'aucune', `
@@ -131,8 +132,10 @@ function productsPage(a, i) {
       ${section('trial-sd', 'promo', 'Période d\'essai', +a.sub.trialDays > 0 ? `${num(a.sub.trialDays)} jours gratuits · ${num(a.sub.trialConversion)} % passent payantes` : 'aucune', `
         ${fields(a.sub, p + '.sub', [['trialDays', 'Durée de l\'essai gratuit (jours)'], ['trialConversion', 'Essais qui deviennent payants (%)']])}
         <p class="muted">Le rythme d'abonnements ci-dessus compte alors les essais. Seule la part indiquée devient payante, à la fin de l'essai. 0 jour = pas d'essai.</p>`)}
-      ${a.programs.length ? section('conv-sp', 'sub', 'Après un programme', a.programs.map(q => `${esc(q.name)} ${num(q.toSolo)} %`).join(' · ') + ` · ${num(a.sub.postDuration)} mois en moyenne`, `
-        <p class="muted">Le pourcentage de clientes qui gardent ${esc(soloName(a))} à la fin d'un programme se règle dans chaque programme (bloc « Passerelles »).</p>
+      ${a.programs.length ? section('conv-sp', 'sub', 'Passerelles avec les programmes', a.programs.map(q => `${esc(q.name)} : ${num(q.fromSolo)} % y vont / mois · ${num(q.toSolo)} % restent`).join(' · '), `
+        <p class="muted">Mêmes réglages que le bloc « Passerelles » de chaque programme : une modification ici se retrouve là-bas.</p>
+        ${a.programs.map((q, j) => `<h4>${esc(progName(a, q))}${q.enabled ? '' : ' (désactivé)'}</h4>${lineEditor(q, p + '.programs.' + j, [['fromSolo', 'Abonnées qui l\'achètent, par mois (%)'], ['toSolo', 'Clientes qui gardent l\'abonnement à la fin (%)']])}`).join('')}
+        <h4>Abonnement après un programme</h4>
         ${fields(a.sub, p + '.sub', [['postDuration', 'Durée moyenne d\'abonnement après un programme (mois)']])}
         <h4>Prix mensuel après un programme</h4>
         ${a.sub.postPricing.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, p + '.sub.postPricing.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('')}`) : ''}
