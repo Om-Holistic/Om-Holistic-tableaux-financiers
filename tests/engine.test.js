@@ -204,3 +204,19 @@ test('objectif par paliers : chaque palier est atteint à sa date', () => {
   a.sub.paliers = plan.segs.map((x, k) => k === 2 ? { ...x, rate: x.rate - 1 } : x);
   assert.ok(simulate(a).months.find(x => x.month === plan.steps[2].at).direct < 1000);
 });
+
+test('objectif d\'un programme : le rythme appliqué donne les inscriptions visées', () => {
+  const { programGoalPlan } = require('../js/engine.js');
+  const s = defaultState();
+  const a = s.apps[0];
+  a.capacitySteps = [];
+  const q = a.programs[0];
+  q.fromSolo = 0;
+  q.goal = { steps: [{ months: 12, count: 100 }] };
+  const plan = programGoalPlan(a, 0, simulate(a).months);
+  assert.equal(plan.steps[0].rate, 2);
+  assert.ok(Math.abs(plan.steps[0].parallel - 2 * q.duration) < 1e-9);
+  Object.assign(q, { launch: false, palierMode: true, paliers: plan.segs, target: plan.segs[0].rate });
+  const m = simulate(a).months.find(x => x.month === plan.steps[0].at);
+  assert.ok(m.products[0].admissions * 12 >= 100, String(m.products[0].admissions * 12));
+});

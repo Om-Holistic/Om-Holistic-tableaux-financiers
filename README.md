@@ -40,6 +40,10 @@ Dans la carte de l'abonnement seul, le bloc « Objectif d'abonnées » se règle
 Pour chaque palier, l'outil cherche par simulation le plus petit rythme hebdomadaire qui l'atteint (résiliations et
 essai gratuit compris), le compare au plan actuel, et peut l'appliquer comme paliers du rythme d'abonnements.
 
+Chaque programme a aussi un bloc « Objectif d'inscriptions » par paliers (inscriptions par an, X mois après le lancement).
+Il donne le rythme hebdomadaire nécessaire (les abonnées qui achètent le programme comptent dedans), le nombre de clientes
+en même temps (rythme × durée) et les heures de coaching, et signale si la capacité prévue ne suffit pas.
+
 ## Prix en trois phases
 
 Chaque produit (programme, abonnement direct, abonnement après programme) a trois phases de prix,

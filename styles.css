@@ -300,3 +300,7 @@ details.card.product.tool-all > summary > span:first-child::before { background:
 details.card.product > details.sec { margin-top: 10px; }
 label.file { position: relative; display: inline-flex; align-items: center; cursor: pointer; padding: 10px 14px; border-radius: 12px; background: var(--sage-tint); font-weight: 500; color: var(--ink); font-size: 15px; }
 label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; padding: 0; }
+.goal-cap { margin-top: 6px; padding: 8px 10px; border-radius: 10px; font-size: 13px; line-height: 1.4; }
+.goal-cap.ok { background: color-mix(in srgb, var(--good) 12%, transparent); }
+.goal-cap.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
+.goal-cap.bad b { color: var(--bad); }

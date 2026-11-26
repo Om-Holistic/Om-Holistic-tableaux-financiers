@@ -44,7 +44,7 @@ function program(name, start, prices, duration) {
     toSolo: 40, fromSolo: 0,
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
-    palierMode: false, paliers: [], promos: []
+    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal()
   };
 }
 
@@ -142,6 +142,11 @@ function defaultGoal() {
   return { kind: 'active', steps: [{ months: 6, count: 100 }, { months: 12, count: 300 }, { months: 24, count: 1000 }] };
 }
 
+// Objectif d'inscriptions par défaut d'un programme : 1 an puis 2 ans après le lancement.
+function defaultProgramGoal() {
+  return { steps: [{ months: 12, count: 150 }, { months: 24, count: 300 }] };
+}
+
 function migrate(state) {
   for (const a of state.apps) {
     const s = a.sub = a.sub || {};
@@ -218,6 +223,7 @@ function migrate(state) {
     if (!g) a.sub.goal = defaultGoal();
     else if (!g.steps) { g.steps = g.months > 12 ? [...defaultGoal().steps.filter(s => s.months < g.months), { months: g.months, count: g.count }] : [{ months: g.months, count: g.count }]; delete g.months; delete g.count; }
     if (!a.sub.paliers) { a.sub.paliers = []; a.sub.palierMode = false; }
+    for (const p of a.programs) if (!p.goal) p.goal = defaultProgramGoal();
   }
   state.version = 7;
   return state;

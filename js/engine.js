@@ -210,4 +210,30 @@ function goalPlan(a) {
   return { segs, steps: out, conv };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, weeklyRate, weekShares, goalPlan };
+// Objectif d'inscriptions d'un programme par paliers (au bout de X mois après le lancement, N inscriptions par an).
+// Les abonnées de l'abonnement seul qui achètent le programme (d'après la simulation `sim`) comptent dans l'objectif.
+// Pour chaque palier : rythme direct nécessaire, clientes en même temps et heures de coaching qu'il demande.
+function programGoalPlan(a, j, sim) {
+  const q = a.programs[j], g = q.goal || {};
+  const steps = (g.steps || []).filter(s => pos(s.months) > 0 && pos(s.count) > 0).sort((x, y) => x.months - y.months);
+  if (!q.start || !steps.length) return { segs: [], steps: [] };
+  const segs = [], out = [];
+  let used = 0;
+  for (const st of steps) {
+    const weeks = Math.round(pos(st.months) * 52 / 12) - used;
+    if (weeks <= 0) continue;
+    const at = addMonths(q.start, Math.round(pos(st.months)));
+    const m = sim.find(x => x.month === at);
+    const fromSoloYear = m ? m.products[j].fromSolo * 12 : 0;
+    const rate = Math.ceil(Math.max(0, pos(st.count) - fromSoloYear) / 52 - 1e-9);
+    const parallel = (rate + fromSoloYear / 52) * pos(q.duration);
+    const step = capacityAt(a, at);
+    segs.push({ rate, weeks });
+    used += weeks;
+    out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * pos(q.coach) / 60,
+      capacity: step ? pos(step.capacity) : null, capHours: step ? pos(step.hours) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
+  }
+  return { segs, steps: out };
+}
+
+if (typeof module !== 'undefined') module.exports = { simulate, weeklyRate, weekShares, goalPlan, programGoalPlan };

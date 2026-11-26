@@ -101,7 +101,7 @@ function programCard(a, q, j, p) {
   const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
   const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
-  const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${num(q.initial)} → ${num(q.target)} / sem.`;
+  const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
   return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
       ${check('Programme actif', t + '.enabled', q.enabled)}
       ${fields(q, t, [['name', 'Nom du programme', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes de coaching / cliente / semaine']])}
@@ -118,6 +118,7 @@ function programCard(a, q, j, p) {
         <h4>Ensuite, montée en puissance</h4>${fields(q, t, growth)}
         ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
         ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
+      ${programGoalSection(a, q, j, t)}
       ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / mois`, `
         <p class="muted">Aussi réglable dans la carte ${esc(soloName(a))}, bloc « Passerelles avec les programmes ».</p>
         ${linkFields(a, q, t)}
@@ -128,6 +129,33 @@ function programCard(a, q, j, p) {
         <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p>`)}
       <div class="row"><button class="danger" data-remove="${t}">Supprimer le programme</button></div>
     </details>`;
+}
+
+// Objectif d'inscriptions d'un programme : rythme nécessaire et capacité de coaching qu'il demande.
+function programGoalSection(a, q, j, t) {
+  const g = q.goal, plan = programGoalPlan(a, j, simulate(a).months);
+  const byStep = new Map(plan.steps.map(s => [s.months + ':' + s.count, s]));
+  const rows = g.steps.map((st, k) => {
+    const r = byStep.get(+st.months + ':' + +st.count);
+    let res = '<div class="goal-res"><span class="muted">à compléter</span></div>';
+    if (r) {
+      const over = r.capacity !== null && Math.ceil(r.parallel) > r.capacity;
+      const overH = r.capHours !== null && r.hours > r.capHours;
+      res = `<div class="goal-res"><b>${num(r.rate)} inscription${r.rate > 1 ? 's' : ''} / semaine</b><span>${monthName(r.at)} · plan actuel : ${num(Math.round(r.planYear))} / an${r.fromSoloYear >= 1 ? ` · dont ${num(Math.round(r.fromSoloYear))} / an venues de ${esc(soloName(a))}` : ''}</span></div>
+        <div class="goal-cap ${over || overH ? 'bad' : 'ok'}">${num(Math.ceil(r.parallel))} clientes en même temps · ${num(Math.round(r.hours * 10) / 10)} h de coaching / semaine pour ce programme.
+        ${r.capacity === null ? 'Capacité illimitée.' : `Capacité prévue à cette date, tous programmes : ${num(r.capacity)} clientes et ${num(r.capHours)} h.${over || overH ? ' <b>Insuffisante : ajoute un palier de capacité.</b>' : ''}`}</div>`;
+    }
+    return `<div class="goal-step"><span class="badge">${k + 1}</span><div>${lineEditor(st, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', 'Inscriptions par an']], 'Supprimer ce palier')}${res}</div></div>`;
+  }).join('');
+  const applied = q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(plan.segs);
+  const last = plan.segs[plan.segs.length - 1];
+  return section('goal-p' + j, 'ins', 'Objectif d\'inscriptions', g.steps.map(st => `${num(+st.count || 0)} / an à ${num(+st.months || 0)} mois`).join(' · '), `
+    <h4>Paliers, comptés depuis le lancement commercial (${q.start ? monthName(q.start) : 'date à fixer'})</h4>
+    ${rows}
+    <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
+    <p class="muted">Une cliente reste ${num(q.duration)} semaines : le nombre de clientes en même temps est le rythme d'inscriptions multiplié par la durée. Les cohortes de test ne comptent pas dans l'objectif.</p>
+    ${last ? `<p class="muted"><b>Appliquer</b> remplace le rythme du bloc « Inscriptions après le lancement » : il décoche le rythme spécifique au démarrage, coche « Paliers personnalisés » et y écrit ${plan.segs.map(x => `${num(x.rate)} / sem. pendant ${num(x.weeks)} sem.`).join(', puis ')}, puis ${num(last.rate)} / sem. ensuite. Ton ancien rythme reste enregistré : décoche « Paliers personnalisés » et recoche le démarrage pour y revenir.</p>
+    <div class="row"><button data-pgoal="${t}" ${applied ? 'disabled' : ''}>${applied ? 'Rythme appliqué' : 'Appliquer ces paliers aux inscriptions'}</button></div>` : ''}`);
 }
 
 // Objectif d'abonnées par paliers : quel rythme d'abonnements faut-il, palier après palier ?
@@ -596,6 +624,11 @@ document.addEventListener('click', e => {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
   } else if (t.id === 'resetNo') { view.confirmReset = false; render();
+  } else if (t.dataset.pgoal) {
+    const [o, k] = resolve(t.dataset.pgoal), q = o[k], a = state.apps[+t.dataset.pgoal.split('.')[1]];
+    const plan = programGoalPlan(a, a.programs.indexOf(q), simulate(a).months);
+    if (plan.segs.length) { q.launch = false; q.palierMode = true; q.paliers = plan.segs; q.target = plan.segs[plan.segs.length - 1].rate; }
+    save(); render();
   } else if (t.dataset.goal) {
     const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
     if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
