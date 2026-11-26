@@ -112,8 +112,10 @@ function programCard(a, q, j, p) {
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
   const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
   return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
-      ${check('Programme actif', t + '.enabled', q.enabled)}
-      ${fields(q, t, [['name', 'Nom du programme', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Temps de coaching par cliente (minutes / semaine)']])}
+      <div class="grid head4">
+        <label>Programme<span class="tbox"><input data-path="${t}.enabled" type="checkbox" ${q.enabled ? 'checked' : ''}>Actif</span></label>
+        ${field('Nom du programme', t + '.name', q.name, 'text')}${field('Durée (semaines)', t + '.duration', q.duration)}${field('Coaching / cliente (min / sem.)', t + '.coach', q.coach)}
+      </div>
       <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}${(q.coachSteps || []).length ? `Baisses prévues : ${q.coachSteps.filter(c => c.date).map(c => `${num(+c.minutes || 0)} min dès ${monthName(c.date)}`).join(', ')}. ` : ''}Pour prévoir une baisse dans le temps : <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Capacité de coaching</a>.</p>
       ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
         <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
