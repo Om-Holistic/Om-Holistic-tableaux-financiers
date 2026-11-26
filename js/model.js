@@ -31,9 +31,11 @@ function phaseAt(grid, month) {
   return current;
 }
 
+const newId = () => Math.random().toString(36).slice(2, 9);
+
 function program(name, start, prices, duration) {
   return {
-    name, start, enabled: true, duration, coach: 20,
+    id: newId(), name, start, enabled: true, duration, coach: 20,
     pricing: pricing(start, prices),
     beta: false, betaStart: start, betaCount: 1, betaSize: 10, betaInterval: 1,
     launch: true, launchWeeks: 12, launchRate: 2,
@@ -45,7 +47,7 @@ function program(name, start, prices, duration) {
 function application(name) {
   return {
     name, start: '2026-11', capacity: 40, hours: 35, restrict: false, waitlist: false,
-    capacityChanges: [], cost: 0,
+    capacityChanges: [], coachRate: 0, charges: [],
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
@@ -57,14 +59,55 @@ function application(name) {
   };
 }
 
-function defaultState() {
-  const chrysalis = application('Chrysalis');
-  chrysalis.programs = [
+// Une charge : fixe (€ / mois), cliente (€ / mois par cliente), inscription (€ par inscription)
+// ou ca (% du chiffre d'affaires). scope : 'app' (commune), 'sub' (abonnement) ou l'id d'un programme.
+function charge(name, type, amount, scope = 'app', start = '', end = '') {
+  return { id: newId(), name, type, amount, scope, start, end };
+}
+
+function chrysalisApp() {
+  const a = application('Chrysalis');
+  a.programs = [
     program('Refit', '2026-11', [60, 150, 250], 12),
     program('Better Sleep', '2027-05', [60, 100, 150], 8),
     program('Calm Inside', '2027-08', [60, 100, 150], 8)
   ];
-  return { version: 2, apps: [chrysalis] };
+  a.charges = exampleCharges(a);
+  return a;
+}
+
+function exampleCharges(a) {
+  const refit = a.programs.find(p => /refit/i.test(p.name));
+  return [
+    charge('Hébergement et base de données (exemple)', 'fixe', 30),
+    charge('Bibliothèque d\'exercices YMove', 'fixe', 29, refit ? refit.id : 'app'),
+    charge('IA et envois d\'e-mails (exemple)', 'cliente', 0.5),
+    charge('Frais de paiement Stripe (exemple)', 'ca', 2)
+  ];
+}
+
+// Applications en cours de développement : abonnement seul, valeurs d'exemple à ajuster.
+function smallApp(name, start, prices) {
+  const a = application(name);
+  a.start = start; a.capacity = 0; a.hours = 0;
+  a.sub.start = start;
+  a.sub.directPricing = pricing(start, prices);
+  a.sub.initial = 2; a.sub.target = 10; a.sub.duration = 8;
+  a.charges = [charge('Hébergement (exemple)', 'fixe', 15), charge('Frais de paiement (exemple)', 'ca', 2)];
+  return a;
+}
+
+function defaultShared() {
+  return { key: 'ca', charges: [charge('Expert-comptable (exemple)', 'fixe', 100), charge('Banque et assurance (exemple)', 'fixe', 40)] };
+}
+
+function defaultState() {
+  return {
+    version: 3,
+    vat: { ttc: false, rate: 20 },
+    shared: defaultShared(),
+    apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [2.99, 3.99, 4.99]), smallApp('Doodle Studio', '2027-09', [2.99, 3.99, 4.99])]
+  };
 }
 
 // Convertit une sauvegarde v1 (betaPrice / launchPrice / price) en grilles de prix.
@@ -88,9 +131,23 @@ function migrate(state) {
         ];
       }
       delete p.betaPrice; delete p.launchPrice; delete p.price;
+      if (!p.id) p.id = newId();
     }
+    // Version 3 : charges détaillées. L'ancien montant mensuel unique devient une charge fixe commune.
+    if (!Array.isArray(a.charges)) {
+      a.charges = +a.cost > 0 ? [charge('Charges mensuelles', 'fixe', +a.cost)] : exampleCharges(a);
+    }
+    delete a.cost;
+    if (a.coachRate === undefined) a.coachRate = 0;
   }
-  state.version = 2;
+  if (!state.shared) state.shared = defaultShared();
+  if (!state.vat) state.vat = { ttc: false, rate: 20 };
+  // Bujo et Doodle Studio sont ajoutées une fois, avec des valeurs d'exemple.
+  if ((state.version || 1) < 3) {
+    if (!state.apps.some(a => /bujo/i.test(a.name))) state.apps.push(smallApp('Bujo', '2027-06', [2.99, 3.99, 4.99]));
+    if (!state.apps.some(a => /doodle|doddle/i.test(a.name))) state.apps.push(smallApp('Doodle Studio', '2027-09', [2.99, 3.99, 4.99]));
+  }
+  state.version = 3;
   return state;
 }
 
@@ -98,4 +155,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { addMonths, pricing, phasesOf, phaseAt, program, application, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

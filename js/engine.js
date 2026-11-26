@@ -44,9 +44,9 @@ const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 
 
 function emptyMonth(month, a) {
   return {
-    month, sales: 0, admissions: 0, finished: 0, active: 0, cost: pos(a.cost),
-    newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0, net: 0,
-    products: a.programs.map(() => ({ sales: 0, admissions: 0, finished: 0, active: 0, post: 0 }))
+    month, sales: 0, admissions: 0, finished: 0, active: 0,
+    newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
+    products: a.programs.map(() => ({ sales: 0, admissions: 0, finished: 0, active: 0, post: 0, clients: 0, coachHours: 0 }))
   };
 }
 
@@ -121,6 +121,14 @@ function simulate(a) {
     const hours = active.reduce((s, e) => s + e.count * pos(a.programs[e.i].coach) / 60, 0);
     m.active = people;
     m.products.forEach((p, i) => { p.active = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); });
+    // Clientes moyennes du mois (semaines-clientes / semaines du mois) et heures de coaching, par programme.
+    credit(d, (mm, share) => {
+      const weeksInMonth = new Date(Date.UTC(+mm.month.slice(0, 4), +mm.month.slice(5), 0)).getUTCDate() / 7;
+      for (const e of active) {
+        mm.products[e.i].clients += e.count * share / weeksInMonth;
+        mm.products[e.i].coachHours += e.count * pos(a.programs[e.i].coach) / 60 * share;
+      }
+    });
     weekly.push({ date: d.toISOString().slice(0, 10), people, hours, cap, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
 
     if (d >= subStart) {
@@ -150,7 +158,6 @@ function simulate(a) {
     m.products.forEach((p, i) => { p.post = revenue(post[i], postGrid, m.month); });
     m.postCA = m.products.reduce((s, p) => s + p.post, 0);
     m.total = m.sales + m.directCA + m.postCA;
-    m.net = m.total - m.cost;
   }
   return { months: [...months.values()], weekly };
 }

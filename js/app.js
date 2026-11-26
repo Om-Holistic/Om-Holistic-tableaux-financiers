@@ -18,8 +18,8 @@ try {
 const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ } };
 
 const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0 };
-const PAGES = ['synthese', 'previsionnel', 'capacite', 'produits', 'reglages'];
-const SETTINGS_PAGES = ['produits', 'reglages'];
+const PAGES = ['synthese', 'resultat', 'previsionnel', 'charges', 'produits', 'reglages'];
+const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
@@ -29,6 +29,9 @@ function field(label, path, value, type = 'number') {
 }
 function check(label, path, value) {
   return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
+}
+function select(label, path, value, options) {
+  return `<label>${esc(label)}<select data-path="${esc(path)}">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
 }
 function fields(obj, prefix, defs) {
   return '<div class="grid">' + defs.map(([k, l, t]) => field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
@@ -80,29 +83,32 @@ function productsPage(a, i) {
     <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
     <h2>Abonnements ${esc(a.name)}</h2>
     <div class="card">${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}</div>
-    <details class="card" id="sd" ${view.open?.has('sd') ? 'open' : ''}><summary>Abonnement direct (sans programme)</summary>
+    <details class="card" id="sd" ${view.open?.has('sd') ? 'open' : ''}><summary>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}</summary>
       ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel')}
       <fieldset><legend>Rythme d'abonnements</legend>${fields(a.sub, p + '.sub', [['start', 'Début', 'month'], ...growth, ['duration', 'Durée moyenne (mois)']])}
       <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p></fieldset></details>
-    <details class="card" id="sp" ${view.open?.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
+    ${a.programs.length ? '' : '<!--'}<details class="card" id="sp" ${view.open?.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
       ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel')}
-      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>`;
+      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>${a.programs.length ? '' : '-->'}`;
 }
 
 function settingsPage(a, i) {
   const p = 'apps.' + i;
   return `<h2>Réglages de ${esc(a.name)}</h2>
-    <div class="card">${fields(a, p, [['name', 'Nom', 'text'], ['start', 'Début des prévisions', 'month'], ['cost', 'Charges mensuelles (€)']])}</div>
+    <div class="card">${fields(a, p, [['name', 'Nom', 'text'], ['start', 'Début des prévisions', 'month']])}
+      <p class="muted">Les charges se saisissent dans l'onglet Charges.</p></div>
     <div class="card">
-    <fieldset><legend>Capacité de coaching</legend>
+    ${a.programs.length ? '' : '<!--'}<fieldset><legend>Capacité de coaching</legend>
       ${fields(a, p, [['capacity', 'Clientes coachées en même temps'], ['hours', 'Heures coach / semaine']])}
       ${check('Limiter les inscriptions à la capacité', p + '.restrict', a.restrict)}
       ${check('Liste d\'attente pour les inscriptions refusées', p + '.waitlist', a.waitlist)}
       ${a.capacityChanges.map((c, j) => fields(c, p + '.capacityChanges.' + j, [['date', 'À partir de', 'month'], ['capacity', 'Capacité']]) + `<button data-remove="${p}.capacityChanges.${j}">Supprimer</button>`).join('')}
-      <button data-add="${p}.capacityChanges">Ajouter une évolution de capacité</button></fieldset>
+      <button data-add="${p}.capacityChanges">Ajouter une évolution de capacité</button></fieldset>${a.programs.length ? '' : '-->'}
     ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}</div>
     <h2>Toutes les applications</h2>
     <div class="card">
+    ${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
+    ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}
     <div class="row"><button id="addApp">Ajouter une application</button><button id="export">Exporter les paramètres</button>
     <label class="file">Importer des paramètres<input id="import" type="file" accept=".json"></label></div>
     <p id="importMsg" class="warn"></p></div>`;
@@ -125,13 +131,23 @@ const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 
 function results() {
   const all = state.apps.map(a => ({ a, ...simulate(a) }));
+  const pnl = buildPnl(state, all);
+  // Charges et résultat de chaque mois, à partir du compte d'exploitation.
+  all.forEach((x, i) => {
+    x.pnl = pnl[i];
+    x.months.forEach((m, k) => {
+      const t = sumPnl([pnl[i][k]]).total;
+      m.cost = t.charges; m.net = t.result; m.caHT = t.ca;
+    });
+  });
   const scope = view.app === 'all' ? all : [all[+view.app] || all[0]];
   const rows = scope.flatMap(x => x.months.filter(m => inPeriod(m.month)));
   const keys = [...new Set(rows.map(r => r.month))].sort();
-  const F = ['sales', 'directCA', 'postCA', 'total', 'admissions', 'net', 'cost', 'active', 'direct', 'post'];
+  const F = ['sales', 'directCA', 'postCA', 'total', 'caHT', 'admissions', 'net', 'cost', 'active', 'direct', 'post'];
   const byMonth = keys.map(k => ({ month: k, ...Object.fromEntries(F.map(f => [f, rows.filter(r => r.month === k).reduce((s, r) => s + r[f], 0)])) }));
   const sum = f => rows.reduce((s, r) => s + r[f], 0);
-  return { scope, keys, byMonth, sum };
+  const summary = x => sumPnl(x.pnl.filter(e => inPeriod(e.month)));
+  return { all, scope, keys, byMonth, sum, summary };
 }
 
 // Une ligne par produit, avec sa part du CA de la période.
@@ -142,8 +158,8 @@ function productLines(r) {
     const prefix = r.scope.length > 1 ? esc(x.a.name) + ' · ' : '';
     x.a.programs.forEach((p, i) => lines.push({ name: prefix + esc(p.name), off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
       detail: `${num(ms.reduce((s, m) => s + m.products[i].admissions, 0))} inscriptions · ${num(last?.products[i].active || 0)} en cours en fin de période` }));
-    lines.push({ name: prefix + 'Abonnement direct', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA, 0), detail: `${num(last?.direct || 0)} abonnées en fin de période` });
-    lines.push({ name: prefix + 'Abonnement après programme', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.postCA, 0), detail: `${num(last?.post || 0)} abonnées en fin de période` });
+    lines.push({ name: prefix + 'Abonnement ' + esc(x.a.name), color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA, 0), detail: `${num(last?.direct || 0)} abonnées en fin de période` });
+    if (x.a.programs.length) lines.push({ name: prefix + 'Abonnement après programme', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.postCA, 0), detail: `${num(last?.post || 0)} abonnées en fin de période` });
   }
   const max = Math.max(1, ...lines.map(l => l.ca));
   return lines.map(l => `<div class="prod"><span>${l.name}${l.off ? ' <span class="tag">Inactif</span>' : ''}</span><b>${money(l.ca)}</b>
@@ -174,6 +190,7 @@ function chart(byMonth) {
 function synthesePage() {
   const r = results();
   const total = r.sum('total'), sales = r.sum('sales'), subs = r.sum('directCA') + r.sum('postCA'), net = r.sum('net'), cost = r.sum('cost');
+  const margin = r.sum('caHT') ? net / r.sum('caHT') * 100 : 0;
   const last = r.byMonth.at(-1) || {};
   const pct = x => total ? (x / total * 100).toFixed(1) : 0;
   return `<div class="hero">
@@ -184,12 +201,11 @@ function synthesePage() {
       </div>
     </div>
     <div class="kpis">
-      <div class="kpi"><small>Résultat avant impôts</small><b class="${net < 0 ? 'bad' : 'good'}">${money(net)}</b></div>
-      <div class="kpi"><small>CA mensuel moyen</small><b>${money(total / Math.max(1, r.keys.length))}</b></div>
+      <div class="kpi"><a href="#resultat"><small>Résultat d'exploitation</small><b class="${net < 0 ? 'bad' : 'good'}">${money(net)}</b><small>${margin.toFixed(0)} % du CA HT</small></a></div>
+      <div class="kpi"><small>Charges</small><b>${money(cost)}</b></div>
       <div class="kpi"><small>Inscriptions aux programmes</small><b>${num(r.sum('admissions'))}</b></div>
       <div class="kpi"><small>Abonnées en fin de période</small><b>${num((last.direct || 0) + (last.post || 0))}</b></div>
     </div>
-    ${cost === 0 ? '<p class="muted">Aucune charge saisie : le résultat est égal au chiffre d\'affaires. Les charges se règlent dans Réglages.</p>' : ''}
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
@@ -214,22 +230,118 @@ function previsionnelPage() {
       <div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>`;
   }).join('');
   return `<h2>Prévisions mois par mois</h2>${blocks}
-    <details class="card" id="pv-prod"><summary>Par produit</summary><div>${productLines(r)}</div></details>`;
+    <details class="card" id="pv-prod"><summary>Par produit</summary><div>${productLines(r)}</div></details>
+    ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}`;
 }
 
-function capacitePage() {
-  const r = results();
+function capacityBlock(r) {
   const wr = r.scope.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name, limit: x.a.hours })));
   const over = wr.filter(w => w.people > w.cap || w.hours > w.limit).length;
-  return `<div class="kpis">
+  return `<h2>Capacité de coaching</h2><div class="kpis">
       <div class="kpi"><small>Pic de clientes en même temps</small><b>${num(Math.max(0, ...wr.map(w => w.people)))}</b></div>
       <div class="kpi"><small>Pic d'heures de coaching / semaine</small><b>${Math.max(0, ...wr.map(w => w.hours)).toFixed(1)} h</b></div>
       <div class="kpi"><small>Semaines au-dessus de la capacité</small><b class="${over ? 'bad' : 'good'}">${over}</b></div>
       <div class="kpi"><small>En attente en fin de période</small><b>${num(wr.at(-1)?.waiting || 0)}</b></div>
     </div>
-    <details class="card" id="c-weeks"><summary>Détail semaine par semaine</summary>
+    <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Capacité', 'Heures', 'En attente'],
         wr.map(w => [w.date, esc(w.name), w.demand, w.admitted, w.people, w.cap, w.hours.toFixed(1), w.waiting]))}</table></div></details>`;
+}
+
+// ---------- Charges ----------
+
+const CHARGE_TYPES = [['fixe', 'Fixe, par mois'], ['cliente', 'Par cliente active, par mois'], ['inscription', 'Par inscription à un programme'], ['ca', 'Pourcentage du chiffre d\'affaires']];
+const AMOUNT_LABEL = { fixe: 'Montant (€ / mois)', cliente: 'Montant (€ / cliente / mois)', inscription: 'Montant (€ / inscription)', ca: 'Pourcentage (%)' };
+function chargeSummary(c, a) {
+  const scope = c.scope === 'sub' ? 'Abonnement ' + a.name : (a.programs.find(p => p.id === c.scope)?.name || 'Commune à ' + a.name);
+  const amount = c.type === 'ca' ? `${price(c.amount).replace(' €', '')} % du CA` : `${price(c.amount)}${{ fixe: ' / mois', cliente: ' / cliente / mois', inscription: ' / inscription' }[c.type]}`;
+  return `${amount} · ${esc(scope)}`;
+}
+
+function chargesPage(a, i) {
+  const p = 'apps.' + i;
+  const scopes = [['app', 'Commune à toute l\'application'], ['sub', 'Abonnement ' + a.name], ...a.programs.map(q => [q.id, 'Programme ' + q.name])];
+  const list = (a.charges || []).map((c, j) => {
+    const t = `${p}.charges.${j}`, id = 'ch' + c.id;
+    return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${chargeSummary(c, a)}</span></span></summary>
+      ${fields(c, t, [['name', 'Nom', 'text']])}
+      <div class="grid">${select('Type', t + '.type', c.type, CHARGE_TYPES)}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
+      ${select('Rattachée à', t + '.scope', c.scope || 'app', scopes)}
+      ${fields(c, t, [['start', 'À partir de (vide = toujours)', 'month'], ['end', 'Jusqu\'à (vide = sans fin)', 'month']])}
+      <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
+  }).join('');
+  const sh = state.shared;
+  const shared = sh.charges.map((c, j) => {
+    const t = `shared.charges.${j}`, id = 'sh' + c.id;
+    return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${price(c.amount)} / mois</span></span></summary>
+      ${fields(c, t, [['name', 'Nom', 'text'], ['amount', 'Montant (€ / mois)'], ['start', 'À partir de', 'month'], ['end', 'Jusqu\'à', 'month']])}
+      <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
+  }).join('');
+  return `<h2>Charges de ${esc(a.name)}</h2>
+    <p class="muted">Rattache chaque charge au produit qui la provoque pour voir sa vraie rentabilité. Une charge commune reste dans la colonne « Commun ».
+    Un pourcentage, un coût par cliente ou par inscription commun est réparti exactement entre les produits.</p>
+    ${list || '<p class="muted">Aucune charge.</p>'}
+    <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
+    ${a.programs.length ? `<div class="card">${fields(a, p, [['coachRate', 'Coût du coaching (€ / heure)']])}
+      <p class="muted">Multiplié par les heures de coaching de chaque programme (minutes par cliente et par semaine, dans Produits). Laisse 0 si tu coaches toi-même et ne te rémunères pas à l'heure.</p></div>` : ''}
+    <h2>Charges de structure Om Holistic</h2>
+    <p class="muted">Charges communes à toutes les applications (comptable, banque, assurance…), réparties entre elles.</p>
+    <div class="card">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']])}</div>
+    ${shared}
+    <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`;
+}
+
+// ---------- Compte d'exploitation ----------
+
+const PNL_ROWS = [
+  ['ca', 'Chiffre d\'affaires', 'head'], ['fees', 'Commissions et frais de paiement', 'cost'], ['variable', 'Coûts par cliente et par inscription', 'cost'],
+  ['coaching', 'Coaching', 'cost'], ['margin', 'Marge sur coûts variables', 'sub'], ['fixed', 'Charges fixes', 'cost'],
+  ['contribution', 'Contribution', 'sub'], ['structure', 'Quote-part structure Om Holistic', 'cost'], ['result', 'Résultat d\'exploitation', 'total']
+];
+
+function pnlColumns(r) {
+  if (view.app === 'all') {
+    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, v: { ...s.total, structure: s.structure } }; });
+    const tot = {};
+    for (const [k] of PNL_ROWS) tot[k] = cols.reduce((t, c) => t + c.v[k], 0);
+    return { cols, total: tot };
+  }
+  const x = r.scope[0], s = r.summary(x);
+  const cols = productKeys(x.a).map(k => ({ name: k.name, off: k.off, v: { ...(s.cols[k.key] || {}), structure: null, result: null } }));
+  cols.push({ name: 'Commun', common: true, v: { ca: null, fees: null, variable: null, coaching: null, margin: null, fixed: s.commonFixed, contribution: -s.commonFixed, structure: s.structure, result: null } });
+  return { cols, total: { ...s.total, structure: s.structure } };
+}
+
+function resultatPage() {
+  const r = results();
+  const { cols, total } = pnlColumns(r);
+  const rate = total.ca ? total.result / total.ca * 100 : 0;
+  const cell = (row, v) => v === null || v === undefined ? '<span class="muted">—</span>' : row[2] === 'cost' ? (v ? signed(-v) : money(0)) : row[2] === 'head' ? money(v) : `<b>${signed(v)}</b>`;
+  const rows = PNL_ROWS.map(row => [row[1], ...cols.map(c => cell(row, c.v[row[0]])), cell(row, total[row[0]])]);
+  const cls = PNL_ROWS.map(row => row[2] === 'total' ? 'total' : row[2] === 'sub' ? 'sub' : '');
+  const tableHtml = `<div class="scroll"><table class="pnl">${table(['', ...cols.map(c => esc(c.name)), 'Total'], rows, cls)}</table></div>`;
+  // Barres : chiffre d'affaires et contribution de chaque colonne.
+  const bars = cols.filter(c => !c.common);
+  const key = view.app === 'all' ? 'result' : 'contribution';
+  const max = Math.max(1, ...bars.map(c => Math.max(c.v.ca || 0, Math.abs(c.v[key] || 0))));
+  const barsHtml = bars.map(c => {
+    const v = c.v[key] || 0;
+    return `<div class="prod"><span>${esc(c.name)}${c.off ? ' <span class="tag">Inactif</span>' : ''}</span><b class="${v < 0 ? 'neg' : ''}">${money(v)}</b>
+      <span class="meter"><i style="width:${((c.v.ca || 0) / max * 100).toFixed(1)}%;background:var(--sage-soft)"></i></span>
+      <span class="meter"><i style="width:${(Math.abs(v) / max * 100).toFixed(1)}%;background:${v < 0 ? 'var(--bad)' : 'var(--good)'}"></i></span>
+      <span class="muted">CA ${money(c.v.ca || 0)} · ${c.v.ca ? Math.round(v / c.v.ca * 100) : 0} % du CA</span></div>`;
+  }).join('');
+  return `<div class="hero">
+      <div><small>Résultat d'exploitation ${periodName()}</small><div class="big ${total.result < 0 ? 'neg-hero' : ''}">${money(total.result)}</div></div>
+      <div class="split"><div><span>Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}</span><b>${money(total.ca)}</b></div><div><span>Marge d'exploitation</span><b>${rate.toFixed(1)} %</b></div></div>
+    </div>
+    <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
+        <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
+        <div>${barsHtml}</div></details>
+    <details class="card" id="r-table" open><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary>${tableHtml}</details>
+    <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
+        <p class="muted">La <b>contribution</b> d'un produit, c'est ce qu'il rapporte une fois payés ses propres coûts : frais de paiement, coûts par cliente, coaching et charges fixes qui lui sont rattachées.
+        Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>`;
 }
 
 // ---------- Rendu ----------
@@ -254,7 +366,7 @@ function render(fresh = false) {
   view.open = fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, previsionnel: previsionnelPage, capacite: capacitePage, produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   $('page').innerHTML = pages[view.page]();
 }
 
@@ -274,7 +386,7 @@ document.addEventListener('change', async e => {
     const [o, k] = resolve(t.dataset.path);
     o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
     save();
-    if (t.type === 'checkbox' || k === 'name') render(); else renderToolbar();
+    if (t.type === 'checkbox' || t.tagName === 'SELECT' || k === 'name') render(); else renderToolbar();
   } else if (t.id === 'app') { view.app = t.value; render(true); }
   else if (t.id === 'year') { view.year = +t.value; render(); }
   else if (t.id === 'period') { view.period = +t.value; render(); }
@@ -295,7 +407,8 @@ document.addEventListener('click', e => {
       programs: () => program('Nouveau programme', thisMonth, [100, 150, 200], 8),
       paliers: () => ({ rate: 2, weeks: 8 }),
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
-      capacityChanges: () => ({ date: thisMonth, capacity: 60 })
+      capacityChanges: () => ({ date: thisMonth, capacity: 60 }),
+      charges: () => charge('Nouvelle charge', 'fixe', 0)
     }[k];
     o[k].push(fresh()); save(); render();
   } else if (t.dataset.remove) {

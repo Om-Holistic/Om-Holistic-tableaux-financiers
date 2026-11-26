@@ -63,4 +63,46 @@ test('une sauvegarde v1 est convertie en grilles de prix', () => {
   assert.strictEqual(s.apps[0].sub.directPricing[0].price, 12);
   assert.strictEqual(p.price, undefined);
   assert.doesNotThrow(() => simulate(s.apps[0]));
+  assert.ok(Array.isArray(s.apps[0].charges) && s.apps[0].cost === undefined);
+  assert.deepStrictEqual(s.apps.map(a => a.name), ['Chrysalis', 'Bujo', 'Doodle Studio']);
+});
+
+const { buildPnl, sumPnl } = require('../js/pnl.js');
+
+test('compte d\'exploitation : charges rattachées aux produits et structure répartie', () => {
+  const state = model.defaultState();
+  state.vat = { ttc: false, rate: 20 };
+  const chrysalis = state.apps[0], refit = chrysalis.programs[0];
+  chrysalis.coachRate = 30;
+  chrysalis.charges = [
+    model.charge('Stripe', 'ca', 2),
+    model.charge('YMove', 'fixe', 29, refit.id),
+    model.charge('Hébergement', 'fixe', 30),
+    model.charge('Kit', 'inscription', 5, refit.id)
+  ];
+  state.shared = { key: 'egal', charges: [model.charge('Comptable', 'fixe', 90)] };
+  const sims = state.apps.map(a => simulate(a));
+  const pnl = buildPnl(state, sims);
+  const k = sims[0].months.findIndex(m => m.month === '2027-10');
+  const m = sims[0].months[k], s = sumPnl([pnl[0][k]]);
+  const r = s.cols[refit.id];
+  assert.ok(Math.abs(r.ca - m.products[0].sales) < 1e-6);
+  assert.ok(Math.abs(r.fees - m.products[0].sales * 0.02) < 1e-6);
+  assert.strictEqual(r.fixed, 29);
+  assert.ok(Math.abs(r.variable - m.products[0].admissions * 5) < 1e-6);
+  assert.ok(Math.abs(r.coaching - m.products[0].coachHours * 30) < 1e-6);
+  assert.strictEqual(s.commonFixed, 30);
+  // 3 applications présentes en octobre 2027 : 90 € répartis à parts égales.
+  assert.ok(Math.abs(s.structure - 30) < 1e-6);
+  const t = s.total;
+  assert.ok(Math.abs(t.result - (t.ca - t.fees - t.variable - t.coaching - t.fixed - s.structure)) < 1e-6);
+});
+
+test('prix TTC convertis en HT dans le compte d\'exploitation', () => {
+  const state = model.defaultState();
+  state.vat = { ttc: true, rate: 20 };
+  const sims = state.apps.map(a => simulate(a));
+  const pnl = buildPnl(state, sims);
+  const k = sims[0].months.findIndex(m => m.month === '2027-10');
+  assert.ok(Math.abs(sumPnl([pnl[0][k]]).total.ca - sims[0].months[k].total / 1.2) < 1e-6);
 });
