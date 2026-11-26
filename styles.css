@@ -376,9 +376,30 @@ a.b-tile .t-l::after { content: " ›"; opacity: .6; }
 .b-tile b.neg-hero { color: #f3a593; }
 .b-tile .t-h { font-size: 12px; opacity: .7; display: flex; flex-direction: column; gap: 5px; }
 .b-tile .t-h .share { height: 6px; margin-top: 3px; }
-@media (min-width: 768px) {
-  .hero.banner { grid-template-columns: 1fr 1.15fr; align-items: stretch; gap: 20px; }
-}
+/* Bandeau compact : replié par défaut, une seule ligne ; déplié, note et tuiles. */
+details.hero.banner { display: block; padding: 12px 16px; }
+.b-sum { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 14px; }
+.b-sum::-webkit-details-marker { display: none; }
+.b-sum::after { content: ""; flex: none; margin-left: auto; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; opacity: .7; transform: rotate(45deg); transition: transform .2s; margin-right: 4px; }
+details.banner[open] .b-sum::after { transform: rotate(225deg); }
+.b-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.b-head .b-label small { font-size: 11px; }
+.b-head .chip { font-size: 11px; padding: 2px 8px; }
+.b-big { font-family: var(--display); font-size: 1.55rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.b-big.neg-hero { color: #f3a593; }
+.b-minis { display: flex; gap: 18px; margin-left: auto; min-width: 0; }
+.b-mini { display: flex; flex-direction: column; gap: 1px; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, .16); min-width: 0; }
+.b-mini small { font-size: 11px; opacity: .7; white-space: nowrap; }
+.b-mini b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.b-mini b.neg-hero { color: #f3a593; } .b-mini b.warn-v { color: #ffc46b; }
+.b-tile b.pos-hero, .b-mini b.pos-hero { color: #7fe0b5; }
+details.banner[open] .b-minis { display: none; }
+.b-body { display: flex; flex-direction: column; gap: 12px; margin-top: 12px; }
+.b-body .b-note { margin: 0; }
+.b-body .b-main:empty { display: none; }
+@media (max-width: 767px) { .b-mini.m3 { display: none; } .b-minis { gap: 10px; } .b-mini { padding-left: 10px; } .b-big { font-size: 1.35rem; } }
+@media (max-width: 380px) { .b-minis .b-mini:nth-child(2) { display: none; } }
+@media (min-width: 768px) { .b-body .b-tiles { grid-template-columns: repeat(4, 1fr); } }
 
 /* Cartes repliées de Produits : chiffres clés en petites tuiles */
 .pstats { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; font-weight: 400; }

@@ -266,7 +266,7 @@ function productsPage(a, i) {
       tiles: [
         { label: 'Abonnement', value: price(phaseAt(g, thisMonth).price), hint: 'par mois aujourd\'hui', go: { page: 'produits', open: 'sd', anchor: 'sd' } },
         ...(progs.length ? [
-          { label: 'Prix des programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
+          { label: 'Prix des programmes', mini: 'Programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
           { label: 'Heures de coaching', value: cap ? `${num((+cap.hours || 0) + (+cap.hired || 0))} h` : 'illimitées', hint: cap ? `par semaine dès ${monthName(cap.date)}` : 'aucun palier', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap' } },
           { label: 'Temps par cliente', value: range(mins, x => num(x) + ' min'), hint: 'par semaine aujourd\'hui', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-coachtime' } }
         ] : [{ label: 'Calendrier', value: num(timelineCount(a)), hint: 'dates', go: { page: 'produits', open: 'pr-cal', anchor: 'pr-cal' } }])
@@ -384,9 +384,9 @@ function settingsPage(a, i) {
       note: state.apps.map(x => esc(x.name)).join(' · '),
       tiles: [
         { label: 'TVA', value: state.vat.ttc ? `${num(state.vat.rate)} %` : 'HT', hint: state.vat.ttc ? 'prix saisis TTC' : 'prix saisis hors taxe', go: { page: 'reglages', open: 'st-vat' } },
-        { label: 'Implantation', value: cur ? esc(cur.name) : '—', cls: 'txt', hint: 'taux à valider', go: { page: 'reglages', open: 'st-implant' } },
-        { label: 'Dernière sauvegarde', value: days === null ? 'Jamais' : days === 0 ? 'Aujourd\'hui' : `Il y a ${days} j`, cls: days === null || days > 14 ? 'warn-v' : '', hint: 'export du fichier', go: { page: 'reglages', open: 'st-save' } },
-        { label: 'Données', value: 'Cet appareil', cls: 'txt', hint: 'exporte pour changer d\'appareil' }
+        { label: 'Implantation', mini: false, value: cur ? esc(cur.name) : '—', cls: 'txt', hint: 'taux à valider', go: { page: 'reglages', open: 'st-implant' } },
+        { label: 'Dernière sauvegarde', mini: 'Sauvegarde', value: days === null ? 'Jamais' : days === 0 ? 'Aujourd\'hui' : `Il y a ${days} j`, cls: days === null || days > 14 ? 'warn-v' : '', hint: 'export du fichier', go: { page: 'reglages', open: 'st-save' } },
+        { label: 'Données', mini: false, value: 'Cet appareil', cls: 'txt', hint: 'exporte pour changer d\'appareil' }
       ] })}
     <details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
       ${fields(a, p, [['name', 'Nom de l\'application', 'text']])}
@@ -491,16 +491,21 @@ function chart(byMonth) {
 // ---------- Bandeaux en tête de page ----------
 // Un chiffre clé à gauche, quatre tuiles de même taille à droite (2 × 2), sur toutes les pages.
 const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase());
+// Replié par défaut (une ligne : chiffre clé + 2 ou 3 repères) ; déplié, la note et les quatre tuiles.
+// Le choix replié / déplié est mémorisé sur l'appareil et vaut pour toutes les pages.
+const bannerOpen = () => { try { return localStorage.getItem('om-banner') === 'open'; } catch { return false; } };
 function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
   const tile = t => {
     const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${t.value}</b>${t.hint ? `<span class="t-h">${t.hint}</span>` : ''}`;
     return t.go ? `<a class="b-tile" href="#${t.go.page}" data-goto="${t.go.page}" data-open="${t.go.open || ''}" data-anchor="${t.go.anchor || t.go.open || ''}">${inner}</a>` : `<div class="b-tile">${inner}</div>`;
   };
-  return `<div class="hero banner">
-      <div class="b-main"><div class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</div>
-        <div class="big ${bigCls}">${big}</div>${note ? `<p class="b-note">${note}</p>` : ''}${bar}</div>
-      <div class="b-tiles">${tiles.map(tile).join('')}</div>
-    </div>`;
+  const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${t.value}</b></span>`).join('');
+  return `<details class="hero banner" ${bannerOpen() ? 'open' : ''}>
+      <summary class="b-sum"><span class="b-head"><span class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</span>
+        <b class="b-big ${bigCls}">${big}</b></span><span class="b-minis">${minis}</span></summary>
+      <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${note}</p>` : ''}${bar}</div>
+      <div class="b-tiles">${tiles.map(tile).join('')}</div></div>
+    </details>`;
 }
 const shareBar = (sales, subs) => { const t = sales + subs || 1; return `<div class="share"><i style="width:${(sales / t * 100).toFixed(1)}%;background:var(--sage)"></i><i style="width:${(subs / t * 100).toFixed(1)}%;background:var(--clay)"></i></div>`; };
 const pctOf = (x, t) => t ? Math.round(x / t * 100) + ' %' : '—';
@@ -513,20 +518,15 @@ function synthesePage() {
   const pct = x => total ? (x / total * 100).toFixed(1) : 0;
   const best = r.byMonth.reduce((b, m) => !b || m.total > b.total ? m : b, null);
   const first = r.byMonth[0] || {}, subsEnd = (last.direct || 0) + (last.post || 0), subsGain = subsEnd - ((first.direct || 0) + (first.post || 0));
-  return `<div class="hero">
-      <div><div class="b-label"><small>Chiffre d'affaires</small><span class="chip">${periodChip()}</span></div><div class="big">${money(total)}</div>
-        <p class="b-note">${best ? `Meilleur mois : ${monthName(best.month)} (${money(best.total)})` : ''}${r.byMonth.length ? `<br>Moyenne : ${money(total / r.byMonth.length)} par mois` : ''}</p></div>
-      <div style="display:flex;flex-direction:column;gap:10px">
-        <div class="share"><i style="width:${pct(sales)}%;background:var(--sage)"></i><i style="width:${pct(subs)}%;background:var(--clay)"></i></div>
-        <div class="split"><div><span>Programmes</span><b>${money(sales)}</b></div><div><span>Abonnements</span><b>${money(subs)}</b></div></div>
-      </div>
-    </div>
-    <div class="kpis">
-      <div class="kpi"><a href="#resultat"><small>Résultat d'exploitation</small><b class="${net < 0 ? 'bad' : 'good'}">${money(net)}</b><small>${margin.toFixed(0)} % du CA HT</small></a></div>
-      <div class="kpi"><a href="#charges"><small>Charges</small><b>${money(cost)}</b><small>${pctOf(cost, r.sum('caHT'))} du CA HT</small></a></div>
-      <div class="kpi"><a href="#previsionnel"><small>Inscriptions</small><b>${num(r.sum('admissions'))}</b><small>${num(last.active || 0)} en programme en fin de période</small></a></div>
-      <div class="kpi"><a href="#previsionnel"><small>Abonnées</small><b>${num(subsEnd)}</b><small>en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}</small></a></div>
-    </div>
+  return `${banner({ label: 'Chiffre d\'affaires', chip: periodChip(), big: money(total),
+      note: `${best ? `Meilleur mois : ${monthName(best.month)} (${money(best.total)})` : ''}${r.byMonth.length ? ` · moyenne ${money(total / r.byMonth.length)} par mois` : ''}<br>Programmes ${money(sales)} · abonnements ${money(subs)}`,
+      bar: `<div class="share"><i style="width:${pct(sales)}%;background:var(--sage)"></i><i style="width:${pct(subs)}%;background:var(--clay)"></i></div>`,
+      tiles: [
+        { label: 'Résultat d\'exploitation', mini: 'Résultat', value: money(net), cls: net < 0 ? 'neg-hero' : 'pos-hero', hint: `${margin.toFixed(0)} % du CA HT`, go: { page: 'resultat' } },
+        { label: 'Charges', value: money(cost), hint: `${pctOf(cost, r.sum('caHT'))} du CA HT`, go: { page: 'charges' } },
+        { label: 'Inscriptions', value: num(r.sum('admissions')), hint: `${num(last.active || 0)} en programme en fin de période`, go: { page: 'previsionnel' } },
+        { label: 'Abonnées', value: num(subsEnd), hint: `en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}`, go: { page: 'previsionnel' } }
+      ] })}
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
@@ -568,7 +568,7 @@ function previsionnelPage() {
   return `${banner({ label: 'Résultat', chip: periodChip(), big: money(net), bigCls: net < 0 ? 'neg-hero' : '',
       note: `${pctOf(net, caHT)} du CA HT · ${posMonths} mois positif${posMonths > 1 ? 's' : ''} sur ${ms.length}`,
       tiles: [
-        { label: 'Chiffre d\'affaires', value: money(total), hint: shareBar(progSales, subSales) + `<span>${pctOf(progSales, total)} programmes</span>` },
+        { label: 'Chiffre d\'affaires', mini: 'CA', value: money(total), hint: shareBar(progSales, subSales) + `<span>${pctOf(progSales, total)} programmes</span>` },
         { label: 'Charges', value: money(cost), hint: `${pctOf(cost, caHT)} du CA HT`, go: { page: 'charges' } },
         { label: 'Abonnées', value: num(subsEnd), hint: `fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}` },
         { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
@@ -740,7 +740,7 @@ function chargesPage(a, i) {
   return `${banner({ label: `Charges fixes de ${esc(a.name)}`, chip: 'par mois', big: money(fixedAt(list, dates)),
       note: `En ${monthName(ref)}, un an après le lancement, hors structure`,
       tiles: [
-        { label: 'Total des charges', value: money(r.sum('cost')), hint: `${periodName()} · ${pctOf(r.sum('cost'), r.sum('caHT'))} du CA HT`, go: { page: 'resultat', open: 'r-nature' } },
+        { label: 'Total des charges', mini: `Total ${periodChip()}`, value: money(r.sum('cost')), hint: `${periodName()} · ${pctOf(r.sum('cost'), r.sum('caHT'))} du CA HT`, go: { page: 'resultat', open: 'r-nature' } },
         { label: 'Structure Om Holistic', value: money(fixedAt(sh.charges, all)), hint: 'par mois, toutes applis' },
         { label: 'À compléter', value: num(todo), cls: todo ? 'warn-v' : '', hint: `sur ${list.length} charges` },
         { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
@@ -803,37 +803,47 @@ function implantCalc(r) {
   const sums = r.all.map(x => r.summary(x));
   const ca = sums.reduce((t, s) => t + s.total.ca, 0), result = sums.reduce((t, s) => t + s.total.result, 0);
   const months = new Set(r.all.flatMap(x => x.months.filter(m => inPeriod(m.month)).map(m => m.month))).size || 1;
-  const res = im.scenarios.map(sc => ({ sc, ...afterTax(sc, ca, result, months) }));
+  // Vue d'une seule application : impôts et cotisations se calculent sur la société entière (toutes les applis),
+  // puis on n'affiche que la part de cette application, au prorata de son résultat (ou de son CA si le total est négatif).
+  let share = 1, appName = '';
+  if (view.app !== 'all') {
+    const own = r.summary(r.scope[0]).total;
+    share = result > 0 ? Math.max(0, own.result) / result : ca > 0 ? own.ca / ca : 0;
+    appName = r.scope[0].a.name;
+  }
+  const scale = x => ({ sc: x.sc, fixed: x.fixed * share, social: x.social * share, tax: x.tax * share, dist: x.dist * share, net: x.net * share });
+  const res = im.scenarios.map(sc => scale({ sc, ...afterTax(sc, ca, result, months) }));
   const yearCa = ca * 12 / months;
   const over = x => +x.sc.caLimit > 0 && yearCa > +x.sc.caLimit;
   const allowed = res.filter(x => !over(x));
   const pool = allowed.length ? allowed : res;
   const best = pool.reduce((b, x) => x.net > b.net ? x : b, pool[0]);
   const cur = res.find(x => x.sc.id === im.current) || res[0];
-  return { im, ca, result, months, res, yearCa, over, best, cur };
+  const own = view.app !== 'all' ? r.summary(r.scope[0]).total : null;
+  return { im, ca: own ? own.ca : ca, result: own ? own.result : result, months, res, yearCa, over, best, cur, share, appName, totalResult: result };
 }
 // Bandeau en tête du Résultat : l'implantation choisie et son effet immédiat sur le net.
 function implantBar(r) {
-  const { im, ca, result, cur, best, over } = implantCalc(r);
+  const { im, ca, result, cur, best, over, appName, share } = implantCalc(r);
   const gap = best.net - cur.net;
   return `<details class="card implant-bar" id="r-imp" ${view.open.has('r-imp') ? 'open' : ''}><summary><span>Implantation : ${esc(cur.sc.name)}<br><span class="sum-sub">Net pour toi ${money(cur.net)} · frais, cotisations et impôts ${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</span></span></summary>
     <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
-    <div class="net-split"><div><span>Résultat d'exploitation${view.app === 'all' ? '' : ' de toutes les applications'}</span><b>${money(result)}</b></div><div><span>Frais, cotisations et impôts</span><b>${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b>${money(cur.net)}</b></div></div>
-    <p class="muted">${over(cur) ? '<b class="neg">Plafond de chiffre d\'affaires dépassé pour ce statut.</b> ' : ''}${gap > 0.5 ? `Le scénario « ${esc(best.sc.name)} » donnerait ${money(gap)} de plus.` : 'C\'est le scénario le plus favorable avec les taux saisis.'} Taux indicatifs à valider. <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Comparer les implantations</a></p>
+    <div class="net-split"><div><span>Résultat d'exploitation${appName ? ' de ' + esc(appName) : ''}</span><b>${money(result)}</b></div><div><span>Frais, cotisations et impôts</span><b>${money(-(cur.fixed + cur.social + cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b>${money(cur.net)}</b></div></div>
+    <p class="muted">${over(cur) ? '<b class="neg">Plafond de chiffre d\'affaires dépassé pour ce statut.</b> ' : ''}${gap > 0.5 ? `Le scénario « ${esc(best.sc.name)} » donnerait ${money(gap)} de plus.` : 'C\'est le scénario le plus favorable avec les taux saisis.'} ${appName ? `Impôts et cotisations calculés sur toute la société, puis répartis : part de ${esc(appName)} ${Math.round(share * 100)} %. ` : ''}Taux indicatifs à valider. <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Comparer les implantations</a></p>
   </details>`;
 }
 
 function implantCard(r) {
-  const { im, ca, result, res, yearCa, over, best, cur } = implantCalc(r);
+  const { im, ca, result, res, yearCa, over, best, cur, appName, share } = implantCalc(r);
   const row = x => [`${x.sc.id === im.current ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === im.current ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
     signed(-x.fixed || 0), signed(-x.social || 0), signed(-(x.tax + x.dist) || 0), `<b>${signed(x.net)}</b>`, ca ? `${(x.net / ca * 100).toFixed(0)} %` : '—'];
   return `<details class="card" id="r-implant" ${view.open.has('r-implant') || !view.open.size ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
     <div class="grid">${select('Implantation retenue', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="net-split"><div><span>Résultat d'exploitation</span><b>${money(result)}</b></div><div><span>Frais de structure</span><b>${money(-cur.fixed || 0)}</b></div><div><span>Cotisations sociales</span><b>${money(-cur.social || 0)}</b></div><div><span>Impôts</span><b>${money(-(cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b class="${cur.net < 0 ? 'neg' : ''}">${money(cur.net)}</b></div></div>
-    ${over(cur) ? `<p class="warn">Ton chiffre d'affaires (environ ${money(yearCa)} par an) dépasse le plafond de ${money(+cur.sc.caLimit)} de ce statut.</p>` : ''}
+    ${over(cur) ? `<p class="warn">Le chiffre d'affaires de la société, toutes applications (environ ${money(yearCa)} par an), dépasse le plafond de ${money(+cur.sc.caLimit)} de ce statut.</p>` : ''}
     <h4>Comparaison des implantations</h4>
     <div class="scroll"><table class="pnl">${table(['Implantation', 'Frais', 'Cotisations', 'Impôts', 'Net', '% du CA'], res.map(row))}</table></div>
-    <p class="warn">Taux indicatifs, à faire valider par un conseiller fiscal. Le lieu où tu vis décide en général de ton imposition, et la TVA européenne reste due sur les ventes aux clientes européennes quelle que soit l'implantation. Toutes les applications Om Holistic sont comptées ensemble.</p>
+    <p class="warn">Taux indicatifs, à faire valider par un conseiller fiscal. Le lieu où tu vis décide en général de ton imposition, et la TVA européenne reste due sur les ventes aux clientes européennes quelle que soit l'implantation. Toutes les applications Om Holistic sont comptées ensemble pour calculer les impôts et cotisations${appName ? `, puis seule la part de ${esc(appName)} est affichée ici (${Math.round(share * 100)} % du résultat de la société)` : ''}.</p>
     <p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Modifier les taux et les frais de chaque implantation</a></p></details>`;
 }
 
@@ -863,10 +873,10 @@ function resultatPage() {
   return `${banner({ label: 'Résultat d\'exploitation', chip: periodChip(), big: money(total.result), bigCls: total.result < 0 ? 'neg-hero' : '',
       note: `Marge d'exploitation de ${rate.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} % du chiffre d'affaires`,
       tiles: [
-        { label: `Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}`, value: money(total.ca) },
+        { label: `Chiffre d'affaires${state.vat.ttc ? ' HT' : ''}`, mini: 'CA', value: money(total.ca) },
         { label: 'Charges', value: money(total.ca - total.result), hint: `${pctOf(total.ca - total.result, total.ca)} du CA`, go: { page: 'charges' } },
-        { label: 'Net pour toi', value: money(ic.cur.net), cls: ic.cur.net < 0 ? 'neg-hero' : '', hint: `${esc(ic.cur.sc.name)}${view.app === 'all' ? '' : ' · toutes applis'}`, go: { page: 'resultat', open: 'r-implant' } },
-        { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
+        { label: 'Net pour toi', value: money(ic.cur.net), cls: ic.cur.net < 0 ? 'neg-hero' : '', hint: `${esc(ic.cur.sc.name)}${ic.appName ? ` · part de ${esc(ic.appName)}` : ''}`, go: { page: 'resultat', open: 'r-implant' } },
+        { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', mini: false, value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
       ] })}
     ${implantBar(r)}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
@@ -921,6 +931,8 @@ function route() {
   else window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+// Bandeau replié / déplié : mémorisé pour toutes les pages.
+document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('banner')) { try { localStorage.setItem('om-banner', e.target.open ? 'open' : 'closed'); } catch { /* stockage indisponible */ } } }, true);
 
 document.addEventListener('change', async e => {
   const t = e.target;
