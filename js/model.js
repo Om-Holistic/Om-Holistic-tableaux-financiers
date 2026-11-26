@@ -39,6 +39,9 @@ function program(name, start, prices, duration) {
     pricing: pricing(start, prices),
     // Cohortes de test avant le lancement commercial (start) : nom, mois, nombre de clientes.
     cohorts: [],
+    // Passerelles avec l'abonnement seul : % des clientes qui le gardent en fin de programme,
+    // % des abonnées qui achètent ce programme chaque mois.
+    toSolo: 40, fromSolo: 0,
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
     palierMode: false, paliers: [], promos: []
@@ -53,7 +56,8 @@ function application(name) {
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      conversion: 40, postDuration: 12,
+      postDuration: 12,
+      trialDays: 0, trialConversion: 100,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
     },
@@ -109,7 +113,7 @@ function defaultShared() {
 
 function defaultState() {
   return {
-    version: 6,
+    version: 7,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
@@ -194,7 +198,16 @@ function migrate(state) {
   }
   // Version 6 : le nom s'écrit CHRYSALISS, en majuscules avec deux S.
   for (const a of state.apps) if (/^chrysal+is+$/i.test(a.name.trim())) a.name = 'CHRYSALISS';
-  state.version = 6;
+  // Version 7 : conversion vers l'abonnement par programme, période d'essai.
+  if ((state.version || 1) < 7) {
+    for (const a of state.apps) {
+      const conv = a.sub.conversion ?? 40;
+      for (const p of a.programs) { if (p.toSolo === undefined) p.toSolo = conv; if (p.fromSolo === undefined) p.fromSolo = 0; }
+      delete a.sub.conversion;
+      if (a.sub.trialDays === undefined) { a.sub.trialDays = 0; a.sub.trialConversion = 100; }
+    }
+  }
+  state.version = 7;
   return state;
 }
 

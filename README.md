@@ -26,6 +26,13 @@ Les prévisions commencent automatiquement à la première date (cohorte, lancem
 La **capacité de coaching** monte en puissance par paliers : à partir de tel mois, tant de clientes en même temps
 et tant d'heures par semaine.
 
+## Passerelles et période d'essai
+
+- Chaque programme fixe le **% de clientes qui gardent l'abonnement seul** (ex. CHRYSALISS seul) à la fin du programme,
+  et le **% des abonnées qui achètent ce programme chaque mois**. Ces dernières gardent leur abonnement, occupent une
+  place de coaching et ne sont pas recomptées à la fin du programme.
+- L'abonnement seul peut avoir une **période d'essai** gratuite (en jours) et un % d'essais qui deviennent payants.
+
 ## Prix en trois phases
 
 Chaque produit (programme, abonnement direct, abonnement après programme) a trois phases de prix,

@@ -108,6 +108,9 @@ function programCard(a, q, j, p) {
         <h4>Ensuite, montée en puissance</h4>${fields(q, t, growth)}
         ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
         ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
+      ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / mois`, `
+        ${fields(q, t, [['toSolo', `Clientes qui gardent ${soloName(a)} à la fin du programme (%)`], ['fromSolo', `Abonnées ${soloName(a)} qui achètent ce programme, par mois (%)`]])}
+        <p class="muted">Les abonnées qui achètent le programme gardent leur abonnement. Elles occupent une place de coaching et ne sont pas recomptées à la fin du programme.</p>`)}
       ${section('promo-p' + j, 'promo', 'Promotions ponctuelles', q.promos.length ? `${q.promos.length} promotion${q.promos.length > 1 ? 's' : ''}` : 'aucune', `
         ${q.promos.map((r, k) => lineEditor(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']], 'Supprimer la promotion')).join('')}
         <div class="row"><button data-add="${t}.promos">Ajouter une promotion</button></div>
@@ -125,8 +128,12 @@ function productsPage(a, i) {
       ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${num(a.sub.initial)} → ${num(a.sub.target)} / sem.`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
         <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}
       ${pricingEditor(g, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
-      ${a.programs.length ? section('conv-sp', 'sub', 'Après un programme', `${num(a.sub.conversion)} % des clientes s'abonnent · ${num(a.sub.postDuration)} mois en moyenne`, `
-        ${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}
+      ${section('trial-sd', 'promo', 'Période d\'essai', +a.sub.trialDays > 0 ? `${num(a.sub.trialDays)} jours gratuits · ${num(a.sub.trialConversion)} % passent payantes` : 'aucune', `
+        ${fields(a.sub, p + '.sub', [['trialDays', 'Durée de l\'essai gratuit (jours)'], ['trialConversion', 'Essais qui deviennent payants (%)']])}
+        <p class="muted">Le rythme d'abonnements ci-dessus compte alors les essais. Seule la part indiquée devient payante, à la fin de l'essai. 0 jour = pas d'essai.</p>`)}
+      ${a.programs.length ? section('conv-sp', 'sub', 'Après un programme', a.programs.map(q => `${esc(q.name)} ${num(q.toSolo)} %`).join(' · ') + ` · ${num(a.sub.postDuration)} mois en moyenne`, `
+        <p class="muted">Le pourcentage de clientes qui gardent ${esc(soloName(a))} à la fin d'un programme se règle dans chaque programme (bloc « Passerelles »).</p>
+        ${fields(a.sub, p + '.sub', [['postDuration', 'Durée moyenne d\'abonnement après un programme (mois)']])}
         <h4>Prix mensuel après un programme</h4>
         ${a.sub.postPricing.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, p + '.sub.postPricing.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('')}`) : ''}
     </details>`;
@@ -172,7 +179,7 @@ function settingsPage(a, i) {
       ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}</details>` : ''}
     <details class="card" id="st-where"><summary>Où régler le reste</summary>
       <ul class="where">
-        <li><a href="#produits">Produits et prix</a> : cohortes de test, date de lancement, durée, prix en 3 phases, rythme d'inscriptions, promotions, abonnements et conversion après programme.</li>
+        <li><a href="#produits">Produits et prix</a> : cohortes de test, date de lancement, durée, prix en 3 phases, rythme d'inscriptions, promotions, passerelles entre programmes et abonnement, période d'essai.</li>
         <li><a href="#charges">Charges</a> : charges de l'application, coût du coaching, charges de structure Om Holistic.</li>
         <li>Ci-dessous : TVA, ajout d'une application, export et import.</li>
       </ul></details>
@@ -474,7 +481,13 @@ document.addEventListener('change', async e => {
     const [o, k] = resolve(t.dataset.path);
     o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
     save();
-    if (t.type === 'checkbox' || t.tagName === 'SELECT' || k === 'name') render(); else renderToolbar();
+    // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
+    // pour que les résumés se mettent à jour sans fermer le clavier.
+    setTimeout(() => {
+      const next = document.activeElement?.dataset?.path;
+      render();
+      if (next) document.querySelector(`[data-path="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
+    }, 0);
   } else if (t.id === 'app') { view.app = t.value; render(true); }
   else if (t.id === 'year') { view.year = +t.value; render(); }
   else if (t.id === 'period') { view.period = +t.value; render(); }

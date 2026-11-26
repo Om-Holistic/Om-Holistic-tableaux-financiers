@@ -46,11 +46,18 @@ function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
     newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
-    products: a.programs.map(() => ({ sales: 0, admissions: 0, finished: 0, active: 0, post: 0, clients: 0, coachHours: 0 }))
+    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0
   };
 }
 
-function simulate(a) {
+// Abonnées CHRYSALISS seul qui achètent un programme : il faut connaître le nombre d'abonnées de chaque mois.
+// On fait donc un premier passage sans ces achats (ils ne modifient pas ce nombre), puis le passage complet.
+function simulate(a, soloStock) {
+  if (!soloStock && a.programs.some(p => p.enabled && pos(p.fromSolo) > 0)) {
+    const first = simulate(a, new Map());
+    soloStock = new Map(first.months.map(m => [m.month, m.direct + m.post]));
+  }
+  soloStock = soloStock || new Map();
   const start = monthDate(appStart(a));
   const end = new Date(Date.UTC(start.getUTCFullYear() + 5, 11, 31));
   const months = new Map();
@@ -87,6 +94,13 @@ function simulate(a) {
         const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
         want += w < 0 ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
       }
+      // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage mensuel, réparti par semaine), dès son lancement.
+      let fromSolo = 0;
+      if (commercial && d >= commercial && pos(p.fromSolo) > 0) {
+        const prev = soloStock.get(monthKey(shiftMonth(monthDate(monthKey(d)), -1))) || 0;
+        fromSolo = prev * Math.min(100, pos(p.fromSolo)) / 100 * 12 / 52;
+        want += fromSolo;
+      }
       if (a.waitlist) want += pending[i];
       demand += want;
       const count = a.restrict ? Math.min(want, available) : want;
@@ -98,11 +112,12 @@ function simulate(a) {
       const promo = (p.promos || []).find(q => monthKey(d) >= q.start && monthKey(d) <= q.end);
       if (promo) price = pos(promo.price);
 
-      const e = { i, count, end: addWeeks(d, Math.max(1, Math.floor(pos(p.duration)))) };
+      const e = { i, count, solo: want > 0 ? count * fromSolo / want : 0, end: addWeeks(d, Math.max(1, Math.floor(pos(p.duration)))) };
       events.push(e); active.push(e);
       credit(d, (mm, share) => {
         mm.sales += count * price * share; mm.admissions += count * share;
         mm.products[i].sales += count * price * share; mm.products[i].admissions += count * share;
+        mm.products[i].fromSolo += e.solo * share;
       });
       admitted += count;
     });
@@ -121,14 +136,21 @@ function simulate(a) {
     });
     if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, cap, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
 
+    // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
-      const count = weeklyRate(a.sub, Math.floor((d - subStart) / WEEK));
-      const phase = phaseAt(a.sub.directPricing, monthKey(d)).index;
-      credit(d, (mm, share) => { mm.newDirect[phase] += count * share; });
+      const trial = pos(a.sub.trialDays);
+      const count = weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * (trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1);
+      const paid = new Date(+d + trial * DAY);
+      const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
+      credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
+      if (trial > 0) credit(d, (mm, share) => { mm.trials += weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * share; });
     }
   }
 
-  for (const e of events) credit(e.end, (m, share) => { m.finished += e.count * share; m.products[e.i].finished += e.count * share; });
+  // Fins de programme. Les clientes venues de CHRYSALISS seul y sont déjà abonnées : elles ne comptent pas dans la conversion.
+  for (const e of events) credit(e.end, (m, share) => {
+    m.finished += e.count * share; m.products[e.i].finished += e.count * share; m.products[e.i].finishedNew += (e.count - e.solo) * share;
+  });
 
   // Stocks d'abonnées, par phase de prix d'entrée (pour garder le prix d'entrée si demandé).
   const directGrid = a.sub.directPricing, postGrid = a.sub.postPricing;
@@ -141,7 +163,7 @@ function simulate(a) {
     direct = direct.map((v, k) => v * survival(a.sub.duration) + m.newDirect[k]);
     const postPhase = phaseAt(postGrid, m.month).index;
     post = post.map((stock, i) => stock.map((v, k) => v * survival(a.sub.postDuration)
-      + (k === postPhase ? m.products[i].finished * Math.min(100, pos(a.sub.conversion)) / 100 : 0)));
+      + (k === postPhase ? m.products[i].finishedNew * Math.min(100, pos(a.programs[i].toSolo)) / 100 : 0)));
     m.direct = direct.reduce((s, v) => s + v, 0);
     m.post = post.reduce((s, stock) => s + stock.reduce((t, v) => t + v, 0), 0);
     m.directCA = revenue(direct, directGrid, m.month);

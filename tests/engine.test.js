@@ -143,3 +143,33 @@ test('cohortes de test puis lancement, capacité par paliers', () => {
   const sumAdm = capped.filter(m => m.month < '2027-07').reduce((s, m) => s + m.admissions, 0);
   assert.ok(sumAdm < 23);
 });
+
+test('passerelles : programme → abonnement seul, abonnement seul → programme, période d\'essai', () => {
+  const base = () => {
+    const a = model.defaultState().apps[0];
+    a.programs = [a.programs[0]];
+    const p = a.programs[0];
+    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.toSolo = 50; p.fromSolo = 0;
+    a.sub.start = '2027-01'; a.sub.initial = a.sub.target = 5; a.sub.duration = 0; a.sub.postDuration = 0; a.capacitySteps = [];
+    return a;
+  };
+  const sum = (ms, f) => ms.reduce((s, m) => s + f(m), 0);
+  // 50 % des fins de programme deviennent abonnées (sans résiliation).
+  let a = base(), r = simulate(a).months;
+  const fin = sum(r, m => m.products[0].finished);
+  assert.ok(Math.abs(r.at(-1).post - fin * 0.5) < 1e-6);
+  // 10 % des abonnées seules achètent le programme chaque mois : plus d'inscriptions, mêmes abonnées après programme qu'avant pour les nouvelles.
+  a = base(); a.programs[0].fromSolo = 10;
+  const r2 = simulate(a).months;
+  assert.ok(sum(r2, m => m.products[0].admissions) > sum(r, m => m.products[0].admissions));
+  assert.ok(sum(r2, m => m.products[0].fromSolo) > 0);
+  assert.ok(Math.abs(r2.at(-1).post - r.at(-1).post) < 1e-6, 'les clientes venues de l\'abonnement ne sont pas recomptées');
+  // Essai de 14 jours, 60 % payantes : 60 % des abonnements, décalés de deux semaines.
+  a = base(); a.programs = []; a.sub.trialDays = 14; a.sub.trialConversion = 60;
+  const r3 = simulate(a).months;
+  a.sub.trialDays = 0;
+  const r4 = simulate(a).months;
+  const y = ms => ms.filter(m => m.month.startsWith('2028')).reduce((s, m) => s + m.newDirect.reduce((t, v) => t + v, 0), 0);
+  assert.ok(Math.abs(y(r3) - 0.6 * y(r4)) < 0.01 * y(r4));
+  assert.ok(r3.find(m => m.month === '2027-01').newDirect.reduce((t, v) => t + v, 0) < 0.6 * r4.find(m => m.month === '2027-01').newDirect.reduce((t, v) => t + v, 0));
+});
