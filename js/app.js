@@ -20,7 +20,7 @@ try {
   const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
   if (isValidState(saved)) state = migrate(saved);
 } catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
-const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } snapshot('travail'); Sync.changed(); };
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-last-edit', new Date().toISOString()); } catch { /* stockage indisponible */ } snapshot('travail'); Sync.changed(); saveLabel(); };
 const stored = k => { try { return localStorage.getItem(k); } catch { return null; } };
 // Versions précédentes gardées sur cet appareil : avant chaque synchro, import, remise à zéro ou retour,
 // à l'ouverture, et toutes les 20 minutes pendant que tu travailles. On garde les 15 dernières.
@@ -36,6 +36,28 @@ function snapshot(why, st = state, force = false) {
   }
 }
 snapshot('ouverture');
+// Bouton Enregistrer : toujours au même endroit. Il confirme l'enregistrement, garde une version et synchronise.
+// Les saisies restent aussi gardées sur l'appareil au fil de l'eau, pour ne jamais rien perdre.
+const savedAt = () => stored('om-saved-at');
+const unsaved = () => { const e = stored('om-last-edit'), s2 = savedAt(); return !!e && (!s2 || e > s2); };
+function saveLabel() {
+  const b = document.getElementById('saveBtn');
+  if (!b) return;
+  const at = savedAt(), d = at && new Date(at), today = d && d.toDateString() === new Date().toDateString();
+  const t = d ? d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', ' h ') : '';
+  const when = d ? (today ? 'à ' + t : 'le ' + d.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }) + ' à ' + t) : '';
+  const off = Sync.on && ['offline', 'error', 'conflict'].includes(Sync.status.state);
+  b.classList.toggle('dirty', unsaved());
+  b.classList.toggle('warn', !unsaved() && off);
+  b.innerHTML = unsaved() ? '<span class="dot"></span>Enregistrer'
+    : d ? `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>Enregistré ${when}${off ? ' · pas encore synchronisé' : ''}` : 'Enregistrer';
+}
+async function saveNow() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); localStorage.setItem('om-saved-at', new Date().toISOString()); } catch { /* stockage indisponible */ }
+  snapshot('enregistré', state, true);
+  saveLabel();
+  if (Sync.on) { await Sync.now(); saveLabel(); }
+}
 // Rappel de sauvegarde : des modifications non exportées depuis plus de 14 jours (ou jamais exportées, modifiées il y a plus d'un jour).
 function backupDue() {
   const edit = stored('om-last-edit'), exp = stored('om-last-export');
@@ -1931,6 +1953,7 @@ document.addEventListener('change', async e => {
 });
 
 document.addEventListener('click', e => {
+  if (e.target.closest && e.target.closest('#saveBtn')) { saveNow(); return; }
   const go = e.target.closest?.('[data-goto]');
   if (go) {
     e.preventDefault();
@@ -2070,7 +2093,10 @@ Sync.init({
   onStatus(changed) {
     const el = $('syncStatus');
     if (el) { el.textContent = syncText(); el.className = 'sync-state ' + Sync.status.state; }
+    saveLabel();
     if (changed && (['conflict', 'error'].includes(Sync.status.state) || document.querySelector('.sync-strip'))) render();
   }
 });
 route();
+
+saveLabel();
