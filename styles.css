@@ -166,6 +166,8 @@ details.fold > summary { font-size: 14px; }
 .chart svg { display: block; width: 100%; height: auto; min-width: 300px; }
 .chart text { fill: var(--ink-soft); font: 10px var(--body); }
 .chart .grid-line { stroke: var(--line); stroke-width: 1; }
+.chart .axis { stroke: var(--ink-soft); stroke-width: 1; }
+.chart text.unit { font-weight: 600; }
 
 /* Produits : une ligne par produit avec barre de part du CA */
 .prod { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px solid var(--line); }
