@@ -462,7 +462,7 @@ function coachingPage() {
         <p class="muted">Les heures à payer sont ajoutées aux charges, dans « Heures de coachs », et réparties entre les programmes selon leurs heures.</p>
         ${a.restrict ? check('Limiter les inscriptions à mes heures (aucune heure payée)', `apps.${ai}.restrict`, a.restrict) : ''}</details>`;
   }).join('');
-  return `${banner({ label: 'Coaching', chip: periodChip(), big: peak ? hrs(peak.hours) + ' / sem.' : '—',
+  return `${banner({ label: firstBlock ? 'Ça bloque en' : 'Coaching', chip: periodChip(), big: firstBlock ? `${MSHORT[+firstBlock.date.slice(5, 7) - 1]} ${firstBlock.date.slice(0, 4)}` : 'Ça tient', bigCls: firstBlock ? 'neg-hero' : '',
       note: firstBlock ? `Tes heures ne suffisent plus à partir ${deMonth(firstBlock.date.slice(0, 7))}.` : 'Tes heures suffisent sur tout le plan.',
       tiles: [
         { label: 'Au plus fort', value: peak ? hrs(peak.hours) : '—', hint: peak ? `par semaine, ${monthName(peak.date.slice(0, 7))}` : '' },
