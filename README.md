@@ -123,6 +123,7 @@ Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appare
 - **Scénarios** (Résultat › Scénarios et sensibilité, réglages dans Réglages › Scénarios) : prudent, central, ambitieux côte à côte ; le scénario choisi s'applique à tous les tableaux ; sensibilité du résultat à 10 % d'écart sur chaque hypothèse.
 - **Charges** : compte d'exploitation de la période (CA, charges variables par nature, marge sur coûts variables, charges fixes par nature, quote-part de structure, résultat), dépliable ; fiches rangées en charges variables puis charges fixes.
 - **Indicateurs clés (investisseurs)** (Résultat) : MRR, ARR, croissance, churn, ARPU, LTV, CAC, LTV / CAC, retour sur CAC, marge brute, EBITDA, point mort, besoin de financement, burn rate, autonomie ; détail par programme.
+- **Repères investisseurs** (Réglages) : seuils « bon » et « correct » de chaque indicateur (croissance, churn, LTV / CAC, retour sur CAC, marge brute, règle des 40, autonomie), affichés en pastille verte, orange ou rouge.
 - **Chaque application comme une société à part** : en choisissant une application en haut, Trésorerie et indicateurs la montrent seule (quote-part de structure et impôts compris, sans apport ni ta rémunération), pour une levée de fonds par application. « Om Holistic · consolidé » montre toute la société.
 - **Réel face au prévu** (Chiffre d'affaires) : saisie mensuelle du CA et des charges réels, écart au prévu.
 - **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.

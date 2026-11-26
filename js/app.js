@@ -420,6 +420,13 @@ function syncStrip() {
   if (s.state === 'error') return `<a class="sync-strip" href="#reglages" data-goto="reglages" data-open="st-sync" data-anchor="st-sync">${esc(s.msg)} ›</a>`;
   return '';
 }
+const BENCH_ROWS = [['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
+function benchSection() {
+  const B = state.bench || defaultBench();
+  return section('st-bench', 'promo', 'Repères investisseurs', 'seuils bon et correct des indicateurs clés', `
+    ${BENCH_ROWS.map(([k, n, up]) => `<h4>${n}</h4><div class="grid">${field(`Bon si ${up ? 'au moins' : 'au plus'}`, `bench.${k}.good`, B[k].good)}${field(`Correct si ${up ? 'au moins' : 'au plus'}`, `bench.${k}.ok`, B[k].ok)}</div>`).join('')}
+    <div class="row"><button id="benchReset">Revenir aux repères par défaut</button></div>`);
+}
 function syncSection() {
   const summary = Sync.on ? 'activée sur cet appareil' : 'iPhone, iPad et ordinateur à jour';
   const body = Sync.on ? `<p class="sync-state ${Sync.status.state}" id="syncStatus">${esc(syncText())}</p>
@@ -466,6 +473,7 @@ function settingsPage(a, i) {
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
       ${implantSection()}
+      ${benchSection()}
       ${syncSection()}
       ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">${Sync.on ? 'Tes paramètres sont synchronisés. Un export reste utile pour garder une copie datée.' : 'Tes paramètres restent dans ce navigateur. Exporte-les régulièrement, ou active la synchro pour les retrouver sur tes autres appareils.'}</p>
         <div class="row"><button id="export">Exporter les paramètres</button><label class="file"><span>Importer des paramètres</span><input id="import" type="file" accept=".json"></label></div>
@@ -714,6 +722,7 @@ function tresoreriePage() {
         { label: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' },
         { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } }
       ] })}
+    ${implantPick('tr-imp', 'les impôts et cotisations retirés de la trésorerie en dépendent')}
     ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">trésorerie négative en ${monthName(t.low.month)}</span></span></summary>
       <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
     ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
@@ -1062,6 +1071,9 @@ function chargesPeriodCard(a, i, r) {
     <p class="muted">Pourcentages : part du chiffre d'affaires HT. Le résultat est celui de la page Résultat, ${periodName()}.${quiet.length ? ` Sans coût sur la période (pas encore démarrées ou terminées) : ${quiet.join(', ')}.` : ''}${sc && sc.id !== 'central' ? ` Scénario ${esc(sc.name)} : montants ajustés comme dans Résultat, les fiches plus bas montrent le plan central.` : ''}</p></details>`;
 }
 
+// Bloc dépliable de la page Charges (replié par défaut), total de la période dans l'en-tête.
+const chargeFold = (id, title, sub, body) => `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${title}<br><span class="sum-sub">${sub}</span></span></summary>${body}</details>`;
+
 function chargesPage(a, i) {
   const p = 'apps.' + i;
   const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
@@ -1071,6 +1083,9 @@ function chargesPage(a, i) {
   const fixedAt = (list, ds) => list.reduce((t, c) => t + (c.type === 'fixe' ? chargeAt(c, ref, ds) || 0 : 0), 0);
   const list = a.charges || [], todo = list.filter(c => badge(c).includes('todo')).length, est = list.filter(c => badge(c).includes('est')).length;
   const r = results(), cost = r.sum('cost');
+  const nV = list.filter(c => !isFixed(c)).length, nF = list.length - nV;
+  const pe = r.all[i].pnl.filter(e => inPeriod(e.month)), ps = pe.length ? sumPnl(pe) : null;
+  const tot = ps && { v: ps.total.fees + ps.total.variable + ps.total.coaching, f: ps.total.fixed, s: ps.structure };
   return `${banner({ label: 'Charges', chip: periodChip(), big: money(cost),
       note: `${pctOf(cost, r.sum('caHT'))} du CA HT ${periodName()}, structure comprise : le même total que dans Résultat. Détail juste en dessous.`,
       tiles: [
@@ -1082,20 +1097,18 @@ function chargesPage(a, i) {
     ${chargesPeriodCard(a, i, r)}
     ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
-    <h2>Charges variables de ${esc(a.name)}</h2>
-    <p class="muted">Elles suivent l'activité : par cliente, par inscription ou en pourcentage du chiffre d'affaires.</p>
-    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
-    <h2>Charges fixes de ${esc(a.name)}</h2>
-    <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
-    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
-    <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
-    ${a.programs.length ? `<div class="card" id="ch-coach"><h4>Coaching</h4><p class="muted">Le coût du coaching vient des heures de coachs embauchées et de leur coût horaire (${money(+a.coachRate || 0)} / h), réglés dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p></div>` : ''}
-    <h2>Charges de structure Om Holistic</h2>
-    <p class="muted">Communes à toutes les applications (banque, assurance, outils, locaux, personnel…), réparties entre elles.</p>
-    <div class="card">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']])}</div>
-    <details class="card" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
-    ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
-    <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`;
+    ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
+      `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
+      ${a.programs.length ? `<p class="muted">Coaching : heures de coachs × ${money(+a.coachRate || 0)} / h, réglé dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p>` : ''}
+      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+    ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${nF} charge${nF > 1 ? 's' : ''}${tot ? ` · ${money(tot.f)} ${periodName()}` : ''}`,
+      `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
+      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+    ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}${tot ? ` · quote-part ${money(tot.s)} ${periodName()}` : ''}`,
+      `<div class="grid">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']]).replace('<label>', '<label class="wide">')}</div>
+      <details class="fold" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
+      ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
+      <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`)}`;
 }
 
 // ---------- Compte d'exploitation ----------
@@ -1189,6 +1202,14 @@ function implantCalc(r) {
   return { im, ca: own ? own.ca : ca, result: own ? own.result : result, months, res, yearCa, over, best, cur, share, appName, totalResult: result };
 }
 // Bandeau en tête du Résultat : l'implantation choisie et son effet immédiat sur le net.
+// Choix de l'implantation là où les impôts et cotisations changent les chiffres (Trésorerie).
+function implantPick(id, what) {
+  const im = state.implantation, cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  return `<details class="card implant-bar" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Implantation : ${esc(cur ? cur.name : '—')}<br><span class="sum-sub">${what}</span></span></summary>
+    <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <p class="muted">Frais de structure, cotisations sociales et impôts de chaque implantation : <a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Réglages › Implantation de la société</a>. Comparaison des implantations : <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Résultat › Résultat net selon l'implantation</a>.</p></details>`;
+}
+
 function implantBar(r) {
   const { im, ca, result, cur, best, over, appName, share } = implantCalc(r);
   const gap = best.net - cur.net;
@@ -1261,33 +1282,50 @@ function kpiCard(r) {
   const burn = flows.length ? -flows.reduce((a, v) => a + v, 0) / flows.length : 0;
   const runway = burn > 0 ? endCash / burn : null;
   const f = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
-  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
+  // Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
+  const B = state.bench || defaultBench();
+  const mark = (k, v, unit, up = true) => {
+    if (v === null || v === undefined || !isFinite(v) || !B[k]) return '';
+    const { good, ok } = B[k], lvl = up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
+    // Jauge : zones faible / correct / bon, repère en trait, position de la valeur en point.
+    const max = Math.max(up ? good * 1.6 : ok * 1.5, v * 1.05, 1e-9), pos = x => Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
+    const zones = up ? `<i class="z low" style="width:${pos(ok)}%"></i><i class="z ok" style="width:${pos(good) - pos(ok)}%"></i><i class="z good" style="width:${100 - pos(good)}%"></i>`
+      : `<i class="z good" style="width:${pos(good)}%"></i><i class="z ok" style="width:${pos(ok) - pos(good)}%"></i><i class="z low" style="width:${100 - pos(ok)}%"></i>`;
+    const gap = v - good, gapTxt = (gap >= 0 ? '+' : '−') + num(Math.abs(Math.round(gap * 10) / 10)).replace(/^(\d+)$/, '$1') + unit.replace(' / mois', '');
+    return `<div class="gauge ${lvl}"><div class="g-track">${zones}<b class="g-dot" style="left:${pos(v)}%"></b></div>
+      <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${num(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
+  };
+  const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
+  const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
+  const rule40 = yearGrowth === null || ebitdaPct === null ? null : yearGrowth + ebitdaPct;
   const group = (title, items) => `<h4 class="kpi-h">${title}</h4><div class="kpis">${items.join('')}</div>`;
   return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
       kpi('ARR', short(mrr * 12), 'MRR × 12'),
-      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', cmgr > 0 ? 'good' : ''),
+      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' %')),
       kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
     ${group('Économie unitaire', [
       kpi('ARPU', price(Math.round(arpu * 100) / 100), 'revenu moyen par abonnée et par mois, HT'),
-      kpi('Churn mensuel', f(churn * 100, 1) + ' %', 'abonnées perdues chaque mois'),
+      kpi('Churn mensuel', f(churn * 100, 1) + ' %', 'abonnées perdues chaque mois', '', base ? mark('churn', churn * 100, ' %', false) : ''),
       kpi('LTV', ltv === null ? '—' : short(ltv), 'marge brute laissée par une abonnée sur sa durée de vie'),
       kpi('CAC', cac === null ? '—' : price(Math.round(cac * 100) / 100), cac === null ? 'aucune dépense d\'acquisition saisie' : 'publicité et acquisition / nouvelle cliente'),
-      kpi('LTV / CAC', ratio === null ? '—' : f(ratio, 1), 'cible des investisseurs : 3 ou plus', ratio === null ? '' : ratio >= 3 ? 'good' : 'bad'),
-      kpi('Retour sur CAC', payback === null ? '—' : f(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition')])}
+      kpi('LTV / CAC', ratio === null ? '—' : f(ratio, 1), 'valeur d\'une cliente / coût pour l\'acquérir', '', mark('ltvcac', ratio, '')),
+      kpi('Retour sur CAC', payback === null ? '—' : f(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition', '', mark('payback', payback, ' mois', false))])}
     ${progKpis(r, s)}
     ${group('Rentabilité', [
       kpi('Chiffre d\'affaires HT', short(t.ca), periodName()),
-      kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)'),
+      kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)', '', t.ca ? mark('gm', gm * 100, ' %') : ''),
       kpi('EBITDA', short(ebitda), `${pctOf(ebitda, t.ca)} du CA · résultat d'exploitation, sans amortissements`, ebitda < 0 ? 'bad' : 'good'),
+      kpi('Règle des 40', rule40 === null ? '—' : f(rule40, 0), mrr * 12 >= 1e6 ? 'croissance annuelle (%) + marge EBITDA (%)' : 'croissance + marge EBITDA ; regardée à partir d\'environ 1 M€ d\'ARR', '', mrr * 12 >= 1e6 ? mark('rule40', rule40, '') : ''),
       kpi('Point mort', tr.breakEven ? monthName(tr.breakEven) : 'non atteint', `résultat mensuel positif ensuite${view.app === 'all' ? ', toute la société' : ''}`)])}
     ${group(view.app === 'all' ? 'Financement (toute la société)' : `Financement de ${esc(r.scope[0].a.name)}, comme une société à part`, [
       kpi('Besoin de financement', short(need), need ? `point bas en ${monthName(tr.low.month)}${view.app === 'all' ? ', apport de départ compris' : ', à lever ou à apporter'}` : 'la trésorerie ne passe pas sous zéro', need ? 'bad' : 'good'),
       kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
-      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel'),
+      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel', '', runway === null ? '' : mark('runway', runway, ' mois')),
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
-    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente.</p></details>`;
+    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
+    <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 % et règle des 40 (références courantes du logiciel par abonnement) ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
 }
 
 function resultatPage() {
@@ -1513,6 +1551,7 @@ document.addEventListener('click', e => {
     save(); render();
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
+  } else if (t.id === 'benchReset') { state.bench = defaultBench(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();
