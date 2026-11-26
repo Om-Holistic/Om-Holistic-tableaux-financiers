@@ -72,8 +72,8 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'utilisatrices', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
-const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'calendrier', 'utilisatrices', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
+const SETTINGS_PAGES = ['calendrier', 'charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
@@ -178,7 +178,6 @@ function programCard(a, q, j, p) {
   const t = p + '.programs.' + j;
   const open = view.open.has('p' + j) ? 'open' : '';
   const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
-  const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
   const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
   return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span>${(() => { const gp = q.enabled && (q.goal?.steps || []).length ? programGoalPlan(a, j, (prodSim || simulate(a)).months) : null;
@@ -191,12 +190,7 @@ function programCard(a, q, j, p) {
         ${field('Nom du programme', t + '.name', q.name, 'text')}${field('Durée (semaines)', t + '.duration', q.duration)}${field('Coaching / cliente (min / sem.)', t + '.coach', q.coach)}
       </div>
       <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}${(q.coachSteps || []).length ? `Baisses prévues : ${q.coachSteps.filter(c => c.date).map(c => `${num(+c.minutes || 0)} min dès ${monthName(c.date)}`).join(', ')}. ` : ''}Pour le changer à une date : onglet <a href="#coaching" data-goto="coaching">Coaching</a>.</p>
-      ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
-        <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
-        ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
-        <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
-        ${fields(q, t, [['start', 'Lancement commercial', 'month']])}
-        <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>`)}
+      <p class="muted"><a href="#calendrier" data-goto="calendrier" data-open="calp-${j}" data-anchor="calp-${j}">Cohortes de test et lancement : Calendrier ›</a></p>
       ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
         <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
       ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
@@ -297,14 +291,15 @@ function productsPage(a, i) {
   const g = a.sub.directPricing;
   // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
   const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}${(() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
-      ${pstats([['Prix', priceRange(g) + ' / mois'], +a.sub.trialDays > 0 ? ['Essai', `${num(a.sub.trialDays)} j`] : null,
+      ${pstats([['Prix', priceRange(g) + ' / mois'], ['Durée', +a.sub.duration > 0 ? `${num(a.sub.duration)} mois` : 'illimitée'], +a.sub.trialDays > 0 ? ['Essai', `${num(a.sub.trialDays)} j`] : null,
         a.sub.start ? ['Abonnées à 1 an', num(((m => m ? m.direct + m.post : 0)(prodSim && prodSim.months.find(m => m.month === addMonths(a.sub.start, 11))))), 'hi'] : null,
         a.sub.start ? ['CA 1re année', money(firstYear(a.sub.start, m => m.directCA + m.postCA) || 0), 'hi'] : null])}</span></summary>
+      <div class="grid">${field('Durée moyenne d\'abonnement\nmois, aussi après un programme', p + '.sub.duration', a.sub.duration)}</div>
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
-      ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ['duration', 'Durée moyenne d\'abonnement (mois)']])}
-        ${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
+      <p class="muted"><a href="#calendrier" data-goto="calendrier" data-open="cal-sd" data-anchor="cal-sd">Ouverture des abonnements : Calendrier ›</a></p>
+      ${section('open-sd', 'cal', 'Rythme d\'abonnements', `${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
         ${a.sub.palierMode ? a.sub.paliers.map((r, k) => lineEditor(r, p + '.sub.paliers.' + k, [['rate', 'Abonnées / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${p}.sub.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier, le rythme reste à l'objectif / semaine : ${num(a.sub.target)}.</p>` : fields(a.sub, p + '.sub', growth)}
-        <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}
+`)}
       ${goalSection(a, p)}
       ${pricingEditor(g, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
       ${section('trial-sd', 'promo', 'Période d\'essai', +a.sub.trialDays > 0 ? `${num(a.sub.trialDays)} jours gratuits · ${num(a.sub.trialConversion)} % passent payantes` : 'aucune', `
@@ -330,10 +325,9 @@ function productsPage(a, i) {
           { label: 'Prix des programmes', mini: 'Programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
           { label: 'Mes heures de coaching', value: cap ? `${num(+cap.hours || 0)} h` : '—', hint: 'par semaine aujourd\'hui', go: { page: 'coaching' } },
           { label: 'Temps par cliente', value: range(mins, x => num(x) + ' min'), hint: 'par semaine aujourd\'hui', go: { page: 'coaching' } }
-        ] : [{ label: 'Calendrier', value: num(timelineCount(a)), hint: 'dates', go: { page: 'produits', open: 'pr-cal', anchor: 'pr-cal' } }])
+        ] : [{ label: 'Calendrier', value: num(timelineCount(a)), hint: 'dates', go: { page: 'calendrier' } }])
       ] })}
-    <p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
-    ${calendarCard(a)}${solo}${programs}
+    ${solo}${programs}
     <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
     ${a.programs.length ? capacityCard(a, p) : ''}`;
 }
@@ -344,19 +338,22 @@ function timelineItems(a) {
   const items = [];
   a.programs.forEach((q, j) => {
     if (!q.enabled) return;
-    const cal = { page: 'produits', open: 'p' + j, anchor: 'cal-p' + j, from: `Produits › ${esc(progName(a, q))} › Calendrier` };
-    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(progName(a, q))}`, sub: `${num(c.size)} clientes`, go: cal }));
-    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(progName(a, q))}`, sub: '', go: cal });
+    const cal = { page: 'calendrier', open: 'calp-' + j, anchor: 'calp-' + j, from: 'Calendrier' }, key = q.id;
+    q.cohorts.forEach(c => c.date && items.push({ key, date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(progName(a, q))}`, sub: `${num(c.size)} clientes`, go: cal }));
+    if (q.start) items.push({ key, date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(progName(a, q))}`, sub: '', go: cal });
     const pr = { page: 'produits', open: 'p' + j, anchor: 'price-p' + j, from: `Produits › ${esc(progName(a, q))} › Prix` };
-    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(progName(a, q))}`, sub: price(ph.price), go: pr }));
+    phasesOf(q.pricing).forEach(ph => items.push({ key, date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(progName(a, q))}`, sub: price(ph.price), go: pr }));
+    (q.promos || []).forEach(pm => pm.start && items.push({ key, date: pm.start, kind: 'price', text: `Promotion · ${esc(progName(a, q))}`, sub: price(pm.price), go: { page: 'produits', open: 'p' + j, anchor: 'promo-p' + j, from: `Produits › ${esc(progName(a, q))} › Promotions` } }));
   });
-  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › ${esc(soloName(a))}` } });
-  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Palier de coaching', sub: `${num(c.hours)} h pour toi / semaine`, go: { page: 'coaching', from: 'Coaching' } }));
+  if (a.sub.start) items.push({ key: 'sub', date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'calendrier', open: 'cal-sd', anchor: 'cal-sd', from: 'Calendrier' } });
+  phasesOf(a.sub.directPricing).forEach(ph => ph.start && items.push({ key: 'sub', date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(soloName(a))}`, sub: price(ph.price) + ' / mois', go: { page: 'produits', open: 'sd', anchor: 'price-sd', from: `Produits › ${esc(soloName(a))} › Prix` } }));
+  (a.capacitySteps || []).forEach(c => c.date && items.push({ key: ':coach', date: c.date, kind: 'cap', text: 'Palier de coaching', sub: `${num(c.hours)} h pour toi / semaine`, go: { page: 'coaching', from: 'Coaching' } }));
+  a.programs.forEach(q => q.enabled && (q.coachSteps || []).forEach(c => c.date && items.push({ key: ':coach', date: c.date, kind: 'cap', text: `Coaching · ${esc(progName(a, q))}`, sub: `${num(+c.minutes || 0)} min par cliente / sem.`, go: { page: 'coaching', from: 'Coaching' } })));
   items.sort((x, y) => x.date.localeCompare(y.date));
   return items;
 }
-function timeline(a) {
-  const items = timelineItems(a);
+function timeline(a, keep = () => true) {
+  const items = timelineItems(a).filter(it => keep(it.key));
   if (!items.length) return '<p class="muted">Aucune date pour l\'instant : ajoute une cohorte de test ou une date de lancement dans Produits et prix.</p>';
   return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><a href="#${it.go.page}" data-goto="${it.go.page}" data-open="${it.go.open}" data-anchor="${it.go.anchor}">
       <span class="when">${monthName(it.date)}</span><span class="what">${it.text}${it.sub ? ` · <span class="muted">${it.sub}</span>` : ''}<span class="from">${it.go.from} ›</span></span></a></li>`).join('')}</ol>`;
@@ -364,14 +361,40 @@ function timeline(a) {
 
 // Calendrier de l'application : rassemble les dates saisies dans chaque produit (lecture seule).
 const timelineCount = a => (timeline(a).match(/<li /g) || []).length;
-function calendarCard(a) {
-  const n = timelineCount(a);
-  return `<details class="card product tool-cal" id="pr-cal" ${view.open.has('pr-cal') ? 'open' : ''}><summary><span>Calendrier de ${esc(a.name)}<br><span class="sum-sub">${n} dates · à partir de ${monthName(appStart(a))}</span>
-      ${(() => { const items = timelineItems(a), nx = items.find(it => it.date >= thisMonth), launches = items.filter(it => it.kind === 'launch');
-        return pstats([['Début', shortMonth(appStart(a))], launches.length ? ['Lancements', launches.map(it => shortMonth(it.date)).filter((v, i, xs) => xs.indexOf(v) === i).slice(0, 3).join(' · ')] : null,
-          nx ? ['Prochaine date', `${nx.text.replace(/<[^>]+>/g, '').split(' · ')[0]} · ${shortMonth(nx.date)}`, 'hi'] : null]); })()}</span></summary>
-      <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates saisies dans chaque produit et dans la capacité de coaching. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
-      ${timeline(a)}</details>`;
+// ---------- Calendrier : toutes les dates d'une application, et les dates qui se saisissent ici ----------
+const calHidden = (() => { try { return new Set(JSON.parse(localStorage.getItem('om-cal-hidden') || '[]')); } catch { return new Set(); } })();
+const saveCalHidden = () => { try { localStorage.setItem('om-cal-hidden', JSON.stringify([...calHidden])); } catch { /* stockage indisponible */ } };
+function calendarPage(a, i) {
+  const p = 'apps.' + i;
+  const prods = [{ key: 'sub', name: soloName(a) }, ...a.programs.map((q, j) => ({ key: q.id, name: progName(a, q), q, j })).filter(x => x.q.enabled), ...(a.programs.length ? [{ key: ':coach', name: 'Coaching' }] : [])];
+  const shown = k => !calHidden.has(k), all = prods.every(x => shown(x.key));
+  const items = timelineItems(a), nx = items.find(it => it.date >= thisMonth && shown(it.key)), launches = items.filter(it => it.kind === 'launch');
+  const picker = `<div class="ucheck"><label class="uc"><input type="checkbox" data-calall ${all ? 'checked' : ''}><span>Tout</span></label>${prods.map(x => `<label class="uc"><input type="checkbox" data-calshow="${esc(x.key)}" ${shown(x.key) ? 'checked' : ''}><span>${esc(x.key === 'sub' ? soloName(a) : x.key === ':coach' ? 'Coaching' : x.q.name)}</span></label>`).join('')}</div>`;
+  const n = items.filter(it => shown(it.key)).length;
+  const solo = shown('sub') ? `<details class="card product solo" id="cal-sd" ${view.open.has('cal-sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
+      <div class="grid">${field('Ouverture des abonnements', p + '.sub.start', a.sub.start, 'month')}</div></details>` : '';
+  const progs = prods.filter(x => x.q && shown(x.key)).map(({ q, j }) => {
+    const t = `${p}.programs.${j}`, id = 'calp-' + j;
+    const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
+    return `<details class="card product" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test · ` : ''}${q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu'}</span></span></summary>
+      <h4>Cohortes de test</h4>
+      ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
+      <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
+      <h4>Lancement commercial</h4>
+      <div class="grid">${field('Lancement commercial', t + '.start', q.start, 'month')}</div></details>`;
+  }).join('');
+  return `${banner({ label: `Calendrier de ${esc(a.name)}`, big: nx ? shortMonth(nx.date) : '—',
+      note: nx ? `Prochaine date : ${nx.text.replace(/<[^>]+>/g, '')}` : 'Aucune date à venir',
+      tiles: [
+        { label: 'Début', value: shortMonth(appStart(a)), hint: 'première date du plan' },
+        { label: 'Lancements', mini: false, value: launches.length ? [...new Set(launches.map(it => shortMonth(it.date)))].slice(0, 3).join(' · ') : '—', cls: 'txt', hint: `${launches.length} au total` },
+        { label: 'Prochaine date', mini: 'Prochaine', value: nx ? shortMonth(nx.date) : '—', hint: nx ? nx.text.replace(/<[^>]+>/g, '').split(' · ')[0] : '' },
+        { label: 'Dates affichées', mini: 'Dates', value: num(n), hint: all ? 'tous les produits' : 'produits choisis' }
+      ] })}
+    ${picker}
+    <details class="card tool-cal" id="cal-line" ${view.open.has('cal-line') ? 'open' : ''}><summary><span>Toutes les dates<br><span class="sum-sub">${num(n)} dates · à partir de ${monthName(appStart(a))}</span></span></summary>
+      ${timeline(a, shown)}</details>
+    ${solo}${progs}`;
 }
 // ---------- Coaching : palier par palier, ce que les programmes demandent face à tes heures ----------
 // Un palier = une date où tes heures ou les minutes par cliente changent. Le premier vaut dès le début.
@@ -422,12 +445,14 @@ function palierCard(a, ai, p, st, last) {
     verdict = `<p class="pal-block"><b>Ça bloque à partir ${deMonth(bm)}</b> : il faut ${hrs(bw.hours)} de coaching par semaine pour ${num(bw.people)} clientes, tu en as ${hrs(bw.own)}.${pay > 0.05 ? ` Au plus fort de ce palier, ${hrs(pay)} par semaine sont à payer à des coachs, soit ${money(Math.round(pay * rate * wk))} par mois.` : ''}</p>`
       + (bm > p.from && (!p.to || bm < p.to)
         ? `<div class="levers"><button data-paladd="${ai}|${bm}">Ajouter un palier en ${monthName(bm)}</button></div>`
-        : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`);
+        : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`
+          + (last ? `<div class="levers"><button data-paladd="${ai}|${addMonths(p.from > thisMonth ? p.from : thisMonth, 6)}">Ajouter un palier plus tard</button></div>` : ''));
+    if (pay > 0.05 && !rate) verdict += `<p class="pal-block">Ton coût horaire de coach est à 0 € : ces heures ne coûtent rien dans les charges. Règle-le dans « Coût des coachs » plus bas.</p>`;
   } else if (st && st.own !== null) verdict = `<p class="pal-ok"><b>Tes heures suffisent sur tout ce palier.</b></p>`;
   else if (st) verdict = `<p class="muted">Indique tes heures par semaine pour voir à partir de quand ça bloque.</p>`;
   const id = `pal-${ai}-${p.date || 'debut'}`, bm = st && st.block ? st.block.date.slice(0, 7) : '';
   const folded = pstats([['Besoin', `${hrs(total)} / sem.`], ['Mes heures', cap ? `${hrs(+cap.hours || 0)} / sem.` : '—'],
-    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem.${rate ? ' · ' + money(Math.round(pay * rate * wk)) + ' / mois' : ''}` : 'rien', pay > 0.05 ? 'bad' : '']]);
+    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem. · ${rate ? money(Math.round(pay * rate * wk)) + ' / mois' : 'coût horaire à 0 €'}` : 'rien', pay > 0.05 ? 'bad' : '']]);
   return `<details class="card palier ${st && st.block ? 'blocked' : ''}" id="${id}" ${view.open.has(id) ? 'open' : ''}>
       <summary><span>${head}${bm ? ` <span class="tag bad">Bloque en ${MSHORT[+bm.slice(5) - 1]} ${bm.slice(0, 4)}</span>` : st && st.own !== null ? ' <span class="tag ok">Ça tient</span>' : ''}${folded}</span></summary>
       <div class="pal-body">${datePick}
@@ -456,8 +481,10 @@ function coachingPage() {
     const a = state.apps[x.i], ai = x.i, ps = coachPaliers(a);
     const cards = ps.map((p, k) => palierCard(a, ai, p, palierStats(a, x.weekly, p), k === ps.length - 1)).join('');
     return `${view.app === 'all' ? `<h2>${esc(a.name)}</h2>` : ''}${cards}
-      <details class="card" id="co-chart-${ai}" ${view.open.has(`co-chart-${ai}`) ? 'open' : ''}><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · par semaine, au plus fort de chaque mois</span></span></summary>
-        <div class="legend"><span><i style="background:var(--k-ins)"></i>Heures nécessaires</span><span><i style="background:var(--bad)"></i>Au-delà de tes heures</span><span><i class="dash"></i>Tes heures</span></div>
+      <details class="card" id="co-chart-${ai}" ${view.open.has(`co-chart-${ai}`) ? 'open' : ''}><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · ${(() => { const ex = x.months.filter(m => inPeriod(m.month)).reduce((t, m) => t + (m.extraHours || 0), 0);
+          return ex > 0.05 ? `${hrs(ex)} payées à des coachs · ${+a.coachRate ? money(Math.round(ex * a.coachRate)) + ' dans les charges' : '<b class="neg">coût horaire à 0 €</b>'}` : 'tes heures suffisent'; })()}</span></span></summary>
+        <div class="legend"><span><i style="background:var(--k-ins)"></i>Couvert par tes heures</span><span><i style="background:var(--bad)"></i>Payé à des coachs</span><span><i class="dash"></i>Tes heures</span></div>
+        <p class="muted">Par semaine, au plus fort de chaque mois.</p>
         <div class="chart cap-chart">${capacityChart(x)}</div></details>
       <details class="card" id="co-set-${ai}"><summary><span>Coût des coachs<br><span class="sum-sub">${money(+a.coachRate || 0)} de l'heure</span></span></summary>
         ${fields(a, `apps.${ai}`, [['coachRate', 'Coût horaire d\'une coach (€)']])}
@@ -1148,8 +1175,10 @@ function capacityChart(x) {
     + list.map((m, i) => {
       const bx = left + i * bw + bw * .18, w = bw * .64, over = m.hours > m.limit + 1e-9;
       const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g data-tip="${(Math.round(m.hours * 10) / 10).toLocaleString('fr-FR')} h">
-        <rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(0) - y(m.hours)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
+      // Partie couverte par tes heures, puis partie payée à des coachs au-dessus.
+      const own = over ? m.limit : m.hours, paid = over ? m.hours - m.limit : 0, h1 = n => (Math.round(n * 10) / 10).toLocaleString('fr-FR');
+      return `<g data-tip="${over ? `${h1(m.hours)} h, dont ${h1(paid)} h payées` : h1(m.hours) + ' h'}">
+        <rect x="${bx}" y="${y(own)}" width="${w}" height="${y(0) - y(own)}" rx="2" fill="var(--k-ins)"/>${paid ? `<rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(own) - y(m.hours)}" rx="2" fill="var(--bad)"/>` : ''}</g>${label}`;
     }).join('')
     + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + axes(left, W, top, y(0), 'h / sem.') + '</svg>';
 }
@@ -1956,7 +1985,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -2015,6 +2044,13 @@ document.addEventListener('change', async e => {
   } else if (t.dataset.userall !== undefined) {
     if (t.checked) usersHidden.clear(); else userSeries(results()).forEach(x => usersHidden.add(x.key));
     saveUsersHidden(); render();
+  } else if (t.dataset.calshow !== undefined) {
+    if (t.checked) calHidden.delete(t.dataset.calshow); else calHidden.add(t.dataset.calshow);
+    saveCalHidden(); render();
+  } else if (t.dataset.calall !== undefined) {
+    const a0 = state.apps[+view.app || 0];
+    if (t.checked) calHidden.clear(); else ['sub', ':coach', ...a0.programs.map(q => q.id)].forEach(k => calHidden.add(k));
+    saveCalHidden(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
