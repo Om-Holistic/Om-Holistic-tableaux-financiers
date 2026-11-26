@@ -3,7 +3,7 @@
 // la capacité de coaching et les abonnements, puis agrège le tout par mois.
 // Aucune dépendance au navigateur : ce fichier est aussi testé avec Node.
 
-if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt } = require('./model.js');
+if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, addMonths } = require('./model.js');
 
 const DAY = 86400000, WEEK = 7 * DAY;
 const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
@@ -174,4 +174,40 @@ function simulate(a, soloStock) {
   return { months: [...months.values()], weekly };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, weeklyRate, weekShares };
+// Objectifs d'abonnées par paliers : pour chaque palier (au bout de X mois, N abonnées),
+// le plus petit rythme hebdomadaire qui l'atteint, en simulant (durée d'abonnement et essai compris).
+// Ne compte que les abonnées directes : celles qui viennent d'un programme s'ajoutent en plus.
+function goalPlan(a) {
+  const g = a.sub.goal || {}, start = a.sub.start;
+  const steps = (g.steps || []).filter(s => pos(s.months) > 0 && pos(s.count) > 0).sort((x, y) => x.months - y.months);
+  const conv = pos(a.sub.trialDays) > 0 ? Math.max(1, Math.min(100, pos(a.sub.trialConversion, 100))) / 100 : 1;
+  if (!start || !steps.length) return { segs: [], steps: [] };
+  const base = JSON.parse(JSON.stringify(a));
+  base.programs = [];
+  const stockAt = (segs, month) => {
+    base.sub.palierMode = true; base.sub.paliers = segs; base.sub.target = segs[segs.length - 1].rate;
+    const m = simulate(base).months.find(x => x.month === month);
+    return m ? m.direct : 0;
+  };
+  const segs = [], out = [];
+  let used = 0;
+  for (const st of steps) {
+    const weeks = Math.round(pos(st.months) * 52 / 12) - used;
+    if (weeks <= 0) continue;
+    const at = addMonths(start, Math.round(pos(st.months)));
+    let rate;
+    if (g.kind === 'new') rate = Math.ceil(pos(st.count) / 52 / conv - 1e-9);
+    else {
+      let lo = 0, hi = 1;
+      while (hi < 1e6 && stockAt([...segs, { rate: hi, weeks }], at) < pos(st.count)) { lo = hi; hi *= 2; }
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (stockAt([...segs, { rate: mid, weeks }], at) >= pos(st.count)) hi = mid; else lo = mid; }
+      rate = hi;
+    }
+    segs.push({ rate, weeks });
+    used += weeks;
+    out.push({ months: pos(st.months), count: pos(st.count), at, rate, paid: rate * conv, reached: g.kind === 'new' ? rate * conv * 52 : stockAt(segs.slice(), at) });
+  }
+  return { segs, steps: out, conv };
+}
+
+if (typeof module !== 'undefined') module.exports = { simulate, weeklyRate, weekShares, goalPlan };

@@ -130,39 +130,39 @@ function programCard(a, q, j, p) {
     </details>`;
 }
 
-// Objectif d'abonnées : quel rythme d'abonnements faut-il atteindre, et en combien de mois ?
-function goalNeed(a) {
-  const g = a.sub.goal, d = +a.sub.duration || 0, conv = +a.sub.trialDays > 0 ? Math.max(1, +a.sub.trialConversion || 0) / 100 : 1;
-  const count = Math.max(0, +g.count || 0);
-  // Nouvelles abonnées payantes par semaine nécessaires au rythme de croisière.
-  const paid = g.kind === 'new' ? count / 52 : d > 0 ? count / d * 12 / 52 : null;
-  if (paid === null) return { paid: null };
-  const weekly = Math.ceil(paid / conv - 1e-9);
-  const active = d > 0 ? weekly * conv * 52 / 12 * d : null;
-  return { paid, weekly, trial: conv < 1, active, perYear: weekly * conv * 52 };
+// Objectif d'abonnées par paliers : quel rythme d'abonnements faut-il, palier après palier ?
+let goalCache = { key: '', plan: null };
+function cachedGoalPlan(a) {
+  const key = JSON.stringify([a.sub, a.programs.length]);
+  if (goalCache.key !== key) goalCache = { key, plan: goalPlan(a) };
+  return goalCache.plan;
 }
 function goalSection(a, p) {
-  const g = a.sub.goal, need = goalNeed(a);
-  const at = a.sub.start ? addMonths(a.sub.start, Math.round(+g.months || 0)) : '';
-  const m = at ? simulate(a).months.find(x => x.month === at) : null;
-  const planNew = m ? Math.round(m.newDirect.reduce((s, x) => s + x, 0) * 12) : 0;
-  const planActive = m ? Math.round(m.direct) : 0;
-  const unit = g.kind === 'new' ? 'nouvelles abonnées par an' : 'abonnées en même temps';
-  const priceNow = phaseAt(a.sub.directPricing, at || thisMonth).price;
-  const result = need.paid === null
-    ? `<p class="muted">Sans résiliation (durée d'abonnement à 0), le nombre d'abonnées ne fait que monter : n'importe quel rythme finit par l'atteindre. Indique une durée moyenne d'abonnement dans « Ouverture et rythme » pour calculer.</p>`
-    : `<div class="goal">
-        <div><span>Rythme de croisière nécessaire</span><b>${num(need.weekly)} ${need.trial ? 'essais' : 'abonnées'} / semaine</b>
-          <small>${need.trial ? `soit ${num(Math.round(need.paid * 10) / 10)} payantes / semaine après l'essai · ` : ''}${num(Math.round(need.perYear))} nouvelles abonnées par an</small></div>
-        ${need.active ? `<div><span>Abonnées en même temps, une fois stabilisé</span><b>${num(Math.round(need.active))}</b><small>soit environ ${money(need.active * priceNow)} de CA par mois au prix de ${price(priceNow)}</small></div>` : ''}
-        <div><span>Ton plan actuel ${at ? 'en ' + monthName(at) : ''}</span><b>${num(planActive)} abonnées</b><small>rythme d'environ ${num(planNew)} nouvelles abonnées par an</small></div>
-      </div>
-      <p class="muted">Le nombre d'abonnées continue de monter quelques mois après avoir atteint le rythme, le temps que les arrivées compensent les résiliations. Les abonnées qui viennent d'un programme s'ajoutent en plus.</p>
-      <div class="row"><button data-goal="${p}">Appliquer : ${num(need.weekly)} / semaine atteint en ${num(+g.months || 0)} mois</button></div>`;
-  return section('goal-sd', 'ins', 'Objectif d\'abonnées', `${num(+g.count || 0)} ${unit} dans ${num(+g.months || 0)} mois${need.weekly ? ' → ' + num(need.weekly) + ' / sem.' : ''}`, `
-    <div class="grid">${select('Je vise', p + '.sub.goal.kind', g.kind, [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}
-    ${field('Nombre d\'abonnées', p + '.sub.goal.count', g.count)}${field('Atteint en (mois après l\'ouverture)', p + '.sub.goal.months', g.months)}</div>
-    ${result}`);
+  const g = a.sub.goal, plan = cachedGoalPlan(a), d = +a.sub.duration || 0;
+  const sim = simulate(a).months;
+  const byStep = new Map(plan.steps.map(s => [s.months + ':' + s.count, s]));
+  const unit = g.kind === 'new' ? 'nouvelles / an' : 'abonnées';
+  const rows = g.steps.map((st, k) => {
+    const r = byStep.get(+st.months + ':' + +st.count);
+    const m = r && sim.find(x => x.month === r.at);
+    const now = !m ? '' : g.kind === 'new' ? `${num(Math.round(m.newDirect.reduce((s, x) => s + x, 0) * 12))} nouvelles / an` : `${num(Math.round(m.direct))} abonnées`;
+    const res = r ? `<div class="goal-res"><b>${num(r.rate)} ${plan.conv < 1 ? 'essais' : 'abonnées'} / semaine</b><span>${monthName(r.at)} · plan actuel : ${now}</span></div>` : '<div class="goal-res"><span class="muted">à compléter</span></div>';
+    return `<div class="goal-step"><span class="badge">${k + 1}</span><div>${lineEditor(st, `${p}.sub.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', g.kind === 'new' ? 'Nouvelles abonnées / an' : 'Abonnées en même temps']], 'Supprimer ce palier')}${res}</div></div>`;
+  }).join('');
+  const last = plan.steps[plan.steps.length - 1];
+  const priceAt = last ? phaseAt(a.sub.directPricing, last.at).price : 0;
+  const stable = last && d > 0 ? last.paid * 52 / 12 * d : null;
+  const after = !last ? '' : `<div class="goal"><div><span>Rythme final</span><b>${num(last.rate)} / semaine</b><small>${num(Math.round(last.paid * 52))} nouvelles abonnées payantes par an</small></div>
+      ${stable ? `<div><span>Abonnées une fois stabilisé</span><b>${num(Math.round(stable))}</b><small>soit environ ${money(stable * priceAt)} de CA par mois au prix de ${price(priceAt)}</small></div>` : ''}</div>`;
+  const applied = a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(plan.segs);
+  return section('goal-sd', 'ins', 'Objectif d\'abonnées', g.steps.map(st => `${num(+st.count || 0)} à ${num(+st.months || 0)} mois`).join(' · ') + (g.kind === 'new' ? ' (nouvelles / an)' : ''), `
+    <div class="grid">${select('Je vise', p + '.sub.goal.kind', g.kind, [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>
+    <h4>Paliers, comptés depuis l'ouverture (${a.sub.start ? monthName(a.sub.start) : 'date à fixer'})</h4>
+    ${rows}
+    <div class="row"><button data-add="${p}.sub.goal.steps">Ajouter un palier</button></div>
+    ${after}
+    <p class="muted">Pour chaque palier, l'outil cherche le plus petit rythme qui l'atteint à la date voulue, en tenant compte des résiliations${plan.conv < 1 ? ' et de l\'essai gratuit' : ''}. Les abonnées qui viennent d'un programme s'ajoutent en plus.</p>
+    ${plan.segs.length ? `<div class="row"><button data-goal="${p}" ${applied ? 'disabled' : ''}>${applied ? 'Rythme appliqué' : 'Appliquer ces paliers au rythme d\'abonnements'}</button></div>` : ''}`);
 }
 
 function productsPage(a, i) {
@@ -171,7 +171,9 @@ function productsPage(a, i) {
   // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
   const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${price(phaseAt(g, thisMonth).price)} · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
-      ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${num(a.sub.initial)} → ${num(a.sub.target)} / sem.`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
+      ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ['duration', 'Durée moyenne d\'abonnement (mois)']])}
+        ${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
+        ${a.sub.palierMode ? a.sub.paliers.map((r, k) => lineEditor(r, p + '.sub.paliers.' + k, [['rate', 'Abonnées / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${p}.sub.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier, le rythme reste à l'objectif / semaine : ${num(a.sub.target)}.</p>` : fields(a.sub, p + '.sub', growth)}
         <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}
       ${goalSection(a, p)}
       ${pricingEditor(g, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
@@ -566,6 +568,7 @@ document.addEventListener('click', e => {
     const fresh = {
       programs: () => program('Nouveau programme', thisMonth, [100, 150, 200], 8),
       paliers: () => ({ rate: 2, weeks: 8 }),
+      steps: () => { const l = o[k][o[k].length - 1]; return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
       capacitySteps: () => ({ date: thisMonth, capacity: 20, hours: 15 }),
       cohorts: () => ({ name: ['Cohorte alpha', 'Deuxième cohorte', 'Troisième cohorte'][o[k].length] || `Cohorte ${o[k].length + 1}`, date: thisMonth, size: 10 }),
@@ -580,8 +583,8 @@ document.addEventListener('click', e => {
   } else if (t.id === 'reset') { view.confirmReset = true; render();
   } else if (t.id === 'resetNo') { view.confirmReset = false; render();
   } else if (t.dataset.goal) {
-    const [o, k] = resolve(t.dataset.goal), a = o[k], need = goalNeed(a);
-    if (need.weekly) { a.sub.target = need.weekly; a.sub.months = Math.max(1, Math.round(+a.sub.goal.months || 1)); if (+a.sub.initial > need.weekly) a.sub.initial = need.weekly; }
+    const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
+    if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
     save(); render();
   } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {

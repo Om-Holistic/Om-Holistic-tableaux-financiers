@@ -255,6 +255,8 @@ details.sec[open] > summary::after { transform: rotate(225deg); }
 .lrow > label { flex: 1 1 110px; }
 .lrow > label.wide { flex: 2 1 220px; }
 .lrow > .icon { flex: 0 0 auto; }
+.lrow:not(:has(> label.wide)) { flex-wrap: nowrap; }
+.lrow:not(:has(> label.wide)) > label { flex: 1 1 0; min-width: 0; }
 .card > .lrow, details.card > .lrow { background: var(--ground); }
 button.icon { width: 44px; height: 44px; padding: 0; display: grid; place-items: center; border-radius: 12px; border: 1px solid var(--line); background: var(--surface); }
 button.icon svg { width: 20px; height: 20px; fill: none; stroke: var(--bad); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
@@ -287,3 +289,8 @@ a.golink::after { content: ' ›'; color: var(--sage); font-weight: 700; }
 .goal span { font-size: 13px; color: var(--ink-soft); }
 .goal b { font-family: Outfit, Inter, sans-serif; font-size: 22px; font-weight: 600; color: var(--ink); }
 .goal small { font-size: 12px; color: var(--ink-soft); }
+.goal-step { display: grid; grid-template-columns: auto minmax(0,1fr); gap: 10px; align-items: start; margin: 8px 0; }
+.goal-step .badge { margin-top: 22px; width: 24px; height: 24px; border-radius: 12px; background: var(--k, var(--clay)); color: var(--surface); font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.goal-res { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 2px 0; }
+.goal-res b { color: var(--clay); font-family: Outfit, Inter, sans-serif; font-size: 18px; font-weight: 600; }
+.goal-res span { font-size: 13px; color: var(--ink-soft); }

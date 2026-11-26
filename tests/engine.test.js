@@ -185,3 +185,22 @@ test('objectif : le rythme appliqué donne le nombre d\'abonnées visé', () => 
   const m = simulate(a).months.find(x => x.month === '2031-01');
   assert.ok(m.direct > 950 && m.direct < 1250, String(m.direct));
 });
+
+test('objectif par paliers : chaque palier est atteint à sa date', () => {
+  const { goalPlan } = require('../js/engine.js');
+  const s = defaultState();
+  const a = s.apps[0];
+  Object.assign(a.sub, { start: '2027-01', duration: 12, trialDays: 14, trialConversion: 50 });
+  const plan = goalPlan(a);
+  assert.equal(plan.steps.length, 3);
+  a.programs = [];
+  Object.assign(a.sub, { palierMode: true, paliers: plan.segs, target: plan.segs[2].rate });
+  const sim = simulate(a).months;
+  for (const st of plan.steps) {
+    const m = sim.find(x => x.month === st.at);
+    assert.ok(m.direct >= st.count, `${st.at} ${m.direct} < ${st.count}`);
+  }
+  // Rythme minimal : un essai de moins par semaine au dernier palier ne suffit plus.
+  a.sub.paliers = plan.segs.map((x, k) => k === 2 ? { ...x, rate: x.rate - 1 } : x);
+  assert.ok(simulate(a).months.find(x => x.month === plan.steps[2].at).direct < 1000);
+});

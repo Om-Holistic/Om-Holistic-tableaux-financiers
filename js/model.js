@@ -57,7 +57,7 @@ function application(name) {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       postDuration: 12,
-      trialDays: 0, trialConversion: 100, goal: { kind: 'active', count: 1000, months: 24 },
+      trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [],
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
       start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
     },
@@ -137,6 +137,11 @@ function capacityAt(a, month) {
 
 // Convertit une sauvegarde v1 (betaPrice / launchPrice / price) en grilles de prix.
 // La phase 1 reprend le tarif bêta, la phase 2 le tarif de lancement, la phase 3 le tarif standard.
+// Objectif d'abonnées par défaut : trois paliers (6 mois, 1 an, 2 ans).
+function defaultGoal() {
+  return { kind: 'active', steps: [{ months: 6, count: 100 }, { months: 12, count: 300 }, { months: 24, count: 1000 }] };
+}
+
 function migrate(state) {
   for (const a of state.apps) {
     const s = a.sub = a.sub || {};
@@ -208,7 +213,12 @@ function migrate(state) {
     }
   }
   // Objectif d'abonnées (ajouté sans changer de version : simple valeur par défaut).
-  for (const a of state.apps) if (!a.sub.goal) a.sub.goal = { kind: 'active', count: 1000, months: 24 };
+  for (const a of state.apps) {
+    const g = a.sub.goal;
+    if (!g) a.sub.goal = defaultGoal();
+    else if (!g.steps) { g.steps = g.months > 12 ? [...defaultGoal().steps.filter(s => s.months < g.months), { months: g.months, count: g.count }] : [{ months: g.months, count: g.count }]; delete g.months; delete g.count; }
+    if (!a.sub.paliers) { a.sub.paliers = []; a.sub.palierMode = false; }
+  }
   state.version = 7;
   return state;
 }

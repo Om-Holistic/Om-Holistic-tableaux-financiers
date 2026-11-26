@@ -35,10 +35,10 @@ et tant d'heures par semaine.
 
 ## Objectif d'abonnées
 
-Dans la carte de l'abonnement seul, le bloc « Objectif d'abonnées » part d'un but (par exemple 1 000 abonnées
-en même temps, ou 1 000 nouvelles abonnées par an, dans 24 mois) et calcule le rythme hebdomadaire nécessaire,
-compte tenu de la durée moyenne d'abonnement et de la période d'essai. Il le compare au plan actuel et peut
-l'appliquer au rythme d'abonnements (objectif / semaine atteint en X mois).
+Dans la carte de l'abonnement seul, le bloc « Objectif d'abonnées » se règle par paliers (par défaut 100 abonnées
+à 6 mois, 300 à 1 an, 1 000 à 2 ans, comptés depuis l'ouverture), en abonnées en même temps ou en nouvelles par an.
+Pour chaque palier, l'outil cherche par simulation le plus petit rythme hebdomadaire qui l'atteint (résiliations et
+essai gratuit compris), le compare au plan actuel, et peut l'appliquer comme paliers du rythme d'abonnements.
 
 ## Prix en trois phases
 
