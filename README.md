@@ -105,3 +105,13 @@ des abonnements = 1 / durée moyenne (0 = aucune résiliation).
 - `js/pnl.js` : compte d'exploitation
 - `js/app.js` : interface
 - `tests/engine.test.js` : tests du calcul, à lancer avec `node --test tests/engine.test.js`
+
+## Installer sur iPad ou iPhone
+
+L'outil est publié par GitHub Pages à chaque mise à jour de la branche `main` : https://om-holistic.github.io/Om-Holistic-tableaux-financiers/
+
+1. Ouvre cette adresse dans **Safari**.
+2. Touche le bouton Partager (carré avec une flèche), puis **« Sur l'écran d'accueil »**, puis **Ajouter**.
+3. L'icône **Om Finances** s'ouvre en plein écran, comme une application.
+
+Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appareil à l'autre : Réglages › Exporter les paramètres, puis Importer les paramètres sur l'autre appareil. Pour une mise à jour de l'outil, il suffit de rouvrir l'icône (au besoin, fermer et rouvrir l'appli).
