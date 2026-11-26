@@ -53,6 +53,7 @@ function application(name) {
     name, restrict: false, waitlist: false, payMissing: true, raisePlan: defaultRaisePlan(),
     // Canaux de vente : part du chiffre d'affaires encaissée par l'App Store / Google Play et leur commission.
     channels: { store: 0, storeRate: 15 },
+    zones: defaultZones(),
     // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
     capacitySteps: [], coachRate: 0, charges: [],
     // Chiffres réels saisis mois par mois : { 'AAAA-MM': { ca, charges } }.
@@ -240,6 +241,29 @@ function defaultImplantation() {
   ] };
 }
 
+// TVA : zones où vivent tes clientes, avec la taxe à la consommation de chacune (taux indicatifs, modifiables).
+// web : la taxe est due sur tes ventes directes (site) vers cette zone. Les stores la reversent toujours eux-mêmes.
+const VAT_ZONES = [
+  { id: 'fr', name: 'France', rate: 20, web: true },
+  { id: 'eu', name: 'Reste de l\'Union européenne', rate: 21, web: true },
+  { id: 'ukch', name: 'Royaume-Uni et Suisse', rate: 15, web: true },
+  { id: 'ca', name: 'Canada', rate: 0, web: false },
+  { id: 'us', name: 'États-Unis', rate: 0, web: false },
+  { id: 'row', name: 'Reste du monde', rate: 10, web: false }
+];
+const defaultZones = () => ({ fr: 15, eu: 20, ukch: 10, ca: 10, us: 35, row: 10 });
+function defaultVat(ttc = true) {
+  return {
+    ttc,              // prix saisis tels que payés par la cliente, taxe comprise
+    rate: 20,         // TVA française, pour la TVA récupérable sur les charges
+    zones: VAT_ZONES.map(z => ({ ...z })),
+    franchise: 37500, // micro-entreprise : seuil de franchise en base (services), CA de l'année civile
+    euLimit: 10000,   // ventes à des particulières des autres pays de l'UE : au-delà, TVA du pays de la cliente
+    recover: 50,      // part de tes charges qui porte une TVA française récupérable, %
+    period: 'trimestre' // reversement de la TVA : chaque mois ou chaque trimestre
+  };
+}
+
 // Repères des investisseurs pour une application d'abonnement grand public : seuil « bon » et seuil « correct ».
 // Indicatifs, modifiables dans Réglages. Sources citées dans la carte des indicateurs.
 function defaultBench() {
@@ -290,7 +314,7 @@ function defaultState() {
     version: 18,
     bench: defaultBench(),
     raise: defaultRaise(),
-    vat: { ttc: false, rate: 20 },
+    vat: defaultVat(),
     scenarios: defaultScenarios(),
     // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
     cash: { start: 0, payGoal: 2000, payFrom: '' },
@@ -413,6 +437,8 @@ function migrate(state) {
   }
   if (!state.shared) state.shared = defaultShared();
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
+  for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
+  for (const a of state.apps) if (!a.zones) a.zones = defaultZones();
   // Bujo et Doodle Studio sont ajoutées une fois, avec des valeurs d'exemple.
   if ((state.version || 1) < 3) {
     if (!state.apps.some(a => /bujo/i.test(a.name))) state.apps.push(smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]));
@@ -501,4 +527,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
