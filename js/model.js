@@ -139,7 +139,8 @@ function chrysalisApp() {
   refit.cohorts = [{ name: 'Cohorte alpha', date: '2027-01', size: 8 }, { name: 'Deuxième cohorte', date: '2027-04', size: 15 }];
   refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 250 }];
   a.programs = [refit, program('Better Sleep', '2027-10', [60, 100, 150], 8), program('Calm Inside', '2028-01', [60, 100, 150], 8)];
-  a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }, { date: '2027-07', capacity: 25, hours: 20 }, { date: '2028-01', capacity: 40, hours: 35 }];
+  a.coachRate = 35;
+  a.capacitySteps = [{ date: '2027-01', hours: 5, hired: 0 }, { date: '2027-07', hours: 10, hired: 0 }, { date: '2028-01', hours: 15, hired: 10 }];
   a.sub.start = '2027-07';
   a.sub.directPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
   a.sub.postPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
@@ -235,7 +236,7 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 9,
+    version: 10,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     implantation: defaultImplantation(),
@@ -368,7 +369,9 @@ function migrate(state) {
   if (!state.implantation) state.implantation = defaultImplantation();
   // Version 9 : passerelle abonnement → programme exprimée en % par an (au lieu de % par mois).
   if ((state.version || 1) < 9) for (const a of state.apps) for (const p of a.programs) p.fromSolo = Math.min(100, (+p.fromSolo || 0) * 12);
-  state.version = 9;
+  // Version 10 : la capacité ne se règle plus qu'en heures (les tiennes + coachs embauchées).
+  if ((state.version || 1) < 10) for (const a of state.apps) for (const c of a.capacitySteps || []) { if (c.hired === undefined) c.hired = 0; delete c.capacity; }
+  state.version = 10;
   return state;
 }
 

@@ -68,7 +68,7 @@ test('une sauvegarde v1 est convertie en grilles de prix', () => {
   assert.deepStrictEqual(s.apps.map(a => a.name), ['CHRYSALISS', 'Bujo', 'Doodle Studio']);
   // Ancienne bêta (1 cohorte de 10) → cohorte nommée ; capacité unique → palier.
   assert.deepStrictEqual(p.cohorts, [{ name: 'Cohorte alpha', date: '2026-11', size: 10 }]);
-  assert.deepStrictEqual(s.apps[0].capacitySteps, [{ date: '2026-11', capacity: 40, hours: 35 }]);
+  assert.deepStrictEqual(s.apps[0].capacitySteps, [{ date: '2026-11', hours: 35, hired: 0 }]);
   assert.strictEqual(s.apps[0].start, undefined);
 });
 
@@ -95,7 +95,9 @@ test('compte d\'exploitation : charges rattachées aux produits et structure ré
   assert.ok(Math.abs(r.fees - m.products[0].sales * 0.02) < 1e-6);
   assert.strictEqual(r.fixed, 29);
   assert.ok(Math.abs(r.variable - m.products[0].admissions * 5) < 1e-6);
-  assert.ok(Math.abs(r.coaching - m.products[0].coachHours * 30) < 1e-6);
+  // Coaching : seules les heures de coachs embauchées coûtent, réparties selon les heures des programmes.
+  const totalH = m.products.reduce((t, q) => t + q.coachHours, 0);
+  assert.ok(Math.abs(r.coaching - m.hiredHours * 30 * m.products[0].coachHours / totalH) < 1e-6);
   assert.strictEqual(s.commonFixed, 30);
   // 3 applications présentes en octobre 2027 : 90 € répartis à parts égales.
   assert.ok(Math.abs(s.structure - 30) < 1e-6);
@@ -127,7 +129,7 @@ test('cohortes de test puis lancement, capacité par paliers', () => {
   refit.cohorts = [{ name: 'Alpha', date: '2027-01', size: 8 }, { name: 'Deuxième', date: '2027-04', size: 15 }];
   refit.start = '2027-07'; refit.launch = false; refit.initial = refit.target = 1;
   a.sub.start = '';
-  a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }, { date: '2027-07', capacity: 25, hours: 20 }];
+  a.capacitySteps = [{ date: '2027-01', hours: 8, hired: 0 }, { date: '2027-07', hours: 15, hired: 5 }];
   assert.strictEqual(model.appStart(a), '2027-01');
   const { months, weekly } = simulate(a);
   assert.strictEqual(months[0].month, '2027-01');
@@ -135,10 +137,10 @@ test('cohortes de test puis lancement, capacité par paliers', () => {
   assert.ok(Math.abs(adm('2027-01') + adm('2027-02') + adm('2027-03') - 8) < 1e-9);
   assert.ok(Math.abs(adm('2027-04') + adm('2027-05') + adm('2027-06') - 15) < 1e-9);
   assert.ok(adm('2027-08') > 0);
-  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-02')).cap, 10);
+  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-02')).limit, 8);
   assert.strictEqual(weekly.find(w => w.date.startsWith('2027-08')).limit, 20);
-  // Avec refus au-delà de la capacité, la deuxième cohorte (15) est plafonnée à 10 places moins les alphas encore en cours.
-  a.restrict = true; a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }];
+  // Avec refus quand les heures manquent : 3 h à 20 min par cliente = 9 clientes au plus en même temps.
+  a.restrict = true; a.capacitySteps = [{ date: '2027-01', hours: 3, hired: 0 }];
   const capped = simulate(a).months;
   const sumAdm = capped.filter(m => m.month < '2027-07').reduce((s, m) => s + m.admissions, 0);
   assert.ok(sumAdm < 23);
@@ -283,4 +285,23 @@ test('passerelle en % par an : 12 % par an ≈ 1 % des abonnées par mois', () =
   const prev = sim[k - 1].direct + sim[k - 1].post;
   const ratio = sim[k].products[1].fromSolo / prev;
   assert.ok(ratio > 0.008 && ratio < 0.012, String(ratio));
+});
+
+test('capacité en heures : coût des coachs embauchées et refus quand les heures manquent', () => {
+  const state = model.defaultState();
+  const a = state.apps[0];
+  a.coachRate = 40;
+  a.capacitySteps = [{ date: '2027-01', hours: 10, hired: 6 }];
+  const sims = state.apps.map(x => simulate(x));
+  const pnl = buildPnl(state, sims);
+  const k = sims[0].months.findIndex(m => m.month === '2028-03');
+  const m = sims[0].months[k], s = sumPnl([pnl[0][k]]);
+  // 6 h / semaine sur les 31 jours de mars, à 40 € de l'heure, payées même si elles ne servent pas toutes.
+  assert.ok(Math.abs(m.hiredHours - 6 * 31 / 7) < 1e-6, String(m.hiredHours));
+  assert.ok(Math.abs(s.total.coaching - m.hiredHours * 40) < 1e-6);
+  // Refus : jamais plus d'heures de coaching que les heures disponibles.
+  a.restrict = true;
+  const { weekly } = simulate(a);
+  assert.ok(weekly.every(w => w.hours <= w.limit + 1e-6));
+  assert.ok(weekly.some(w => w.limit - w.hours < 20 / 60 + 1e-6), 'la capacité est bien utilisée');
 });

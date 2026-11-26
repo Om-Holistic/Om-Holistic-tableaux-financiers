@@ -46,7 +46,7 @@ function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
     newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
-    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0
+    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0
   };
 }
 
@@ -82,8 +82,9 @@ function simulate(a, soloStock) {
     if (!m) continue;
     const active = events.filter(e => e.end > d);
     const step = capacityAt(a, monthKey(d));
-    const cap = step ? pos(step.capacity) : Infinity, limit = step ? pos(step.hours) : Infinity;
-    let available = Math.max(0, Math.floor(cap - active.reduce((s, e) => s + e.count, 0)));
+    // Une seule limite : les heures de coaching disponibles (les tiennes + celles des coachs embauchées).
+    const own = step ? pos(step.hours) : Infinity, hired = step ? pos(step.hired) : 0, limit = own + hired;
+    let availableH = Math.max(0, limit - active.reduce((s, e) => s + e.count * pos(a.programs[e.i].coach) / 60, 0));
     let demand = 0, admitted = 0;
 
     configs.forEach(({ p, cohorts, commercial }, i) => {
@@ -103,9 +104,10 @@ function simulate(a, soloStock) {
       }
       if (a.waitlist) want += pending[i];
       demand += want;
-      const count = a.restrict ? Math.min(want, available) : want;
+      const perClient = pos(p.coach) / 60;
+      const count = a.restrict && perClient > 0 ? Math.min(want, Math.floor(availableH / perClient + 1e-9)) : want;
       pending[i] = a.waitlist ? want - count : 0;
-      available = Math.max(0, available - count);
+      availableH = Math.max(0, availableH - count * perClient);
       if (!count) return;
 
       let price = pos(phaseAt(p.pricing, monthKey(d)).price);
@@ -127,6 +129,7 @@ function simulate(a, soloStock) {
     m.active = people;
     m.products.forEach((p, i) => { p.active = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); });
     // Clientes moyennes du mois (semaines-clientes / semaines du mois) et heures de coaching, par programme.
+    if (hired) credit(d, (mm, share) => { mm.hiredHours += hired * share; });
     credit(d, (mm, share) => {
       const weeksInMonth = new Date(Date.UTC(+mm.month.slice(0, 4), +mm.month.slice(5), 0)).getUTCDate() / 7;
       for (const e of active) {
@@ -134,7 +137,7 @@ function simulate(a, soloStock) {
         mm.products[e.i].coachHours += e.count * pos(a.programs[e.i].coach) / 60 * share;
       }
     });
-    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, cap, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
+    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, own, hired, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
 
     // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
@@ -231,7 +234,7 @@ function programGoalPlan(a, j, sim) {
     segs.push({ rate, weeks });
     used += weeks;
     out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * pos(q.coach) / 60,
-      capacity: step ? pos(step.capacity) : null, capHours: step ? pos(step.hours) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
+      capHours: step ? pos(step.hours) + pos(step.hired) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
   }
   return { segs, steps: out };
 }

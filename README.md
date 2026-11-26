@@ -23,8 +23,11 @@ Applications par défaut : CHRYSALISS, Bujo et Doodle Studio (abonnement mensuel
 Chaque programme a ses **cohortes de test** (alpha, deuxième, troisième…, autant que voulu : nom, mois, nombre de clientes),
 puis une date de **lancement commercial** à partir de laquelle les inscriptions arrivent en continu.
 Les prévisions commencent automatiquement à la première date (cohorte, lancement ou ouverture de l'abonnement).
-La **capacité de coaching** monte en puissance par paliers : à partir de tel mois, tant de clientes en même temps
-et tant d'heures par semaine.
+La **capacité de coaching** se règle en heures uniquement, par paliers : à partir de tel mois, tant d'heures de coaching
+par semaine pour toi et tant d'heures de coachs embauchées (payées à leur coût horaire, utilisées ou non).
+Chaque programme fixe son temps de coaching par cliente et par semaine ; le nombre de clientes possible en même temps
+en découle. Par défaut l'outil inscrit toutes les clientes prévues et signale les mois où les heures manquent ;
+l'option « Refuser les inscriptions quand les heures ne suffisent plus » plafonne les inscriptions.
 
 ## Passerelles et période d'essai
 
