@@ -131,7 +131,9 @@ function afterTax(sc, caHT, result, months) {
   const r1 = result - fixed;
   const social = pct(sc.socialRate) * (sc.socialBase === 'ca' ? caHT : Math.max(0, r1));
   const r2 = r1 - social;
-  const tax = pct(sc.taxRate) * (sc.taxBase === 'ca' ? caHT : Math.max(0, r2));
+  // Impôt sur les sociétés à deux taux : taux réduit jusqu'au plafond annuel de bénéfice (proratisé), taux normal au-delà.
+  const base = sc.taxBase === 'ca' ? caHT : Math.max(0, r2), cap = Math.max(0, +sc.taxLimit || 0) * months / 12;
+  const tax = cap && +sc.taxRate2 > 0 ? pct(sc.taxRate) * Math.min(base, cap) + pct(sc.taxRate2) * Math.max(0, base - cap) : pct(sc.taxRate) * base;
   const r3 = r2 - tax;
   const dist = pct(sc.distRate) * Math.max(0, r3);
   return { fixed, social, tax, dist, net: r3 - dist };
@@ -150,8 +152,10 @@ function treasury(state, all, solo = false) {
   let balance = pnlPos(cash.start), low = { month: months[0], balance }, cumResult = 0;
   const out = [];
   for (const month of months) {
-    let ca = 0, charges = 0, adjust = 0;
+    let ca = 0, charges = 0, adjust = 0, raised = 0;
     for (const x of all) {
+      // Levée de fonds (plan avec levée) : l'argent arrive le mois de la levée.
+      if (x.a.funding && x.a.funding.month === month) raised += pnlPos(x.a.funding.amount);
       const k = x.months.findIndex(m => m.month === month);
       if (k < 0) continue;
       const t = sumPnl([x.pnl[k]]).total;
@@ -167,11 +171,11 @@ function treasury(state, all, solo = false) {
     }
     const result = ca - charges, tx = afterTax(sc, ca, result, 1);
     const pay = cash.payFrom && month >= cash.payFrom ? pnlPos(cash.payGoal) : 0;
-    const inflow = ca + adjust, outflow = charges + tx.fixed + tx.social + tx.tax;
+    const inflow = ca + adjust + raised, outflow = charges + tx.fixed + tx.social + tx.tax;
     balance += inflow - outflow - pay;
     cumResult += result;
     if (balance < low.balance) low = { month, balance };
-    out.push({ month, ca, inflow, charges, taxes: tx.fixed + tx.social + tx.tax, pay, result, net: tx.net, balance });
+    out.push({ month, ca, inflow, raised, charges, taxes: tx.fixed + tx.social + tx.tax, pay, result, net: tx.net, balance });
   }
   // Point mort : premier mois à partir duquel le résultat mensuel reste positif.
   let breakEven = null;

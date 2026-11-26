@@ -57,7 +57,7 @@ header {
 
 #tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(7, 1fr);
+  display: grid; grid-template-columns: repeat(8, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
@@ -541,3 +541,43 @@ dl.pl-lines dd { margin: 0; text-align: right; font-weight: 600; white-space: no
 .g-t .tgt { color: var(--clay); font-weight: 600; }
 .g-t .gap { font-weight: 700; white-space: nowrap; }
 .gauge.good .gap { color: var(--good); } .gauge.ok .gap { color: #b06f00; } .gauge.low .gap { color: var(--bad); }
+/* Trajectoire : indicateurs année par année */
+#r-traj .scroll { margin: 4px -4px 8px; }
+table.traj { border-collapse: separate; border-spacing: 0 3px; font-size: 13px; font-variant-numeric: tabular-nums; width: 100%; }
+table.traj th, table.traj td { padding: 6px 8px; text-align: right; white-space: nowrap; }
+table.traj thead th { font-size: 12px; color: var(--ink-soft); font-weight: 600; }
+table.traj tbody th { position: sticky; left: 0; z-index: 1; background: var(--surface); text-align: left; font-weight: 600; min-width: 128px; }
+table.traj tbody th small { display: block; font-size: 11px; font-weight: 500; color: var(--ink-soft); }
+table.traj .rep { color: var(--clay); font-weight: 600; font-size: 12px; }
+table.traj td.lv { border-radius: 6px; font-weight: 600; }
+table.traj td.lv.good, #r-traj .legend i.lv-good { background: #dff4ea; color: #1d7a4f; }
+table.traj td.lv.ok, #r-traj .legend i.lv-ok { background: #fdf0d3; color: #8a5800; }
+table.traj td.lv.low, #r-traj .legend i.lv-low { background: #fbe1dc; color: #b2392a; }
+@media (max-width: 767px) { table.traj { font-size: 12px; } table.traj tbody th { min-width: 108px; white-space: normal; } }
+/* Levée de fonds */
+#r-raise .kpi { background: var(--ground); }
+#r-raise .kpi b.txt { font-size: 1.05rem; }
+@media (min-width: 900px) { #r-raise .kpis { grid-template-columns: repeat(4, 1fr); } }
+.raise-v { margin: 12px 0; padding: 10px 12px; border-radius: 12px; font-size: 14px; line-height: 1.4; }
+.raise-v.good { background: #dff4ea; } .raise-v.ok { background: #fdf0d3; } .raise-v.bad { background: #fbe1dc; }
+#r-raise details.sec { margin-bottom: 10px; }
+/* Dossier de levée */
+.uses { display: flex; flex-direction: column; gap: 10px; }
+.use { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: baseline; font-size: 14px; }
+.use small { display: block; font-size: 12px; color: var(--ink-soft); }
+.use b { white-space: nowrap; }
+.use .meter { grid-column: 1 / -1; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+.use .meter i { display: block; height: 100%; border-radius: 99px; }
+.uses-t { margin: 12px 0 4px; padding: 10px 12px; border-radius: 12px; background: var(--ground); }
+table.cmp td.pl-n { color: var(--ink-soft); font-size: 11px; text-align: left; padding-inline: 4px; }
+table.cmp tr.c-a td { font-weight: 700; color: var(--ink); }
+table.cmp tr.c-s td { color: var(--ink-soft); }
+table.cmp tr.c-a td, table.cmp tr.c-a th { border-bottom: 1px solid var(--line); }
+.gauge.stage .z.fill { background: var(--clay); border-radius: 3px 0 0 3px; } .gauge.stage .z.rest { background: var(--line); border-radius: 0 3px 3px 0; }
+.gauge.stage .gap { color: var(--ink-soft); font-weight: 600; }
+table.traj small.stg { display: block; font-size: 10.5px; color: var(--ink-soft); font-weight: 500; }
+@media (max-width: 420px) { #tabs a { font-size: 9.5px; padding-inline: 0; } #tabs svg { width: 20px; height: 20px; } }
+/* Levée : sensibilité et leviers */
+table.sens td.cur, table.sens th.cur { background: var(--sage-tint); }
+.lvt { display: inline-block; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+.lvt.good { background: #dff4ea; color: #1d7a4f; } .lvt.ok { background: #fdf0d3; color: #8a5800; } .lvt.low { background: #fbe1dc; color: #b2392a; }

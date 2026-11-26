@@ -321,3 +321,32 @@ test('le temps de coaching par cliente peut baisser à une date', () => {
   assert.ok(h(after) < h(before) * 0.6, 'les heures de coaching baissent');
   assert.equal(Math.round(after.active), Math.round(before.active), 'mêmes clientes sans restriction');
 });
+
+test('les prévisions vont jusqu\'à fin 2034', () => {
+  const s = model.defaultState();
+  for (const a of s.apps) assert.equal(simulate(a).months.at(-1).month, '2034-12');
+  assert.equal(s.raise.runway, 18);
+  const old = model.defaultState(); delete old.raise; old.version = 16;
+  assert.equal(model.migrate(old).raise.dilMax, 20);
+});
+
+test('plan avec levée : abonnées apportées par la publicité, montée en charge', () => {
+  const s = model.defaultState(), a = s.apps[0];
+  assert.equal(a.raisePlan.on, true);
+  assert.equal(s.apps[1].raisePlan.on, false);
+  const base = simulate(a).months;
+  a.paid = { from: '2028-01', perMonth: 50, ramp: 5 };
+  const ms = simulate(a).months;
+  const paid = k => ms.find(m => m.month === k).paidNew;
+  assert.equal(paid('2027-12'), 0);
+  assert.ok(paid('2028-01') > 5 && paid('2028-01') < 15);
+  assert.ok(Math.abs(paid('2029-01') - 50) < 6);
+  assert.ok(ms.at(-1).direct > base.at(-1).direct + 400);
+});
+
+test('impôt sur les sociétés à deux taux', () => {
+  const { afterTax } = require('../js/pnl.js');
+  const sas = model.defaultImplantation().scenarios.find(x => x.id === 'fr-sas');
+  assert.equal(afterTax(sas, 0, 100000, 12).tax, 42500 * 0.15 + 57500 * 0.25);
+  assert.equal(afterTax(sas, 0, 10000, 12).tax, 1500);
+});
