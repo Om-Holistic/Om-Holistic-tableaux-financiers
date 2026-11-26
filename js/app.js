@@ -714,6 +714,7 @@ function tresoreriePage() {
         { label: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' },
         { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } }
       ] })}
+    ${implantPick('tr-imp', 'les impôts et cotisations retirés de la trésorerie en dépendent')}
     ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">trésorerie négative en ${monthName(t.low.month)}</span></span></summary>
       <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
     ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
@@ -1189,6 +1190,14 @@ function implantCalc(r) {
   return { im, ca: own ? own.ca : ca, result: own ? own.result : result, months, res, yearCa, over, best, cur, share, appName, totalResult: result };
 }
 // Bandeau en tête du Résultat : l'implantation choisie et son effet immédiat sur le net.
+// Choix de l'implantation là où les impôts et cotisations changent les chiffres (Trésorerie).
+function implantPick(id, what) {
+  const im = state.implantation, cur = im.scenarios.find(x => x.id === im.current) || im.scenarios[0];
+  return `<details class="card implant-bar" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Implantation : ${esc(cur ? cur.name : '—')}<br><span class="sum-sub">${what}</span></span></summary>
+    <div class="grid">${select('Implantation de la société', 'implantation.current', im.current, im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <p class="muted">Frais de structure, cotisations sociales et impôts de chaque implantation : <a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Réglages › Implantation de la société</a>. Comparaison des implantations : <a href="#resultat" data-goto="resultat" data-open="r-implant" data-anchor="r-implant">Résultat › Résultat net selon l'implantation</a>.</p></details>`;
+}
+
 function implantBar(r) {
   const { im, ca, result, cur, best, over, appName, share } = implantCalc(r);
   const gap = best.net - cur.net;
@@ -1287,7 +1296,7 @@ function kpiCard(r) {
       kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
       kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel'),
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
-    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente.</p></details>`;
+    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p></details>`;
 }
 
 function resultatPage() {
