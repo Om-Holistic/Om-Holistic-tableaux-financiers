@@ -106,3 +106,11 @@ test('prix TTC convertis en HT dans le compte d\'exploitation', () => {
   const k = sims[0].months.findIndex(m => m.month === '2027-10');
   assert.ok(Math.abs(sumPnl([pnl[0][k]]).total.ca - sims[0].months[k].total / 1.2) < 1e-6);
 });
+
+test('Bujo et Doodle Studio : abonnement à 9,90 €, anciens prix d\'exemple mis à jour', () => {
+  const s = model.defaultState();
+  for (const a of s.apps.slice(1)) assert.deepStrictEqual(a.sub.directPricing.map(x => x.price), [9.9, 9.9, 9.9]);
+  const old = model.defaultState(); old.version = 3;
+  old.apps[1].sub.directPricing.forEach((x, i) => { x.price = [2.99, 3.99, 4.99][i]; });
+  assert.strictEqual(model.migrate(old).apps[1].sub.directPricing[2].price, 9.9);
+});

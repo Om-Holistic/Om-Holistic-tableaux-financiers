@@ -16,7 +16,7 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 - **Produits et prix** : programmes (durée, rythme d'inscriptions, promotions) et abonnements.
 - **Réglages** : application, capacité, TVA, import / export.
 
-Applications par défaut : Chrysalis, Bujo et Doodle Studio (ces deux dernières avec des valeurs d'exemple).
+Applications par défaut : Chrysalis, Bujo et Doodle Studio (abonnement mensuel à 9,90 €, avec une phase « Lancement » à ajuster).
 
 ## Prix en trois phases
 

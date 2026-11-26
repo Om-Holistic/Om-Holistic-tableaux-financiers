@@ -92,6 +92,7 @@ function smallApp(name, start, prices) {
   a.start = start; a.capacity = 0; a.hours = 0;
   a.sub.start = start;
   a.sub.directPricing = pricing(start, prices);
+  a.sub.directPricing[0].label = 'Lancement';
   a.sub.initial = 2; a.sub.target = 10; a.sub.duration = 8;
   a.charges = [charge('Hébergement (exemple)', 'fixe', 15), charge('Frais de paiement (exemple)', 'ca', 2)];
   return a;
@@ -103,10 +104,10 @@ function defaultShared() {
 
 function defaultState() {
   return {
-    version: 3,
+    version: 4,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
-    apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [2.99, 3.99, 4.99]), smallApp('Doodle Studio', '2027-09', [2.99, 3.99, 4.99])]
+    apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
   };
 }
 
@@ -144,10 +145,19 @@ function migrate(state) {
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   // Bujo et Doodle Studio sont ajoutées une fois, avec des valeurs d'exemple.
   if ((state.version || 1) < 3) {
-    if (!state.apps.some(a => /bujo/i.test(a.name))) state.apps.push(smallApp('Bujo', '2027-06', [2.99, 3.99, 4.99]));
-    if (!state.apps.some(a => /doodle|doddle/i.test(a.name))) state.apps.push(smallApp('Doodle Studio', '2027-09', [2.99, 3.99, 4.99]));
+    if (!state.apps.some(a => /bujo/i.test(a.name))) state.apps.push(smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]));
+    if (!state.apps.some(a => /doodle|doddle/i.test(a.name))) state.apps.push(smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9]));
   }
-  state.version = 3;
+  // Version 4 : Bujo et Doodle Studio passent à 9,90 € / mois (prix annoncé), si leurs prix d'exemple n'ont pas été modifiés.
+  if ((state.version || 1) < 4) {
+    for (const a of state.apps) {
+      const g = a.sub.directPricing;
+      if (/bujo|doodle/i.test(a.name) && g.map(x => x.price).join() === '2.99,3.99,4.99') {
+        g.forEach(x => { x.price = 9.9; }); g[0].label = 'Lancement';
+      }
+    }
+  }
+  state.version = 4;
   return state;
 }
 
