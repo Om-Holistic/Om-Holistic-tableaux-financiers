@@ -35,7 +35,7 @@ const newId = () => Math.random().toString(36).slice(2, 9);
 
 function program(name, start, prices, duration) {
   return {
-    id: newId(), name, start, enabled: true, duration, coach: 20,
+    id: newId(), name, start, enabled: true, duration, coach: 20, coachSteps: [],
     pricing: pricing(start, prices),
     // Cohortes de test avant le lancement commercial (start) : nom, mois, nombre de clientes.
     cohorts: [],
@@ -236,7 +236,7 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 10,
+    version: 11,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     implantation: defaultImplantation(),
@@ -257,6 +257,15 @@ function capacityAt(a, month) {
   let cur = steps[0];
   for (const c of steps) if (c.date <= month) cur = c;
   return cur;
+}
+
+// Temps de coaching par cliente (minutes / semaine) en vigueur pour un mois :
+// la valeur de base du programme, puis chaque baisse (ou hausse) datée à partir de son mois.
+function coachAt(p, month) {
+  let min = +p.coach || 0;
+  const steps = (p.coachSteps || []).filter(c => c.date).sort((x, y) => x.date.localeCompare(y.date));
+  for (const c of steps) if (c.date <= month) min = +c.minutes || 0;
+  return Math.max(0, min);
 }
 
 // Convertit une sauvegarde v1 (betaPrice / launchPrice / price) en grilles de prix.
@@ -371,7 +380,8 @@ function migrate(state) {
   if ((state.version || 1) < 9) for (const a of state.apps) for (const p of a.programs) p.fromSolo = Math.min(100, (+p.fromSolo || 0) * 12);
   // Version 10 : la capacité ne se règle plus qu'en heures (les tiennes + coachs embauchées).
   if ((state.version || 1) < 10) for (const a of state.apps) for (const c of a.capacitySteps || []) { if (c.hired === undefined) c.hired = 0; delete c.capacity; }
-  state.version = 10;
+  if ((state.version || 1) < 11) for (const a of state.apps) for (const q of a.programs || []) if (!Array.isArray(q.coachSteps)) q.coachSteps = [];
+  state.version = 11;
   return state;
 }
 
@@ -379,4 +389,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

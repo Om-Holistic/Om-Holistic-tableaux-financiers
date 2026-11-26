@@ -3,7 +3,7 @@
 // la capacité de coaching et les abonnements, puis agrège le tout par mois.
 // Aucune dépendance au navigateur : ce fichier est aussi testé avec Node.
 
-if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, addMonths } = require('./model.js');
+if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, coachAt, addMonths } = require('./model.js');
 
 const DAY = 86400000, WEEK = 7 * DAY;
 const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
@@ -82,9 +82,11 @@ function simulate(a, soloStock) {
     if (!m) continue;
     const active = events.filter(e => e.end > d);
     const step = capacityAt(a, monthKey(d));
+    // Heures par cliente ce mois-ci : le temps de coaching peut baisser avec le temps (paliers du programme).
+    const perH = i => coachAt(a.programs[i], monthKey(d)) / 60;
     // Une seule limite : les heures de coaching disponibles (les tiennes + celles des coachs embauchées).
     const own = step ? pos(step.hours) : Infinity, hired = step ? pos(step.hired) : 0, limit = own + hired;
-    let availableH = Math.max(0, limit - active.reduce((s, e) => s + e.count * pos(a.programs[e.i].coach) / 60, 0));
+    let availableH = Math.max(0, limit - active.reduce((s, e) => s + e.count * perH(e.i), 0));
     let demand = 0, admitted = 0;
 
     configs.forEach(({ p, cohorts, commercial }, i) => {
@@ -104,7 +106,7 @@ function simulate(a, soloStock) {
       }
       if (a.waitlist) want += pending[i];
       demand += want;
-      const perClient = pos(p.coach) / 60;
+      const perClient = perH(i);
       const count = a.restrict && perClient > 0 ? Math.min(want, Math.floor(availableH / perClient + 1e-9)) : want;
       pending[i] = a.waitlist ? want - count : 0;
       availableH = Math.max(0, availableH - count * perClient);
@@ -125,7 +127,7 @@ function simulate(a, soloStock) {
     });
 
     const people = active.reduce((s, e) => s + e.count, 0);
-    const hours = active.reduce((s, e) => s + e.count * pos(a.programs[e.i].coach) / 60, 0);
+    const hours = active.reduce((s, e) => s + e.count * perH(e.i), 0);
     m.active = people;
     m.products.forEach((p, i) => { p.active = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); });
     // Clientes moyennes du mois (semaines-clientes / semaines du mois) et heures de coaching, par programme.
@@ -134,7 +136,7 @@ function simulate(a, soloStock) {
       const weeksInMonth = new Date(Date.UTC(+mm.month.slice(0, 4), +mm.month.slice(5), 0)).getUTCDate() / 7;
       for (const e of active) {
         mm.products[e.i].clients += e.count * share / weeksInMonth;
-        mm.products[e.i].coachHours += e.count * pos(a.programs[e.i].coach) / 60 * share;
+        mm.products[e.i].coachHours += e.count * perH(e.i) * share;
       }
     });
     if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, own, hired, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
@@ -233,7 +235,7 @@ function programGoalPlan(a, j, sim) {
     const step = capacityAt(a, at);
     segs.push({ rate, weeks });
     used += weeks;
-    out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * pos(q.coach) / 60,
+    out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * coachAt(q, at) / 60, minutes: coachAt(q, at),
       capHours: step ? pos(step.hours) + pos(step.hired) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
   }
   return { segs, steps: out };

@@ -29,6 +29,10 @@ Chaque programme fixe son temps de coaching par cliente et par semaine ; le nomb
 en découle. Par défaut l'outil inscrit toutes les clientes prévues et signale les mois où les heures manquent ;
 l'option « Refuser les inscriptions quand les heures ne suffisent plus » plafonne les inscriptions.
 
+
+### Temps de coaching par cliente
+
+Dans Produits › Capacité de coaching, le bloc « Temps de coaching par cliente » donne, pour chaque programme, les minutes par cliente et par semaine au départ, puis des baisses datées (« Prévoir une baisse »). Une baisse s'applique à toutes les clientes en cours à partir de son mois. L'alerte de capacité propose trois leviers : ajouter tes heures, embaucher des heures de coach, ou réduire le temps par cliente (réduction proportionnelle de tous les programmes au mois du problème).
 ## Passerelles et période d'essai
 
 - Chaque programme fixe le **% de clientes qui gardent l'abonnement seul** (ex. CHRYSALISS seul) à la fin du programme,

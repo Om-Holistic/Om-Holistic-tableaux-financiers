@@ -114,7 +114,7 @@ function programCard(a, q, j, p) {
   return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
       ${check('Programme actif', t + '.enabled', q.enabled)}
       ${fields(q, t, [['name', 'Nom du programme', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Temps de coaching par cliente (minutes / semaine)']])}
-      <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}C'est ce temps qui consomme tes heures de coaching (Produits › Capacité de coaching).</p>
+      <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}${(q.coachSteps || []).length ? `Baisses prévues : ${q.coachSteps.filter(c => c.date).map(c => `${num(+c.minutes || 0)} min dès ${monthName(c.date)}`).join(', ')}. ` : ''}Pour prévoir une baisse dans le temps : <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Capacité de coaching</a>.</p>
       ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
         <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
         ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
@@ -151,12 +151,12 @@ function programGoalSection(a, q, j, t) {
     if (r) {
       const overH = r.capHours !== null && r.hours > r.capHours;
       res = `<div class="goal-res"><b>${num(r.rate)} inscription${r.rate > 1 ? 's' : ''} / semaine</b><span>${monthName(r.at)} · plan actuel : ${num(Math.round(r.planYear))} / an${r.fromSoloYear >= 1 ? ` · dont ${num(Math.round(r.fromSoloYear))} / an venues de ${esc(soloName(a))}` : ''}</span></div>
-        <div class="goal-cap ${overH ? 'bad' : 'ok'}">${num(Math.round(r.hours * 10) / 10)} h de coaching par semaine pour ce programme (${num(Math.ceil(r.parallel))} clientes en même temps à ${num(+q.coach || 0)} min).
+        <div class="goal-cap ${overH ? 'bad' : 'ok'}">${num(Math.round(r.hours * 10) / 10)} h de coaching par semaine pour ce programme (${num(Math.ceil(r.parallel))} clientes en même temps à ${num(r.minutes)} min).
         ${r.capHours === null ? 'Capacité illimitée.' : `Heures disponibles à cette date, tous programmes : ${num(r.capHours)} h.${overH ? ' <b>Insuffisant.</b>' : ''}`}</div>
         ${overH ? (() => {
           // Besoin total à cette date : ce programme à l'objectif, plus les autres programmes tels que simulés.
           const m = sim.find(x => x.month === r.at);
-          const othersH = a.programs.reduce((s2, p2, k2) => s2 + (k2 !== j && m ? m.products[k2].active * (+p2.coach || 0) / 60 : 0), 0);
+          const othersH = a.programs.reduce((s2, p2, k2) => s2 + (k2 !== j && m ? m.products[k2].active * coachAt(p2, r.at) / 60 : 0), 0);
           const hours = Math.ceil((r.hours + othersH) * 10) / 10;
           return capacityAlert(a, state.apps.indexOf(a), { month: r.at, next: '', hours, limit: r.capHours, missingHours: Math.max(0, hours - r.capHours) }, `goal-alert-${j}-${k}`);
         })() : ''}`;
@@ -268,17 +268,35 @@ function calendarCard(a) {
       <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates saisies dans chaque produit et dans la capacité de coaching. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
       ${timeline(a)}</details>`;
 }
+// Temps de coaching par cliente, programme par programme, avec ses baisses prévues dans le temps.
+function coachTimeBlock(a, p) {
+  const rows = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled).map(({ q, j }) => {
+    const t = `${p}.programs.${j}`;
+    const steps = (q.coachSteps || []).map((c, k) => lineEditor(c, `${t}.coachSteps.${k}`, [['date', 'À partir de', 'month'], ['minutes', 'Minutes / cliente / semaine']], 'Retirer cette baisse')).join('');
+    const now = coachAt(q, '9999-12');
+    return `<div class="coach-prog"><p class="coach-name"><b>${esc(progName(a, q))}</b>${(q.coachSteps || []).length ? ` <span class="muted">· ${num(+q.coach || 0)} → ${num(now)} min</span>` : ''}</p>
+      <div class="grid">${field('Au départ (minutes / cliente / semaine)', `${t}.coach`, q.coach)}</div>
+      ${steps}
+      <div class="row"><button data-add="${t}.coachSteps">Prévoir une baisse</button></div></div>`;
+  }).join('');
+  return `<div class="coach-time" id="pr-coachtime"><h3 class="cap-h">Temps de coaching par cliente</h3>
+      <p class="muted">C'est le premier levier : moins de minutes par cliente, c'est plus de clientes avec les mêmes heures. Si l'application prend le relais, prévois une baisse à une date. Elle s'applique à toutes les clientes en cours à partir de ce mois.</p>
+      ${rows || '<p class="muted">Aucun programme actif.</p>'}</div>`;
+}
 // Capacité de coaching : des heures par semaine (les tiennes + celles des coachs embauchées), communes à tous les programmes.
 function capacityCard(a, p) {
-  const progs = a.programs.filter(q => q.enabled && +q.coach > 0);
-  const avgMin = progs.length ? progs.reduce((t, q) => t + +q.coach, 0) / progs.length : 0;
+  const progs = a.programs.filter(q => q.enabled);
   const steps = (a.capacitySteps || []).map((c, j) => {
+    const mins = progs.map(q => coachAt(q, c.date || appStart(a))).filter(x => x > 0);
+    const avgMin = mins.length ? mins.reduce((t, x) => t + x, 0) / mins.length : 0;
     const total = (+c.hours || 0) + (+c.hired || 0);
     return lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['hours', 'Mes heures / semaine'], ['hired', 'Coachs embauchées (h / semaine)']], 'Retirer ce palier')
       + `<p class="muted cap-derived">${num(total)} h par semaine${avgMin ? ` · environ ${num(Math.floor(total * 60 / avgMin))} clientes en même temps à ${num(Math.round(avgMin))} min chacune` : ''}${+c.hired && +a.coachRate ? ` · coachs : ${money(+c.hired * a.coachRate * 52 / 12)} / mois` : ''}</p>`;
   }).join('');
   const last = (a.capacitySteps || [])[a.capacitySteps.length - 1];
-  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers · jusqu'à ${num((+last.hours || 0) + (+last.hired || 0))} h / semaine` : 'illimitée'} · tous les programmes</span></span></summary>
+  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers · jusqu'à ${num((+last.hours || 0) + (+last.hired || 0))} h / semaine` : 'illimitée'} · temps par cliente${(() => { const ms = progs.map(q => +q.coach || 0); return ms.length ? ' ' + num(Math.min(...ms)) + (Math.max(...ms) !== Math.min(...ms) ? '–' + num(Math.max(...ms)) : '') + ' min' : ''; })()}</span></span></summary>
+      ${coachTimeBlock(a, p)}
+      <h3 class="cap-h">Heures de coaching disponibles</h3>
       <p class="muted">Indique les heures que tu consacres au coaching chaque semaine (pas tes autres heures de travail), et celles de coachs embauchées. Le nombre de clientes possible en découle, selon le temps par cliente de chaque programme. Ajoute un palier à chaque changement.</p>
       ${steps || '<p class="muted">Aucun palier : capacité illimitée.</p>'}
       <div class="row"><button data-add="${p}.capacitySteps">Ajouter un palier</button></div>
@@ -489,7 +507,9 @@ function capacityShortfall(a, weekly) {
 function capacityAlert(a, ai, sf, id) {
   const p = 'apps.' + ai;
   const miss = Math.ceil(sf.missingHours * 10) / 10;
-  const progs = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled);
+  const progs = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled && coachAt(x.q, sf.month) > 0);
+  // Réduction proportionnelle de tous les programmes pour que les heures nécessaires tiennent dans les heures disponibles.
+  const ratio = sf.hours > 0 ? Math.floor(sf.limit / sf.hours * 100) / 100 : 1, pct = Math.round((1 - ratio) * 100);
   return `<div class="cap-alert" id="${id}">
       <p><b>${monthName(sf.month).replace(/^./, c => c.toUpperCase())}</b>${sf.next ? ` (jusqu'à ton palier de ${monthName(sf.next)})` : ''} : il manque <b>${num(miss)} h</b> de coaching par semaine (${num(sf.hours)} h nécessaires pour ${num(sf.limit)} h disponibles).</p>
       <div class="levers">
@@ -497,10 +517,9 @@ function capacityAlert(a, ai, sf, id) {
         <button data-capfix="${ai}" data-mode="hired" data-month="${sf.month}" data-miss="${Math.ceil(sf.missingHours)}">J'embauche ${num(Math.ceil(sf.missingHours))} h de coach</button>
         <a class="lever" href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${ai}">Coût d'une coach</a>
       </div>
-      <details class="fold" id="${id}-time" ${view.open.has(id + '-time') ? 'open' : ''}><summary>Ou réduire le temps par cliente</summary>
-        <div class="grid">${progs.map(({ q, j }) => field(`${progName(a, q)} (minutes / cliente / semaine)`, `${p}.programs.${j}.coach`, q.coach)).join('')}</div>
-      </details>
-      <p class="muted">Les deux boutons ajoutent un palier en ${monthName(sf.month)} (ou complètent celui de ce mois), puis t'emmènent dans « Capacité de coaching ».</p>
+      ${pct > 0 && pct < 100 ? `<div class="levers"><button data-coachfix="${ai}" data-month="${sf.month}" data-ratio="${ratio}">Je réduis le temps par cliente de ${num(pct)} %</button></div>
+      <p class="muted">${progs.map(({ q }) => `${esc(progName(a, q))} : ${num(coachAt(q, sf.month))} → ${num(Math.floor(coachAt(q, sf.month) * ratio))} min`).join(' · ')}, à partir de ${monthName(sf.month)}.</p>` : ''}
+      <p class="muted">Chaque bouton ajoute un palier en ${monthName(sf.month)} (ou complète celui de ce mois), puis t'emmène dans « Capacité de coaching », où tu peux ajuster.</p>
     </div>`;
 }
 
@@ -853,6 +872,7 @@ document.addEventListener('click', e => {
         return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
       capacitySteps: () => { const l = o[k][o[k].length - 1]; return { date: l ? addMonths(l.date || thisMonth, 6) : thisMonth, hours: l ? +l.hours || 0 : 10, hired: l ? +l.hired || 0 : 0 }; },
+      coachSteps: () => { const l = o[k][o[k].length - 1]; return { date: l ? addMonths(l.date || thisMonth, 6) : addMonths(thisMonth, 6), minutes: Math.max(0, Math.round((l ? +l.minutes : +o.coach || 0) * 0.75)) }; },
       cohorts: () => ({ name: ['Cohorte alpha', 'Deuxième cohorte', 'Troisième cohorte'][o[k].length] || `Cohorte ${o[k].length + 1}`, date: thisMonth, size: 10 }),
       scenarios: () => ({ id: newId(), name: 'Nouveau scénario', fixedYear: 0, socialRate: 0, socialBase: 'result', taxRate: 0, taxBase: 'result', distRate: 0, note: '' }),
       charges: () => charge('Nouvelle charge', 'fixe', 0, 'app', '', '', { anchor: 'first' })
@@ -881,6 +901,23 @@ document.addEventListener('click', e => {
     save();
     view.app = t.dataset.capfix;
     view.goto = { open: 'pr-cap', anchor: 'pr-cap' };
+    if (location.hash === '#produits') route(); else location.hash = 'produits';
+  } else if (t.dataset.coachfix) {
+    const a = state.apps[+t.dataset.coachfix], month = t.dataset.month, ratio = +t.dataset.ratio;
+    for (const q of a.programs) {
+      if (!q.enabled) continue;
+      const before = coachAt(q, month);
+      if (!(before > 0)) continue;
+      q.coachSteps = q.coachSteps || [];
+      let st = q.coachSteps.find(c => c.date === month);
+      if (!st) { st = { date: month, minutes: before }; q.coachSteps.push(st); q.coachSteps.sort((x, y) => x.date.localeCompare(y.date)); }
+      st.minutes = Math.floor(before * ratio);
+      // Les baisses suivantes ne remontent pas au-dessus de ce niveau.
+      for (const c of q.coachSteps) if (c.date > month) c.minutes = Math.min(+c.minutes || 0, st.minutes);
+    }
+    save();
+    view.app = t.dataset.coachfix;
+    view.goto = { open: 'pr-cap', anchor: 'pr-coachtime' };
     if (location.hash === '#produits') route(); else location.hash = 'produits';
   } else if (t.dataset.pgoal) {
     const [o, k] = resolve(t.dataset.pgoal), q = o[k], a = state.apps[+t.dataset.pgoal.split('.')[1]];

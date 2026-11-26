@@ -345,3 +345,9 @@ table.ramp td:first-child { white-space: nowrap; }
 .warn { color: var(--ink); background: color-mix(in srgb, var(--k-cal) 14%, transparent); padding: 8px 10px; border-radius: 10px; font-size: 13px; }
 .warn:empty { display: none; }
 .implant-bar .net-split { margin: 10px 0 6px; } .implant-bar p { margin: 0; }
+
+/* Temps de coaching par cliente (Capacité de coaching) */
+.cap-h { font: 600 1rem/1.3 var(--display); margin: 1.1rem 0 .3rem; }
+.coach-time { border-bottom: 1px solid var(--line); padding-bottom: .6rem; }
+.coach-prog { margin: .7rem 0; padding: .6rem .7rem; border-radius: 12px; background: var(--ground); }
+.coach-name { margin: 0 0 .3rem; }

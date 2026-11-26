@@ -305,3 +305,19 @@ test('capacité en heures : coût des coachs embauchées et refus quand les heur
   assert.ok(weekly.every(w => w.hours <= w.limit + 1e-6));
   assert.ok(weekly.some(w => w.limit - w.hours < 20 / 60 + 1e-6), 'la capacité est bien utilisée');
 });
+
+test('le temps de coaching par cliente peut baisser à une date', () => {
+  const { coachAt } = require('../js/model.js');
+  const q = { coach: 60, coachSteps: [{ date: '2028-01', minutes: 30 }, { date: '2029-01', minutes: 15 }] };
+  assert.equal(coachAt(q, '2027-06'), 60);
+  assert.equal(coachAt(q, '2028-03'), 30);
+  assert.equal(coachAt(q, '2030-01'), 15);
+  const s = defaultState(), a = s.apps[0];
+  a.restrict = false;
+  const before = simulate(a).months.find(m => m.month === '2028-06');
+  a.programs.forEach(p => { p.coachSteps = [{ date: '2028-01', minutes: Math.floor(p.coach / 2) }]; });
+  const after = simulate(a).months.find(m => m.month === '2028-06');
+  const h = m => m.products.reduce((t, p) => t + p.coachHours, 0);
+  assert.ok(h(after) < h(before) * 0.6, 'les heures de coaching baissent');
+  assert.equal(Math.round(after.active), Math.round(before.active), 'mêmes clientes sans restriction');
+});
