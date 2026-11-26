@@ -610,7 +610,7 @@ function chart(byMonth) {
     + byMonth.map((m, i) => {
       const x = left + i * bw + bw * .15, w = bw * .7, subs = m.directCA + m.postCA;
       const label = i % every === 0 ? `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${byMonth.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g><title>${m.month} : ${money(m.total)} (programmes ${money(m.sales)}, abonnements ${money(subs)})</title>
+      return `<g data-tip="${esc(`${monthName(m.month)} : ${money(m.total)} · programmes ${money(m.sales)} · abonnements ${money(subs)}`)}">
         <rect x="${x}" y="${y(m.sales)}" width="${w}" height="${y(0) - y(m.sales)}" rx="2" fill="var(--sage)"/>
         <rect x="${x}" y="${y(m.total)}" width="${w}" height="${Math.max(0, y(m.sales) - y(m.total))}" rx="2" fill="var(--clay)"/></g>${label}`;
     }).join('') + '</svg>';
@@ -725,12 +725,12 @@ function cashChart(bs) {
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie par période">`
     + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
     + bs.map((b, i) => { const out = b.charges + b.taxes + b.pay;
-      return `<g><title>${bucketName(b.key, step)} : entrées ${money(b.inflow)}, sorties ${money(out)}, solde ${money(b.balance)}</title>`
+      return `<g data-tip="${esc(`${bucketName(b.key, step)} : entrées ${money(b.inflow)} · sorties ${money(out)} · solde ${money(b.balance)}`)}">`
         + `<rect x="${cx(i) - bw / 2}" y="${y(b.inflow)}" width="${bw}" height="${Math.max(0, y(0) - y(b.inflow))}" rx="2" fill="var(--good)" opacity=".75"/>`
         + `<rect x="${cx(i) - bw / 2}" y="${y(0)}" width="${bw}" height="${Math.max(0, y(-out) - y(0))}" rx="2" fill="var(--sage)" opacity=".6"/></g>`; }).join('')
     + `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink-soft)" stroke-width="1"/>`
     + `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(b.balance).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
-    + bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 24 ? 0 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/>`).join('')
+    + bs.map((b, i) => `<g class="pt" data-tip="${esc(`${bucketName(b.key, step)} : solde ${money(b.balance)}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(b.balance)}" r="12"/><circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 48 ? 2 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/></g>`).join('')
     + bs.map((b, i) => i % every === 0 || step === 'm' ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b)}</text>` : '').join('')
     + '</svg>';
 }
@@ -756,8 +756,8 @@ function usersChart(bs, series) {
   const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MSHORT[+b.key.slice(5) - 1].replace('.', '') + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Utilisatrices par produit">`
     + [0, hi / 2, hi].map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${num(Math.round(v))}</text>`).join('')
-    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"><title>${esc(s.name)}</title></polyline>`
-      + (bs.length <= 24 ? bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="2.5" fill="${s.color}"><title>${esc(s.name)} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))}</title></circle>`).join('') : '')).join('')
+    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"/>`).join('')
+    + series.map(s => bs.map((b, i) => `<g class="pt" data-tip="${esc(`${s.short} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))} ${s.kind}`)}"><circle class="hit" cx="${cx(i)}" cy="${y(s.v[b.i])}" r="11"/><circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="${bs.length > 48 ? 2 : 3}" fill="${s.color}"/></g>`).join('')).join('')
     + bs.map((b, i) => i % every === 0 ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b) || MSHORT[+b.key.slice(5) - 1]?.replace('.', '') || ''}</text>` : '').join('')
     + '</svg>';
 }
@@ -1002,7 +1002,7 @@ function capacityChart(x) {
     + list.map((m, i) => {
       const bx = left + i * bw + bw * .18, w = bw * .64, over = m.hours > m.limit + 1e-9;
       const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g><title>${monthName(m.month)} : ${m.hours.toFixed(1)} h de coaching par semaine${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h disponibles`} (${num(m.people)} clientes en même temps)</title>
+      return `<g data-tip="${esc(`${monthName(m.month)} : ${m.hours.toFixed(1)} h de coaching par semaine${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h disponibles`} · ${num(m.people)} clientes en même temps`)}">
         <rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(0) - y(m.hours)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
     }).join('')
     + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + '</svg>';
@@ -2020,3 +2020,23 @@ Sync.init({
 route();
 
 saveLabel();
+
+// Valeur d'un point ou d'une barre : on touche (iPhone, iPad) ou on survole (ordinateur), une bulle l'affiche. Même comportement sur tous les graphiques.
+(() => {
+  const tip = document.createElement('div'); tip.id = 'tip'; tip.hidden = true; document.body.appendChild(tip);
+  let cur = null, y0 = 0;
+  const hide = () => { tip.hidden = true; if (cur) cur.classList.remove('on'); cur = null; };
+  const show = (el, x, y) => {
+    if (cur !== el) { if (cur) cur.classList.remove('on'); cur = el; el.classList.add('on'); }
+    tip.textContent = el.dataset.tip; tip.hidden = false; y0 = window.scrollY;
+    const w = tip.offsetWidth, h = tip.offsetHeight, vw = document.documentElement.clientWidth;
+    tip.style.left = Math.max(8, Math.min(vw - w - 8, x - w / 2)) + 'px';
+    tip.style.top = Math.max(8, y - h - 14) + 'px';
+  };
+  const at = e => { const el = e.target.closest && e.target.closest('svg [data-tip]'); if (!el) return null; const b = el.getBoundingClientRect(); return { el, x: b.left + b.width / 2, y: b.top }; };
+  document.addEventListener('click', e => { const t = at(e); if (t) show(t.el, t.x, t.y); else hide(); }, true);
+  window.addEventListener('scroll', () => { if (cur && Math.abs(window.scrollY - y0) > 30) hide(); }, { passive: true });
+  let touch = false;
+  document.addEventListener('pointerdown', e => { touch = e.pointerType !== 'mouse'; }, true);
+  document.addEventListener('mouseover', e => { if (touch) return; const t = at(e); if (t) show(t.el, t.x, t.y); else if (cur) hide(); });
+})();
