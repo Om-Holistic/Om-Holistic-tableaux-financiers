@@ -279,3 +279,5 @@ button.icon svg { width: 20px; height: 20px; fill: none; stroke: var(--bad); str
 .monthpick { max-width: none; }
 details.card.product > summary > span:first-child::before { content: ""; display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 8px; background: var(--sage); vertical-align: 1px; }
 details.card.product.solo > summary > span:first-child::before { background: var(--clay); }
+a.golink { color: inherit; text-decoration: underline; text-decoration-color: var(--sage); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+a.golink::after { content: ' ›'; color: var(--sage); font-weight: 700; }

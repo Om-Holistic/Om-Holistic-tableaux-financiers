@@ -397,14 +397,14 @@ const PNL_ROWS = [
 
 function pnlColumns(r) {
   if (view.app === 'all') {
-    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, v: { ...s.total, structure: s.structure } }; });
+    const cols = r.all.map(x => { const s = r.summary(x); return { name: x.a.name, go: { page: 'produits', app: state.apps.indexOf(x.a) }, v: { ...s.total, structure: s.structure } }; });
     const tot = {};
     for (const [k] of PNL_ROWS) tot[k] = cols.reduce((t, c) => t + c.v[k], 0);
     return { cols, total: tot };
   }
   const x = r.scope[0], s = r.summary(x);
-  const cols = productKeys(x.a).map(k => ({ name: k.name, off: k.off, v: { ...(s.cols[k.key] || {}), structure: null, result: null } }));
-  cols.push({ name: 'Commun', common: true, v: { ca: null, fees: null, variable: null, coaching: null, margin: null, fixed: s.commonFixed, contribution: -s.commonFixed, structure: s.structure, result: null } });
+  const cols = productKeys(x.a).map((k, j) => ({ name: k.name, off: k.off, go: { page: 'produits', open: j ? 'p' + (j - 1) : 'sd' }, v: { ...(s.cols[k.key] || {}), structure: null, result: null } }));
+  cols.push({ name: 'Commun', common: true, go: { page: 'charges' }, v: { ca: null, fees: null, variable: null, coaching: null, margin: null, fixed: s.commonFixed, contribution: -s.commonFixed, structure: s.structure, result: null } });
   return { cols, total: { ...s.total, structure: s.structure } };
 }
 
@@ -415,14 +415,16 @@ function resultatPage() {
   const cell = (row, v) => v === null || v === undefined ? '<span class="muted">—</span>' : row[2] === 'cost' ? (v ? signed(-v) : money(0)) : row[2] === 'head' ? money(v) : `<b>${signed(v)}</b>`;
   const rows = PNL_ROWS.map(row => [row[1], ...cols.map(c => cell(row, c.v[row[0]])), cell(row, total[row[0]])]);
   const cls = PNL_ROWS.map(row => row[2] === 'total' ? 'total' : row[2] === 'sub' ? 'sub' : '');
-  const tableHtml = `<div class="scroll"><table class="pnl">${table(['', ...cols.map(c => esc(c.name)), 'Total'], rows, cls)}</table></div>`;
+  // Chaque nom de produit (ou d'application) ouvre sa fiche de réglages.
+  const link = (c, html) => `<a class="golink" href="#${c.go.page}" data-goto="${c.go.page}" data-open="${c.go.open || ''}" data-anchor="${c.go.open || ''}"${c.go.app !== undefined ? ` data-app="${c.go.app}"` : ''} title="Ouvrir les réglages">${html}</a>`;
+  const tableHtml = `<div class="scroll"><table class="pnl">${table(['', ...cols.map(c => link(c, esc(c.name))), 'Total'], rows, cls)}</table></div>`;
   // Barres : chiffre d'affaires et contribution de chaque colonne.
   const bars = cols.filter(c => !c.common);
   const key = view.app === 'all' ? 'result' : 'contribution';
   const max = Math.max(1, ...bars.map(c => Math.max(c.v.ca || 0, Math.abs(c.v[key] || 0))));
   const barsHtml = bars.map(c => {
     const v = c.v[key] || 0;
-    return `<div class="prod"><span>${esc(c.name)}${c.off ? ' <span class="tag">Inactif</span>' : ''}</span><b class="${v < 0 ? 'neg' : ''}">${money(v)}</b>
+    return `<div class="prod"><span>${link(c, esc(c.name))}${c.off ? ' <span class="tag">Inactif</span>' : ''}</span><b class="${v < 0 ? 'neg' : ''}">${money(v)}</b>
       <span class="meter"><i style="width:${((c.v.ca || 0) / max * 100).toFixed(1)}%;background:var(--sage-soft)"></i></span>
       <span class="meter"><i style="width:${(Math.abs(v) / max * 100).toFixed(1)}%;background:${v < 0 ? 'var(--bad)' : 'var(--good)'}"></i></span>
       <span class="muted">CA ${money(c.v.ca || 0)} · ${c.v.ca ? Math.round(v / c.v.ca * 100) : 0} % du CA</span></div>`;
@@ -434,7 +436,7 @@ function resultatPage() {
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>
-    <details class="card" id="r-table" open><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary>${tableHtml}</details>
+    <details class="card" id="r-table" open><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary><p class="muted">Touche le nom d'${view.app === 'all' ? 'une application' : 'un produit'} pour ouvrir ses réglages.</p>${tableHtml}</details>
     <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
         <p class="muted">La <b>contribution</b> d'un produit, c'est ce qu'il rapporte une fois payés ses propres coûts : frais de paiement, coûts par cliente, coaching et charges fixes qui lui sont rattachées.
         Les charges communes de l'application et la quote-part de structure Om Holistic sont ensuite déduites pour obtenir le <b>résultat d'exploitation</b>, avant impôts et cotisations personnelles.</p></details>`;
@@ -518,6 +520,7 @@ document.addEventListener('click', e => {
   if (go) {
     e.preventDefault();
     view.goto = { open: go.dataset.open, anchor: go.dataset.anchor };
+    if (go.dataset.app !== undefined) view.app = go.dataset.app;
     if (location.hash === '#' + go.dataset.goto) route(); else location.hash = go.dataset.goto;
     return;
   }
