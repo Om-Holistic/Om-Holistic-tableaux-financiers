@@ -445,12 +445,14 @@ function palierCard(a, ai, p, st, last) {
     verdict = `<p class="pal-block"><b>Ça bloque à partir ${deMonth(bm)}</b> : il faut ${hrs(bw.hours)} de coaching par semaine pour ${num(bw.people)} clientes, tu en as ${hrs(bw.own)}.${pay > 0.05 ? ` Au plus fort de ce palier, ${hrs(pay)} par semaine sont à payer à des coachs, soit ${money(Math.round(pay * rate * wk))} par mois.` : ''}</p>`
       + (bm > p.from && (!p.to || bm < p.to)
         ? `<div class="levers"><button data-paladd="${ai}|${bm}">Ajouter un palier en ${monthName(bm)}</button></div>`
-        : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`);
+        : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`
+          + (last ? `<div class="levers"><button data-paladd="${ai}|${addMonths(p.from > thisMonth ? p.from : thisMonth, 6)}">Ajouter un palier plus tard</button></div>` : ''));
+    if (pay > 0.05 && !rate) verdict += `<p class="pal-block">Ton coût horaire de coach est à 0 € : ces heures ne coûtent rien dans les charges. Règle-le dans « Coût des coachs » plus bas.</p>`;
   } else if (st && st.own !== null) verdict = `<p class="pal-ok"><b>Tes heures suffisent sur tout ce palier.</b></p>`;
   else if (st) verdict = `<p class="muted">Indique tes heures par semaine pour voir à partir de quand ça bloque.</p>`;
   const id = `pal-${ai}-${p.date || 'debut'}`, bm = st && st.block ? st.block.date.slice(0, 7) : '';
   const folded = pstats([['Besoin', `${hrs(total)} / sem.`], ['Mes heures', cap ? `${hrs(+cap.hours || 0)} / sem.` : '—'],
-    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem.${rate ? ' · ' + money(Math.round(pay * rate * wk)) + ' / mois' : ''}` : 'rien', pay > 0.05 ? 'bad' : '']]);
+    ['À payer', pay > 0.05 ? `${hrs(pay)} / sem. · ${rate ? money(Math.round(pay * rate * wk)) + ' / mois' : 'coût horaire à 0 €'}` : 'rien', pay > 0.05 ? 'bad' : '']]);
   return `<details class="card palier ${st && st.block ? 'blocked' : ''}" id="${id}" ${view.open.has(id) ? 'open' : ''}>
       <summary><span>${head}${bm ? ` <span class="tag bad">Bloque en ${MSHORT[+bm.slice(5) - 1]} ${bm.slice(0, 4)}</span>` : st && st.own !== null ? ' <span class="tag ok">Ça tient</span>' : ''}${folded}</span></summary>
       <div class="pal-body">${datePick}
@@ -479,8 +481,10 @@ function coachingPage() {
     const a = state.apps[x.i], ai = x.i, ps = coachPaliers(a);
     const cards = ps.map((p, k) => palierCard(a, ai, p, palierStats(a, x.weekly, p), k === ps.length - 1)).join('');
     return `${view.app === 'all' ? `<h2>${esc(a.name)}</h2>` : ''}${cards}
-      <details class="card" id="co-chart-${ai}" ${view.open.has(`co-chart-${ai}`) ? 'open' : ''}><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · par semaine, au plus fort de chaque mois</span></span></summary>
-        <div class="legend"><span><i style="background:var(--k-ins)"></i>Heures nécessaires</span><span><i style="background:var(--bad)"></i>Au-delà de tes heures</span><span><i class="dash"></i>Tes heures</span></div>
+      <details class="card" id="co-chart-${ai}" ${view.open.has(`co-chart-${ai}`) ? 'open' : ''}><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · ${(() => { const ex = x.months.filter(m => inPeriod(m.month)).reduce((t, m) => t + (m.extraHours || 0), 0);
+          return ex > 0.05 ? `${hrs(ex)} payées à des coachs · ${+a.coachRate ? money(Math.round(ex * a.coachRate)) + ' dans les charges' : '<b class="neg">coût horaire à 0 €</b>'}` : 'tes heures suffisent'; })()}</span></span></summary>
+        <div class="legend"><span><i style="background:var(--k-ins)"></i>Couvert par tes heures</span><span><i style="background:var(--bad)"></i>Payé à des coachs</span><span><i class="dash"></i>Tes heures</span></div>
+        <p class="muted">Par semaine, au plus fort de chaque mois.</p>
         <div class="chart cap-chart">${capacityChart(x)}</div></details>
       <details class="card" id="co-set-${ai}"><summary><span>Coût des coachs<br><span class="sum-sub">${money(+a.coachRate || 0)} de l'heure</span></span></summary>
         ${fields(a, `apps.${ai}`, [['coachRate', 'Coût horaire d\'une coach (€)']])}
@@ -1171,8 +1175,10 @@ function capacityChart(x) {
     + list.map((m, i) => {
       const bx = left + i * bw + bw * .18, w = bw * .64, over = m.hours > m.limit + 1e-9;
       const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
-      return `<g data-tip="${(Math.round(m.hours * 10) / 10).toLocaleString('fr-FR')} h">
-        <rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(0) - y(m.hours)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
+      // Partie couverte par tes heures, puis partie payée à des coachs au-dessus.
+      const own = over ? m.limit : m.hours, paid = over ? m.hours - m.limit : 0, h1 = n => (Math.round(n * 10) / 10).toLocaleString('fr-FR');
+      return `<g data-tip="${over ? `${h1(m.hours)} h, dont ${h1(paid)} h payées` : h1(m.hours) + ' h'}">
+        <rect x="${bx}" y="${y(own)}" width="${w}" height="${y(0) - y(own)}" rx="2" fill="var(--k-ins)"/>${paid ? `<rect x="${bx}" y="${y(m.hours)}" width="${w}" height="${y(own) - y(m.hours)}" rx="2" fill="var(--bad)"/>` : ''}</g>${label}`;
     }).join('')
     + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + axes(left, W, top, y(0), 'h / sem.') + '</svg>';
 }
