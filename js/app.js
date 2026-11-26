@@ -72,7 +72,7 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'utilisatrices', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'utilisatrices', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
 const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
@@ -190,7 +190,7 @@ function programCard(a, q, j, p) {
         <label>Programme<span class="tbox"><input data-path="${t}.enabled" type="checkbox" ${q.enabled ? 'checked' : ''}>Actif</span></label>
         ${field('Nom du programme', t + '.name', q.name, 'text')}${field('Durée (semaines)', t + '.duration', q.duration)}${field('Coaching / cliente (min / sem.)', t + '.coach', q.coach)}
       </div>
-      <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}${(q.coachSteps || []).length ? `Baisses prévues : ${q.coachSteps.filter(c => c.date).map(c => `${num(+c.minutes || 0)} min dès ${monthName(c.date)}`).join(', ')}. ` : ''}Pour prévoir une baisse dans le temps : <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Capacité de coaching</a>.</p>
+      <p class="muted">${+q.coach > 0 ? `Soit ${num(Math.round(+q.coach * 10 / 60 * 10) / 10)} h par semaine pour 10 clientes en même temps. ` : ''}${(q.coachSteps || []).length ? `Baisses prévues : ${q.coachSteps.filter(c => c.date).map(c => `${num(+c.minutes || 0)} min dès ${monthName(c.date)}`).join(', ')}. ` : ''}Pour le changer à une date : onglet <a href="#coaching" data-goto="coaching">Coaching</a>.</p>
       ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
         <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
         ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
@@ -330,8 +330,8 @@ function productsPage(a, i) {
         { label: 'Abonnement', value: price(phaseAt(g, thisMonth).price), hint: 'par mois aujourd\'hui', go: { page: 'produits', open: 'sd', anchor: 'sd' } },
         ...(progs.length ? [
           { label: 'Prix des programmes', mini: 'Programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
-          { label: 'Heures de coaching', value: cap ? `${num((+cap.hours || 0) + (+cap.hired || 0))} h` : 'illimitées', hint: cap ? `par semaine dès ${monthName(cap.date)}` : 'aucun palier', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap' } },
-          { label: 'Temps par cliente', value: range(mins, x => num(x) + ' min'), hint: 'par semaine aujourd\'hui', go: { page: 'produits', open: 'pr-cap', anchor: 'pr-coachtime' } }
+          { label: 'Mes heures de coaching', value: cap ? `${num(+cap.hours || 0)} h` : '—', hint: 'par semaine aujourd\'hui', go: { page: 'coaching' } },
+          { label: 'Temps par cliente', value: range(mins, x => num(x) + ' min'), hint: 'par semaine aujourd\'hui', go: { page: 'coaching' } }
         ] : [{ label: 'Calendrier', value: num(timelineCount(a)), hint: 'dates', go: { page: 'produits', open: 'pr-cal', anchor: 'pr-cal' } }])
       ] })}
     <p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
@@ -353,7 +353,7 @@ function timelineItems(a) {
     phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(progName(a, q))}`, sub: price(ph.price), go: pr }));
   });
   if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › ${esc(soloName(a))}` } });
-  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.hours)} h toi${+c.hired ? ` + ${num(c.hired)} h coachs` : ''} / semaine`, go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap', from: 'Produits › Capacité de coaching' } }));
+  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Palier de coaching', sub: `${num(c.hours)} h pour toi / semaine`, go: { page: 'coaching', from: 'Coaching' } }));
   items.sort((x, y) => x.date.localeCompare(y.date));
   return items;
 }
@@ -375,91 +375,152 @@ function calendarCard(a) {
       <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates saisies dans chaque produit et dans la capacité de coaching. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
       ${timeline(a)}</details>`;
 }
-// Temps de coaching par cliente, programme par programme, avec ses baisses prévues dans le temps.
-function coachTimeBlock(a, p) {
-  const rows = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled).map(({ q, j }) => {
-    const t = `${p}.programs.${j}`;
-    const steps = (q.coachSteps || []).map((c, k) => lineEditor(c, `${t}.coachSteps.${k}`, [['date', 'À partir de', 'month'], ['minutes', 'Minutes / cliente / semaine']], 'Retirer cette baisse')).join('');
-    const now = coachAt(q, '9999-12');
-    return `<div class="coach-prog"><p class="coach-name"><b>${esc(progName(a, q))}</b>${(q.coachSteps || []).length ? ` <span class="muted">· ${num(+q.coach || 0)} → ${num(now)} min</span>` : ''}</p>
-      <div class="grid">${field('Au départ (minutes / cliente / semaine)', `${t}.coach`, q.coach)}</div>
-      ${steps}
-      <div class="row"><button data-add="${t}.coachSteps">Prévoir une baisse</button></div></div>`;
+// ---------- Coaching : palier par palier, ce que les programmes demandent face à tes heures ----------
+// Un palier = une date où tes heures ou les minutes par cliente changent. Le premier vaut dès le début.
+// Tu règles les minutes par cliente et tes heures ; les heures à payer à des coachs en découlent.
+function coachPaliers(a) {
+  const caps = (a.capacitySteps || []).filter(c => c.date).sort((x, y) => x.date.localeCompare(y.date));
+  const start = appStart(a), dates = new Set();
+  caps.slice(1).forEach(c => dates.add(c.date));
+  a.programs.forEach(q => (q.coachSteps || []).forEach(c => c.date && dates.add(c.date)));
+  const list = [{ date: '', from: start }, ...[...dates].filter(d => d > start).sort().map(d => ({ date: d, from: d }))];
+  return list.map((p, k) => ({ ...p, k, to: list[k + 1] ? list[k + 1].from : null }));
+}
+// Chiffres d'un palier : semaine la plus chargée, heures par programme cette semaine-là, premier blocage.
+function palierStats(a, weekly, p) {
+  const ws = weekly.filter(w => { const m = w.date.slice(0, 7); return m >= p.from && (!p.to || m < p.to); });
+  if (!ws.length) return null;
+  const peak = ws.reduce((b, w) => w.hours > b.hours ? w : b, ws[0]);
+  const own = Number.isFinite(peak.own) ? peak.own : null;
+  const block = own === null ? null : ws.find(w => w.hours > w.own + 0.01 || (a.restrict && w.demand > w.admitted + 1e-6));
+  return { peak, own, block, missing: own === null ? 0 : Math.max(0, peak.hours - own) };
+}
+const hrs = v => `${(Math.round(v * 10) / 10).toLocaleString('fr-FR')} h`;
+const deMonth = k => (/^[aeiouy]/.test(monthName(k)) ? "d'" : 'de ') + monthName(k);
+function palierCard(a, ai, p, st, last) {
+  const progs = a.programs.map((q, j) => ({ q, j })).filter(x => x.q.enabled !== false);
+  const cap = capacityAt(a, p.from), rate = +a.coachRate || 0, wk = 52 / 12;
+  const minInput = (q, j) => `<input class="pal-in" type="number" min="0" step="1" inputmode="numeric" data-pal="${ai}|${p.date}|min|${j}" value="${coachAt(q, p.from)}" aria-label="Minutes par cliente, ${esc(q.name)}">`;
+  const rows = progs.map(({ q, j }) => {
+    const g = st ? st.peak.progs[j] : { people: 0, hours: 0 };
+    return `<tr><td>${esc(q.name)}</td><td>${minInput(q, j)}</td><td>${num(g.people)}</td><td>${hrs(g.hours)}</td></tr>`;
   }).join('');
-  return `<div class="coach-time" id="pr-coachtime"><h3 class="cap-h">Temps de coaching par cliente</h3>
-      <p class="muted">C'est le premier levier : moins de minutes par cliente, c'est plus de clientes avec les mêmes heures. Si l'application prend le relais, prévois une baisse à une date. Elle s'applique à toutes les clientes en cours à partir de ce mois.</p>
-      ${rows || '<p class="muted">Aucun programme actif.</p>'}</div>`;
+  const total = st ? st.peak.hours : 0, people = st ? st.peak.people : 0;
+  const ownIn = `<input class="pal-in" type="number" min="0" step="0.5" inputmode="decimal" data-pal="${ai}|${p.date}|own" value="${cap ? +cap.hours || 0 : ''}" placeholder="—" aria-label="Mes heures par semaine">`;
+  const pay = st ? st.missing : 0;
+  const head = p.k === 0
+    ? `<b>Palier 1</b><span class="muted"> · ${monthName(p.from)} – ${p.to ? monthName(addMonths(p.to, -1)) : 'sans fin'}</span>`
+    : `<b>Palier ${p.k + 1}</b><span class="muted"> · ${monthName(p.from)} – ${p.to ? monthName(addMonths(p.to, -1)) : 'sans fin'}</span>`;
+  const datePick = p.k === 0 ? '' : (() => {
+    const [y, m] = p.date.split('-'), years = []; for (let k = 2025; k <= 2034; k++) years.push(String(k));
+    return `<div class="pal-date"><span>Début</span><span class="monthpick palpick" data-palmove="${ai}|${p.date}">
+      <select aria-label="Mois du palier">${MONTHS.map((n, i) => { const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === m ? 'selected' : ''}>${n}</option>`; }).join('')}</select>
+      <select aria-label="Année du palier">${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select></span>
+      <button class="icon danger" data-paldel="${ai}|${p.date}" aria-label="Retirer ce palier" title="Retirer ce palier">${TRASH}</button></div>`;
+  })();
+  let verdict = '';
+  if (st && st.block) {
+    const bm = st.block.date.slice(0, 7), bw = st.block;
+    verdict = `<p class="pal-block"><b>Ça bloque à partir ${deMonth(bm)}</b> : il faut ${hrs(bw.hours)} de coaching par semaine pour ${num(bw.people)} clientes, tu en as ${hrs(bw.own)}.${pay > 0.05 ? ` Au plus fort de ce palier, ${hrs(pay)} par semaine sont à payer à des coachs, soit ${money(Math.round(pay * rate * wk))} par mois.` : ''}</p>`
+      + (bm > p.from && (!p.to || bm < p.to)
+        ? `<div class="levers"><button data-paladd="${ai}|${bm}">Ajouter un palier en ${monthName(bm)}</button></div>`
+        : `<p class="muted">Ça bloque dès le début de ce palier : baisse les minutes ou augmente tes heures ci-dessus.</p>`);
+  } else if (st && st.own !== null) verdict = `<p class="pal-ok"><b>Tes heures suffisent sur tout ce palier.</b></p>`;
+  else if (st) verdict = `<p class="muted">Indique tes heures par semaine pour voir à partir de quand ça bloque.</p>`;
+  return `<div class="card palier ${st && st.block ? 'blocked' : ''}" id="pal-${ai}-${p.k}">
+      <p class="pal-head">${head}</p>${datePick}
+      <div class="scroll"><table class="pal-t"><thead><tr><th>Programme</th><th>Min. / cliente / sem.</th><th>Clientes</th><th>Heures / sem.</th></tr></thead>
+        <tbody>${rows}<tr class="total"><td>Total</td><td></td><td>${num(people)}</td><td>${hrs(total)}</td></tr></tbody></table></div>
+      <dl class="pal-sum">
+        <div><dt>Mes heures / sem.</dt><dd>${ownIn}</dd></div>
+        <div><dt>À payer à des coachs</dt><dd class="${pay > 0.05 ? 'neg' : ''}">${hrs(pay)} / sem.<small>${hrs(pay * wk)} / mois${pay > 0.05 && rate ? ' · ' + money(Math.round(pay * rate * wk)) + ' / mois' : ''}</small></dd></div>
+      </dl>
+      <p class="muted">Chiffres de la semaine la plus chargée du palier${st ? `, en ${monthName(st.peak.date.slice(0, 7))}` : ''}.</p>
+      ${verdict}
+      ${last && !(st && st.block) ? `<div class="row"><button data-paladd="${ai}|${addMonths(p.from > thisMonth ? p.from : thisMonth, 6)}">Ajouter un palier</button></div>` : ''}
+    </div>`;
 }
-// Besoin de coaching mois par mois, tous programmes confondus : heures nécessaires par semaine,
-// tes heures, et ce qu'il faut déléguer à des coachs (au coût horaire). Une ligne à chaque palier.
-function coachMonths(a, weekly) {
-  const by = new Map();
-  for (const w of weekly) {
-    const k = w.date.slice(0, 7), m = by.get(k) || { month: k, h: 0, n: 0, people: 0, own: w.own, hired: w.hired };
-    m.h += w.hours; m.n++; m.people = Math.max(m.people, w.people); m.own = w.own; m.hired = w.hired; by.set(k, m);
-  }
-  return [...by.values()].map(m => ({ ...m, need: m.h / m.n, deleg: Number.isFinite(m.own) ? Math.max(0, m.h / m.n - m.own - (m.hired || 0)) : 0 }));
-}
-function coachSteps(a, weekly) {
-  const ms = coachMonths(a, weekly).filter(m => m.need > 0.05), out = [];
-  for (const m of ms) {
-    const prev = out.at(-1);
-    const changed = !prev || m.own !== prev.own || m.hired !== prev.hired
-      || (m.deleg > 0.25) !== (prev.deleg > 0.25) || Math.abs(m.deleg - prev.deleg) >= 2 || Math.abs(m.need - prev.need) >= 3;
-    if (changed) out.push(m);
-  }
-  return out.slice(0, 14);
-}
-function coachNeedBlock(a, weekly) {
-  const rows = coachSteps(a, weekly), rate = +a.coachRate || 0;
-  if (!rows.length) return '';
-  const wk = 52 / 12, first = rows.find(m => m.deleg > 0.25);
-  const h = v => `${(Math.round(v * 2) / 2).toLocaleString('fr-FR')} h`;
-  const fit = m => Number.isFinite(m.own) && m.people > 0 ? Math.floor(((m.own || 0) + (m.hired || 0)) * 60 / m.people) : null;
-  const body = rows.map(m => {
-    const block = m.deleg > 0.25, f = fit(m);
-    return `<div class="cstep ${block ? 'block' : ''}"><p><b>${monthName(m.month)}</b><span class="muted"> · ${num(m.people)} clientes en même temps</span></p>
-      <dl><div><dt>Besoin</dt><dd>${h(m.need)} / sem.<small>${h(m.need * wk)} / mois</small></dd></div>
-      <div><dt>Disponibles</dt><dd>${Number.isFinite(m.own) ? h(m.own + (m.hired || 0)) + ' / sem.' : 'illimité'}<small>${m.hired ? `dont ${h(m.hired)} de coachs` : 'tes heures'}</small></dd></div>
-      <div><dt>À déléguer</dt><dd class="${block ? 'neg' : 'pos'}">${block ? h(m.deleg) + ' / sem.' : 'rien'}<small>${block && rate ? money(Math.round(m.deleg * rate * wk)) + ' / mois' : '&nbsp;'}</small></dd></div>
-      <div><dt>Sans déléguer</dt><dd>${block && f !== null ? num(f) + ' min' : '—'}<small>${block && f !== null ? 'par cliente' : '&nbsp;'}</small></dd></div></dl></div>`;
+function coachingPage() {
+  const r = results();
+  const apps = r.scope.filter(x => x.a.programs.some(q => q.enabled !== false));
+  if (!apps.length) return `<div class="card"><p class="muted">Aucun programme avec du coaching pour ${view.app === 'all' ? 'ces applications' : esc(r.scope[0]?.a.name || '')}.</p></div>`;
+  // Bandeau : sur la période affichée, heures nécessaires au plus fort, tes heures, heures et coût des coachs.
+  const wr = apps.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))));
+  const peak = wr.reduce((b, w) => w.hours > (b?.hours ?? -1) ? w : b, null);
+  const extra = apps.reduce((t, x) => t + x.months.filter(m => inPeriod(m.month)).reduce((s, m) => s + (m.extraHours || 0), 0), 0);
+  const cost = apps.reduce((t, x) => t + x.months.filter(m => inPeriod(m.month)).reduce((s, m) => s + (m.extraHours || 0), 0) * (+x.a.coachRate || 0), 0);
+  const firstBlock = apps.map(x => x.weekly.find(w => Number.isFinite(w.own) && w.hours > w.own + 0.01)).filter(Boolean).sort((p, q) => p.date.localeCompare(q.date))[0];
+  const body = apps.map(x => {
+    const a = state.apps[x.i], ai = x.i, ps = coachPaliers(a);
+    const cards = ps.map((p, k) => palierCard(a, ai, p, palierStats(a, x.weekly, p), k === ps.length - 1)).join('');
+    return `${view.app === 'all' ? `<h2>${esc(a.name)}</h2>` : ''}${cards}
+      <details class="card" id="co-chart-${ai}" open><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · par semaine, au plus fort de chaque mois</span></span></summary>
+        <div class="legend"><span><i style="background:var(--k-ins)"></i>Heures nécessaires</span><span><i style="background:var(--bad)"></i>Au-delà de tes heures</span><span><i class="dash"></i>Tes heures</span></div>
+        <div class="chart cap-chart">${capacityChart(x)}</div></details>
+      <details class="card" id="co-set-${ai}"><summary><span>Coût des coachs<br><span class="sum-sub">${money(+a.coachRate || 0)} de l'heure</span></span></summary>
+        ${fields(a, `apps.${ai}`, [['coachRate', 'Coût horaire d\'une coach (€)']])}
+        <p class="muted">Les heures à payer sont ajoutées aux charges, dans « Heures de coachs », et réparties entre les programmes selon leurs heures.</p>
+        ${a.restrict ? check('Limiter les inscriptions à mes heures (aucune heure payée)', `apps.${ai}.restrict`, a.restrict) : ''}</details>`;
   }).join('');
-  return `<h3 class="cap-h">Heures nécessaires et heures à déléguer</h3>
-    <p class="cap-sum">${first ? `<b class="neg">Tes heures ne suffisent plus à partir de ${monthName(first.month)}</b> : il faut ${h(first.need)} de coaching par semaine pour ${num(first.people)} clientes, tu en as ${h(first.own + (first.hired || 0))}${first.hired ? ` (dont ${h(first.hired)} de coachs déjà engagées)` : ''}. Il faut déléguer ${h(first.deleg)} par semaine${rate ? `, soit ${money(Math.round(first.deleg * rate * wk))} par mois` : ''}.` : '<b class="pos">Tes heures suffisent sur toute la période.</b>'}</p>
-    <div class="csteps">${body}</div>
-    <p class="muted">Heures nécessaires = clientes en cours × minutes par cliente, tous programmes ensemble. À déléguer = heures nécessaires − tes heures${rate ? `, payées ${money(rate)} de l'heure` : ''}. « Sans déléguer » : le temps par cliente qui tiendrait avec les heures disponibles.</p>`;
+  return `${banner({ label: firstBlock ? 'Ça bloque en' : 'Coaching', chip: periodChip(), big: firstBlock ? `${MSHORT[+firstBlock.date.slice(5, 7) - 1]} ${firstBlock.date.slice(0, 4)}` : 'Ça tient', bigCls: firstBlock ? 'neg-hero' : '',
+      note: firstBlock ? `Tes heures ne suffisent plus à partir ${deMonth(firstBlock.date.slice(0, 7))}.` : 'Tes heures suffisent sur tout le plan.',
+      tiles: [
+        { label: 'Au plus fort', value: peak ? hrs(peak.hours) : '—', hint: peak ? `par semaine, ${monthName(peak.date.slice(0, 7))}` : '' },
+        { label: 'Mes heures', value: peak && Number.isFinite(peak.own) ? hrs(peak.own) : '—', hint: 'par semaine à ce moment' },
+        { label: 'Heures de coachs', value: hrs(extra), hint: `sur la période · ${money(Math.round(cost))}`, cls: extra > 0.05 ? 'neg' : '' }] })}
+    ${body}`;
 }
 
-// Capacité de coaching : des heures par semaine (les tiennes + celles des coachs embauchées), communes à tous les programmes.
+// Réglages d'un palier : les minutes de chaque programme et tes heures, enregistrées à la date du palier ('' = le premier).
+function setPalier(a, date, kind, j, v) {
+  const start = appStart(a);
+  if (kind === 'min') {
+    const q = a.programs[j];
+    q.coachSteps = q.coachSteps || [];
+    if (!date) { q.coach = v; q.coachSteps = q.coachSteps.filter(c => c.date && c.date > start); return; }
+    let st = q.coachSteps.find(c => c.date === date);
+    if (!st) { st = { date, minutes: v }; q.coachSteps.push(st); q.coachSteps.sort((x, y) => x.date.localeCompare(y.date)); }
+    st.minutes = v;
+  } else if (kind === 'own') {
+    a.capacitySteps = a.capacitySteps || [];
+    let c = date ? a.capacitySteps.find(x => x.date === date) : capacityAt(a, start);
+    if (!c) {
+      c = { date: date || start, hours: v, hired: 0 };
+      a.capacitySteps.push(c); a.capacitySteps.sort((x, y) => x.date.localeCompare(y.date));
+    }
+    c.hours = v;
+  }
+}
+// Nouveau palier : il reprend les réglages en vigueur ce mois-là.
+function addPalier(a, month) {
+  a.capacitySteps = a.capacitySteps || [];
+  const cap = capacityAt(a, month);
+  if (cap && !a.capacitySteps.some(c => c.date === month)) {
+    a.capacitySteps.push({ date: month, hours: +cap.hours || 0, hired: 0 });
+    a.capacitySteps.sort((x, y) => x.date.localeCompare(y.date));
+  }
+  for (const q of a.programs) {
+    if (q.enabled === false) continue;
+    q.coachSteps = q.coachSteps || [];
+    if (!q.coachSteps.some(c => c.date === month)) { q.coachSteps.push({ date: month, minutes: coachAt(q, month) }); q.coachSteps.sort((x, y) => x.date.localeCompare(y.date)); }
+  }
+}
+function movePalier(a, from, to) {
+  if (!/^\d{4}-\d\d$/.test(to) || from === to) return;
+  const first = (a.capacitySteps || []).filter(c => c.date).sort((x, y) => x.date.localeCompare(y.date))[0];
+  for (const c of a.capacitySteps || []) if (c.date === from && c !== first) c.date = to;
+  (a.capacitySteps || []).sort((x, y) => x.date.localeCompare(y.date));
+  for (const q of a.programs) { for (const c of q.coachSteps || []) if (c.date === from) c.date = to; (q.coachSteps || []).sort((x, y) => x.date.localeCompare(y.date)); }
+}
+function removePalier(a, date) {
+  const first = (a.capacitySteps || []).filter(c => c.date).sort((x, y) => x.date.localeCompare(y.date))[0];
+  a.capacitySteps = (a.capacitySteps || []).filter(c => c.date !== date || c === first);
+  for (const q of a.programs) q.coachSteps = (q.coachSteps || []).filter(c => c.date !== date);
+}
+
+// Produits et prix : le coaching se règle dans son propre onglet.
 function capacityCard(a, p) {
-  const progs = a.programs.filter(q => q.enabled);
-  const steps = (a.capacitySteps || []).map((c, j) => {
-    const mins = progs.map(q => coachAt(q, c.date || appStart(a))).filter(x => x > 0);
-    const avgMin = mins.length ? mins.reduce((t, x) => t + x, 0) / mins.length : 0;
-    const total = (+c.hours || 0) + (+c.hired || 0);
-    return lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['hours', 'Mes heures / semaine'], ['hired', 'Coachs déjà engagées, payées même sans clientes (h / sem.)']], 'Retirer ce palier')
-      + `<p class="muted cap-derived">${num(total)} h par semaine${avgMin ? ` · environ ${num(Math.floor(total * 60 / avgMin))} clientes en même temps à ${num(Math.round(avgMin))} min chacune` : ''}${+c.hired && +a.coachRate ? ` · coachs : ${money(+c.hired * a.coachRate * 52 / 12)} / mois` : ''}</p>`;
-  }).join('');
-  const last = (a.capacitySteps || [])[a.capacitySteps.length - 1];
-  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers, tous les programmes` : 'illimitée, aucun palier'}</span>
-      ${(() => { const cur = capacityAt(a, thisMonth), ms = progs.map(q => +q.coach || 0), hired = last ? +last.hired || 0 : 0;
-        const peak = prodSim && prodSim.weekly && prodSim.weekly.length ? Math.max(...prodSim.weekly.map(w => w.people)) : null;
-        return pstats([cur ? ['Au départ', `${num((+cur.hours || 0) + (+cur.hired || 0))} h / sem.`] : null, last ? ['Au dernier palier', `${num((+last.hours || 0) + hired)} h / sem.`, 'hi'] : null,
-          ms.length ? ['Temps / cliente', `${num(Math.min(...ms))}${Math.max(...ms) !== Math.min(...ms) ? '–' + num(Math.max(...ms)) : ''} min`] : null,
-          hired && +a.coachRate ? ['Coachs', `${money(hired * a.coachRate * 52 / 12)} / mois`] : null,
-          peak !== null ? ['Pic de clientes', num(peak)] : null]); })()}</span></summary>
-      ${prodSim && prodSim.weekly ? coachNeedBlock(a, prodSim.weekly) : ''}
-      ${coachTimeBlock(a, p)}
-      <h3 class="cap-h">Tes heures de coaching par semaine</h3>
-      <p class="muted">Indique les heures que tu consacres au coaching chaque semaine (pas tes autres heures de travail), et celles de coachs embauchées. Le nombre de clientes possible en découle, selon le temps par cliente de chaque programme. Ajoute un palier à chaque changement.</p>
-      ${steps || '<p class="muted">Aucun palier : capacité illimitée.</p>'}
-      <div class="row"><button data-add="${p}.capacitySteps">Ajouter un palier</button></div>
-      ${fields(a, p, [['coachRate', 'Coût horaire des coachs embauchées (€)']])}
-      <p class="muted">Les heures de coachs embauchées sont payées chaque semaine à ce coût, utilisées ou non. Tes propres heures ne coûtent rien ici (ta rémunération est dans Charges).</p>
-      ${check('Refuser les inscriptions quand les heures ne suffisent plus', p + '.restrict', a.restrict)}
-      ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}
-      ${a.restrict ? '' : check('Déléguer automatiquement les heures qui manquent à des coachs, au coût horaire', p + '.payMissing', a.payMissing)}
-      <p class="muted">Décoché : l'outil inscrit toutes les clientes prévues et te signale en rouge les mois où les heures manquent${a.payMissing ? ' ; ces heures en trop sont alors comptées comme des heures de coachs embauchées, au coût horaire ci-dessus, pour que le résultat reste réaliste' : ''}. Coché : il n'inscrit que ce que tes heures permettent.</p></details>`;
+  return `<div class="card"><p><b>Coaching</b> : minutes par cliente, tes heures et heures à payer se règlent dans l'onglet <a href="#coaching" data-goto="coaching" data-app="${p.split('.')[1]}">Coaching</a>.</p></div>`;
 }
 
 function implantSection() {
@@ -678,7 +739,7 @@ function alertsCard(r) {
   if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'tresorerie' }]);
   for (const x of r.all) {
     const sf = capacityShortfall(x.a, x.weekly);
-    if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'produits', open: 'pr-cap', app: x.i }]);
+    if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'coaching', app: x.i }]);
     const a = state.apps[x.i];
     const pending = a.programs.filter((q, j) => { if (!q.enabled || !(q.goal?.steps || []).length) return false; const gp = programGoalPlan(a, j, simulate(a).months); return gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)); }).length
       + (() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? 1 : 0; })();
@@ -1034,12 +1095,11 @@ function capacityAlert(a, ai, sf, id) {
       <p><b>${monthName(sf.month).replace(/^./, c => c.toUpperCase())}</b>${sf.next ? ` (jusqu'à ton palier de ${monthName(sf.next)})` : ''} : il manque <b>${num(miss)} h</b> de coaching par semaine (${num(sf.hours)} h nécessaires pour ${num(sf.limit)} h disponibles).</p>
       <div class="levers">
         <button data-capfix="${ai}" data-mode="own" data-month="${sf.month}" data-miss="${Math.ceil(sf.missingHours)}">J'ajoute ${num(Math.ceil(sf.missingHours))} h pour moi</button>
-        <button data-capfix="${ai}" data-mode="hired" data-month="${sf.month}" data-miss="${Math.ceil(sf.missingHours)}">J'embauche ${num(Math.ceil(sf.missingHours))} h de coach</button>
-        <a class="lever" href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${ai}">Coût d'une coach</a>
+        <a class="lever" href="#coaching" data-goto="coaching" data-app="${ai}">Voir l'onglet Coaching</a>
       </div>
       ${pct > 0 && pct < 100 ? `<div class="levers"><button data-coachfix="${ai}" data-month="${sf.month}" data-ratio="${ratio}">Je réduis le temps par cliente de ${num(pct)} %</button></div>
       <p class="muted">${progs.map(({ q }) => `${esc(progName(a, q))} : ${num(coachAt(q, sf.month))} → ${num(Math.floor(coachAt(q, sf.month) * ratio))} min`).join(' · ')}, à partir de ${monthName(sf.month)}.</p>` : ''}
-      <p class="muted">Chaque bouton ajoute un palier en ${monthName(sf.month)} (ou complète celui de ce mois), puis t'emmène dans « Capacité de coaching », où tu peux ajuster.</p>
+      <p class="muted">Chaque bouton ajoute un palier en ${monthName(sf.month)} (ou complète celui de ce mois), puis t'emmène dans l'onglet Coaching, où tu peux ajuster.</p>
     </div>`;
 }
 
@@ -1085,9 +1145,7 @@ function capacityBlock(r) {
     </div>
     ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Heures de coaching nécessaires / semaine</span><span><i style="background:var(--bad)"></i>Heures insuffisantes</span><span><i class="dash"></i>Heures disponibles</span></div>
       <div class="chart cap-chart">${capacityChart(x)}</div>
-      ${coachNeedBlock(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7))))}
-      ${(() => { const ai = x.i, sf = capacityShortfall(x.a, x.weekly.filter(w => inPeriod(w.date.slice(0, 7)))); return sf ? capacityAlert(x.a, ai, sf, 'pv-alert-' + ai) : '<p class="muted">Tes heures de coaching suffisent sur toute la période.</p>'; })()}
-      <p class="muted"><a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap" data-app="${x.i}">Voir la capacité de coaching</a></p></div>`).join('')}
+      <p class="muted"><a href="#coaching" data-goto="coaching" data-app="${x.i}">Régler le coaching palier par palier</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Heures nécessaires', 'Heures disponibles', 'En attente'],
         wr.map(w => [w.date, esc(w.name), num(w.demand), num(w.admitted), num(w.people), w.hours.toFixed(1), w.limit === Infinity ? '—' : `${num(w.own)}${w.hired ? ' + ' + num(w.hired) : ''}`, num(w.waiting)]))}</table></div></details>`;
@@ -1266,7 +1324,7 @@ function chargesPage(a, i) {
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
-      ${a.programs.length ? `<p class="muted">Coaching : heures de coachs × ${money(+a.coachRate || 0)} / h, réglé dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p>` : ''}
+      ${a.programs.length ? `<p class="muted">Coaching : heures à payer à des coachs × ${money(+a.coachRate || 0)} / h, calculées dans l'onglet <a href="#coaching" data-goto="coaching">Coaching</a>.</p>` : ''}
       <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
     ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${nF} charge${nF > 1 ? 's' : ''}${tot ? ` · ${money(tot.f)} ${periodName()}` : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
@@ -1865,7 +1923,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, utilisatrices: usersPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -1890,8 +1948,22 @@ document.addEventListener('toggle', e => { if (e.target.classList && e.target.cl
 
 document.addEventListener('change', async e => {
   const t = e.target;
-  const pick = t.closest?.('.monthpick');
-  if (pick) {
+  const pick = t.closest?.('.monthpick'), palpick = t.closest?.('.palpick');
+  if (palpick) {
+    const [m, y] = [...palpick.querySelectorAll('select')].map(x => x.value);
+    const [ai, old] = palpick.dataset.palmove.split('|');
+    movePalier(state.apps[+ai], old, `${y}-${m}`);
+    save(); render();
+  } else if (t.dataset.pal) {
+    const [ai, date, kind, j] = t.dataset.pal.split('|');
+    setPalier(state.apps[+ai], date, kind, +j, Math.max(0, +t.value || 0));
+    save();
+    setTimeout(() => {
+      const next = document.activeElement?.dataset?.pal;
+      render();
+      if (next) document.querySelector(`[data-pal="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
+    }, 0);
+  } else if (pick) {
     const [m, y] = [...pick.querySelectorAll('select')].map(x => x.value);
     if ((m && y) || (!m && !y)) {
       const [o, k] = resolve(pick.dataset.mpath);
@@ -1979,6 +2051,15 @@ document.addEventListener('click', e => {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
   } else if (t.id === 'resetNo') { view.confirmReset = false; render();
+  } else if (t.dataset.paladd) {
+    const [ai, month] = t.dataset.paladd.split('|');
+    addPalier(state.apps[+ai], month);
+    save(); render();
+    document.querySelector(`[data-palmove="${ai}|${month}"]`)?.closest('.palier')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+  } else if (t.dataset.paldel) {
+    const [ai, date] = t.dataset.paldel.split('|');
+    removePalier(state.apps[+ai], date);
+    save(); render();
   } else if (t.dataset.capfix) {
     const a = state.apps[+t.dataset.capfix], month = t.dataset.month, miss = +t.dataset.miss, key = t.dataset.mode === 'hired' ? 'hired' : 'hours';
     a.capacitySteps = a.capacitySteps || [];
@@ -1994,8 +2075,7 @@ document.addEventListener('click', e => {
     for (const c of a.capacitySteps) if (c.date > month) c[key] = Math.max(+c[key] || 0, step[key]);
     save();
     view.app = t.dataset.capfix;
-    view.goto = { open: 'pr-cap', anchor: 'pr-cap' };
-    if (location.hash === '#produits') route(); else location.hash = 'produits';
+    if (location.hash === '#coaching') route(); else location.hash = 'coaching';
   } else if (t.dataset.coachfix) {
     const a = state.apps[+t.dataset.coachfix], month = t.dataset.month, ratio = +t.dataset.ratio;
     for (const q of a.programs) {
@@ -2011,8 +2091,7 @@ document.addEventListener('click', e => {
     }
     save();
     view.app = t.dataset.coachfix;
-    view.goto = { open: 'pr-cap', anchor: 'pr-coachtime' };
-    if (location.hash === '#produits') route(); else location.hash = 'produits';
+    if (location.hash === '#coaching') route(); else location.hash = 'coaching';
   } else if (t.dataset.pgoal) {
     const [o, k] = resolve(t.dataset.pgoal), q = o[k], a = state.apps[+t.dataset.pgoal.split('.')[1]];
     const plan = programGoalPlan(a, a.programs.indexOf(q), simulate(a).months);
