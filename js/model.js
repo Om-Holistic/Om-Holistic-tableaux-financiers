@@ -238,9 +238,24 @@ function defaultImplantation() {
   ] };
 }
 
+// Repères des investisseurs pour une application d'abonnement grand public : seuil « bon » et seuil « correct ».
+// Indicatifs, modifiables dans Réglages. Sources citées dans la carte des indicateurs.
+function defaultBench() {
+  return {
+    growth: { good: 15, ok: 7 },   // croissance du MRR, % par mois (amorçage)
+    churn: { good: 5, ok: 10 },    // churn mensuel, %
+    ltvcac: { good: 3, ok: 1 },    // LTV / CAC
+    payback: { good: 6, ok: 12 },  // retour sur CAC, mois
+    gm: { good: 70, ok: 50 },      // marge brute, %
+    rule40: { good: 40, ok: 20 },  // règle des 40 : croissance annuelle % + marge EBITDA %
+    runway: { good: 18, ok: 12 }   // autonomie, mois
+  };
+}
+
 function defaultState() {
   return {
-    version: 15,
+    version: 16,
+    bench: defaultBench(),
     vat: { ttc: false, rate: 20 },
     scenarios: defaultScenarios(),
     // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
@@ -431,7 +446,9 @@ function migrate(state) {
     for (const a of state.apps) for (const q of a.programs || []) if (q.installments === undefined) q.installments = 1;
   }
   if ((state.version || 1) < 15 && !state.scenarios) state.scenarios = defaultScenarios();
-  state.version = 15;
+  if (!state.bench) state.bench = defaultBench();
+  for (const [k, v] of Object.entries(defaultBench())) if (!state.bench[k]) state.bench[k] = v;
+  state.version = 16;
   return state;
 }
 
@@ -439,4 +456,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultBench, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

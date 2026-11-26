@@ -420,6 +420,13 @@ function syncStrip() {
   if (s.state === 'error') return `<a class="sync-strip" href="#reglages" data-goto="reglages" data-open="st-sync" data-anchor="st-sync">${esc(s.msg)} ›</a>`;
   return '';
 }
+const BENCH_ROWS = [['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
+function benchSection() {
+  const B = state.bench || defaultBench();
+  return section('st-bench', 'promo', 'Repères investisseurs', 'seuils bon et correct des indicateurs clés', `
+    ${BENCH_ROWS.map(([k, n, up]) => `<h4>${n}</h4><div class="grid">${field(`Bon si ${up ? 'au moins' : 'au plus'}`, `bench.${k}.good`, B[k].good)}${field(`Correct si ${up ? 'au moins' : 'au plus'}`, `bench.${k}.ok`, B[k].ok)}</div>`).join('')}
+    <div class="row"><button id="benchReset">Revenir aux repères par défaut</button></div>`);
+}
 function syncSection() {
   const summary = Sync.on ? 'activée sur cet appareil' : 'iPhone, iPad et ordinateur à jour';
   const body = Sync.on ? `<p class="sync-state ${Sync.status.state}" id="syncStatus">${esc(syncText())}</p>
@@ -466,6 +473,7 @@ function settingsPage(a, i) {
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
       ${implantSection()}
+      ${benchSection()}
       ${syncSection()}
       ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">${Sync.on ? 'Tes paramètres sont synchronisés. Un export reste utile pour garder une copie datée.' : 'Tes paramètres restent dans ce navigateur. Exporte-les régulièrement, ou active la synchro pour les retrouver sur tes autres appareils.'}</p>
         <div class="row"><button id="export">Exporter les paramètres</button><label class="file"><span>Importer des paramètres</span><input id="import" type="file" accept=".json"></label></div>
@@ -1274,33 +1282,44 @@ function kpiCard(r) {
   const burn = flows.length ? -flows.reduce((a, v) => a + v, 0) / flows.length : 0;
   const runway = burn > 0 ? endCash / burn : null;
   const f = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
-  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
+  // Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
+  const B = state.bench || defaultBench();
+  const mark = (k, v, unit, up = true) => {
+    if (v === null || v === undefined || !isFinite(v) || !B[k]) return '';
+    const { good, ok } = B[k], lvl = up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
+    return `<span class="bench ${lvl}">${{ good: 'bon', ok: 'correct', low: 'faible' }[lvl]} · repère ${up ? '≥' : '≤'} ${num(good)}${unit}</span>`;
+  };
+  const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
+  const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
+  const rule40 = yearGrowth === null || ebitdaPct === null ? null : yearGrowth + ebitdaPct;
   const group = (title, items) => `<h4 class="kpi-h">${title}</h4><div class="kpis">${items.join('')}</div>`;
   return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
       kpi('ARR', short(mrr * 12), 'MRR × 12'),
-      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', cmgr > 0 ? 'good' : ''),
+      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' % / mois')),
       kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
     ${group('Économie unitaire', [
       kpi('ARPU', price(Math.round(arpu * 100) / 100), 'revenu moyen par abonnée et par mois, HT'),
-      kpi('Churn mensuel', f(churn * 100, 1) + ' %', 'abonnées perdues chaque mois'),
+      kpi('Churn mensuel', f(churn * 100, 1) + ' %', 'abonnées perdues chaque mois', '', base ? mark('churn', churn * 100, ' %', false) : ''),
       kpi('LTV', ltv === null ? '—' : short(ltv), 'marge brute laissée par une abonnée sur sa durée de vie'),
       kpi('CAC', cac === null ? '—' : price(Math.round(cac * 100) / 100), cac === null ? 'aucune dépense d\'acquisition saisie' : 'publicité et acquisition / nouvelle cliente'),
-      kpi('LTV / CAC', ratio === null ? '—' : f(ratio, 1), 'cible des investisseurs : 3 ou plus', ratio === null ? '' : ratio >= 3 ? 'good' : 'bad'),
-      kpi('Retour sur CAC', payback === null ? '—' : f(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition')])}
+      kpi('LTV / CAC', ratio === null ? '—' : f(ratio, 1), 'valeur d\'une cliente / coût pour l\'acquérir', '', mark('ltvcac', ratio, '')),
+      kpi('Retour sur CAC', payback === null ? '—' : f(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition', '', mark('payback', payback, ' mois', false))])}
     ${progKpis(r, s)}
     ${group('Rentabilité', [
       kpi('Chiffre d\'affaires HT', short(t.ca), periodName()),
-      kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)'),
+      kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)', '', t.ca ? mark('gm', gm * 100, ' %') : ''),
       kpi('EBITDA', short(ebitda), `${pctOf(ebitda, t.ca)} du CA · résultat d'exploitation, sans amortissements`, ebitda < 0 ? 'bad' : 'good'),
+      kpi('Règle des 40', rule40 === null ? '—' : f(rule40, 0), mrr * 12 >= 1e6 ? 'croissance annuelle (%) + marge EBITDA (%)' : 'croissance + marge EBITDA ; regardée à partir d\'environ 1 M€ d\'ARR', '', mrr * 12 >= 1e6 ? mark('rule40', rule40, '') : ''),
       kpi('Point mort', tr.breakEven ? monthName(tr.breakEven) : 'non atteint', `résultat mensuel positif ensuite${view.app === 'all' ? ', toute la société' : ''}`)])}
     ${group(view.app === 'all' ? 'Financement (toute la société)' : `Financement de ${esc(r.scope[0].a.name)}, comme une société à part`, [
       kpi('Besoin de financement', short(need), need ? `point bas en ${monthName(tr.low.month)}${view.app === 'all' ? ', apport de départ compris' : ', à lever ou à apporter'}` : 'la trésorerie ne passe pas sous zéro', need ? 'bad' : 'good'),
       kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
-      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel'),
+      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel', '', runway === null ? '' : mark('runway', runway, ' mois')),
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
-    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p></details>`;
+    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
+    <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 % et règle des 40 (références courantes du logiciel par abonnement) ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
 }
 
 function resultatPage() {
@@ -1526,6 +1545,7 @@ document.addEventListener('click', e => {
     save(); render();
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
+  } else if (t.id === 'benchReset') { state.bench = defaultBench(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();

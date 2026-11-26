@@ -529,3 +529,7 @@ dl.pl-lines dd { margin: 0; text-align: right; font-weight: 600; white-space: no
 .toolbar.four { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr) minmax(0, 1fr); }
 .toolbar.four .appsel { grid-column: 1 / -1; }
 @media (min-width: 768px) { .toolbar.four { grid-template-columns: 1.6fr 1.2fr .9fr 1fr; } .toolbar.four .appsel { grid-column: auto; } }
+.bench { align-self: flex-start; margin-top: 4px; font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 99px; }
+.bench.good { background: #dff5ec; color: #0b6b49; }
+.bench.ok { background: #fff1d6; color: #8a5300; }
+.bench.low { background: #fde3df; color: #a3261a; }
