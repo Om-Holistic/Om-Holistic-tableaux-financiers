@@ -1,0 +1,316 @@
+'use strict';
+// Interface : navigation entre pages, formulaires de paramètres et tableaux de résultats.
+
+const $ = id => document.getElementById(id);
+const money = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
+const price = x => (+x || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' €';
+const num = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0');
+const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const thisMonth = new Date().toISOString().slice(0, 7);
+
+// ---------- État ----------
+
+let state = defaultState();
+try {
+  const saved = JSON.parse(localStorage.getItem(STORAGE_KEY));
+  if (isValidState(saved)) state = migrate(saved);
+} catch { /* sauvegarde illisible : on garde les valeurs par défaut */ }
+const save = () => { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch { /* stockage indisponible */ } };
+
+const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0 };
+const PAGES = ['synthese', 'previsionnel', 'capacite', 'produits', 'reglages'];
+const SETTINGS_PAGES = ['produits', 'reglages'];
+
+// ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
+
+function field(label, path, value, type = 'number') {
+  const extra = type === 'number' ? ' min="0" step="any"' : '';
+  return `<label>${esc(label)}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
+}
+function check(label, path, value) {
+  return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
+}
+function fields(obj, prefix, defs) {
+  return '<div class="grid">' + defs.map(([k, l, t]) => field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
+}
+function resolve(path) {
+  const keys = path.split('.'), last = keys.pop();
+  return [keys.reduce((o, k) => o[k], state), last];
+}
+
+// Grille de prix en trois phases.
+function pricingEditor(grid, path, title) {
+  const now = phaseAt(grid, thisMonth);
+  const rows = grid.map((ph, k) => `<div class="phase">${fields(ph, path + '.' + k, [['label', 'Nom', 'text'], ['start', 'À partir de', 'month'], ['price', 'Prix (€)']])}</div>`).join('');
+  return `<fieldset><legend>${esc(title)}</legend>${rows}
+    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique.
+    Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p></fieldset>`;
+}
+
+const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine'], ['months', 'Progression (mois)'], ['step', 'Augmentation par palier']];
+
+// ---------- Pages de paramètres ----------
+
+function productsPage(a, i) {
+  const p = 'apps.' + i;
+  const programs = a.programs.map((q, j) => {
+    const t = p + '.programs.' + j;
+    const open = view.open?.has('p' + j) ? 'open' : '';
+    const current = phaseAt(q.pricing, thisMonth);
+    return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${price(current.price)} ce mois-ci</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
+      ${check('Programme actif', t + '.enabled', q.enabled)}
+      ${fields(q, t, [['name', 'Nom', 'text'], ['start', 'Début commercial', 'month'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes coach / cliente / semaine']])}
+      ${pricingEditor(q.pricing, t + '.pricing', 'Prix du programme (prix total payé à l\'inscription)')}
+      <fieldset><legend>Rythme d'inscriptions · 1. Bêta</legend>${check('Activer', t + '.beta', q.beta)}
+        ${fields(q, t, [['betaStart', 'Début', 'month'], ['betaCount', 'Cohortes'], ['betaSize', 'Clientes / cohorte'], ['betaInterval', 'Intervalle (mois)']])}</fieldset>
+      <fieldset><legend>2. Lancement</legend>${check('Activer', t + '.launch', q.launch)}
+        ${fields(q, t, [['launchWeeks', 'Durée (semaines)'], ['launchRate', 'Clientes / semaine']])}</fieldset>
+      <fieldset><legend>3. Développement puis croisière</legend>${fields(q, t, growth)}
+        ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
+        ${q.paliers.map((r, k) => fields(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Semaines']]) + `<button data-remove="${t}.paliers.${k}">Supprimer le palier</button>`).join('')}
+        <button data-add="${t}.paliers">Ajouter un palier</button></fieldset>
+      <fieldset><legend>Promotions ponctuelles</legend>
+        ${q.promos.map((r, k) => fields(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']]) + `<button data-remove="${t}.promos.${k}">Supprimer</button>`).join('')}
+        <button data-add="${t}.promos">Ajouter une promotion</button>
+        <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p></fieldset>
+      <button class="danger" data-remove="${t}">Supprimer le programme</button>
+    </details>`;
+  }).join('');
+  return `<h2>Programmes de ${esc(a.name)}</h2>${programs || '<p class="muted">Aucun programme.</p>'}
+    <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
+    <h2>Abonnements ${esc(a.name)}</h2>
+    <div class="card">${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}</div>
+    <details class="card" id="sd" ${view.open?.has('sd') ? 'open' : ''}><summary>Abonnement direct (sans programme)</summary>
+      ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel')}
+      <fieldset><legend>Rythme d'abonnements</legend>${fields(a.sub, p + '.sub', [['start', 'Début', 'month'], ...growth, ['duration', 'Durée moyenne (mois)']])}
+      <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p></fieldset></details>
+    <details class="card" id="sp" ${view.open?.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
+      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel')}
+      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>`;
+}
+
+function settingsPage(a, i) {
+  const p = 'apps.' + i;
+  return `<h2>Réglages de ${esc(a.name)}</h2>
+    <div class="card">${fields(a, p, [['name', 'Nom', 'text'], ['start', 'Début des prévisions', 'month'], ['cost', 'Charges mensuelles (€)']])}</div>
+    <div class="card">
+    <fieldset><legend>Capacité de coaching</legend>
+      ${fields(a, p, [['capacity', 'Clientes coachées en même temps'], ['hours', 'Heures coach / semaine']])}
+      ${check('Limiter les inscriptions à la capacité', p + '.restrict', a.restrict)}
+      ${check('Liste d\'attente pour les inscriptions refusées', p + '.waitlist', a.waitlist)}
+      ${a.capacityChanges.map((c, j) => fields(c, p + '.capacityChanges.' + j, [['date', 'À partir de', 'month'], ['capacity', 'Capacité']]) + `<button data-remove="${p}.capacityChanges.${j}">Supprimer</button>`).join('')}
+      <button data-add="${p}.capacityChanges">Ajouter une évolution de capacité</button></fieldset>
+    ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}</div>
+    <h2>Toutes les applications</h2>
+    <div class="card">
+    <div class="row"><button id="addApp">Ajouter une application</button><button id="export">Exporter les paramètres</button>
+    <label class="file">Importer des paramètres<input id="import" type="file" accept=".json"></label></div>
+    <p id="importMsg" class="warn"></p></div>`;
+}
+
+// ---------- Pages de résultats ----------
+
+function inPeriod(month) {
+  const y = +month.slice(0, 4), mo = +month.slice(5);
+  if (view.period === 7) return true;
+  if (y !== view.year) return false;
+  if (view.period === 0) return true;
+  if (view.period <= 2) return Math.ceil(mo / 6) === view.period;
+  return Math.ceil(mo / 3) === view.period - 2;
+}
+const periodName = () => view.period === 7 ? "sur tout l'horizon" : (['en ', 'au 1er semestre ', 'au 2e semestre ', 'au 1er trimestre ', 'au 2e trimestre ', 'au 3e trimestre ', 'au 4e trimestre '][view.period] + view.year);
+const table = (heads, rows, cls = []) => '<thead><tr>' + heads.map(h => `<th>${h}</th>`).join('') + '</tr></thead><tbody>'
+  + rows.map((r, i) => `<tr class="${cls[i] || ''}">` + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('') + '</tbody>';
+const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
+
+function results() {
+  const all = state.apps.map(a => ({ a, ...simulate(a) }));
+  const scope = view.app === 'all' ? all : [all[+view.app] || all[0]];
+  const rows = scope.flatMap(x => x.months.filter(m => inPeriod(m.month)));
+  const keys = [...new Set(rows.map(r => r.month))].sort();
+  const F = ['sales', 'directCA', 'postCA', 'total', 'admissions', 'net', 'cost', 'active', 'direct', 'post'];
+  const byMonth = keys.map(k => ({ month: k, ...Object.fromEntries(F.map(f => [f, rows.filter(r => r.month === k).reduce((s, r) => s + r[f], 0)])) }));
+  const sum = f => rows.reduce((s, r) => s + r[f], 0);
+  return { scope, keys, byMonth, sum };
+}
+
+// Une ligne par produit, avec sa part du CA de la période.
+function productLines(r) {
+  const lines = [];
+  for (const x of r.scope) {
+    const ms = x.months.filter(m => inPeriod(m.month)), last = ms.at(-1);
+    const prefix = r.scope.length > 1 ? esc(x.a.name) + ' · ' : '';
+    x.a.programs.forEach((p, i) => lines.push({ name: prefix + esc(p.name), off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
+      detail: `${num(ms.reduce((s, m) => s + m.products[i].admissions, 0))} inscriptions · ${num(last?.products[i].active || 0)} en cours en fin de période` }));
+    lines.push({ name: prefix + 'Abonnement direct', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA, 0), detail: `${num(last?.direct || 0)} abonnées en fin de période` });
+    lines.push({ name: prefix + 'Abonnement après programme', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.postCA, 0), detail: `${num(last?.post || 0)} abonnées en fin de période` });
+  }
+  const max = Math.max(1, ...lines.map(l => l.ca));
+  return lines.map(l => `<div class="prod"><span>${l.name}${l.off ? ' <span class="tag">Inactif</span>' : ''}</span><b>${money(l.ca)}</b>
+    <span class="meter"><i style="width:${(l.ca / max * 100).toFixed(1)}%;background:${l.color}"></i></span><span class="muted">${l.detail}</span></div>`).join('');
+}
+
+// Barres empilées : programmes (sauge) et abonnements (argile), sur une échelle arrondie.
+function chart(byMonth) {
+  const W = Math.max(320, byMonth.length * 26), H = 190, left = 44, bottom = 22, top = 8;
+  const raw = Math.max(1, ...byMonth.map(m => m.total));
+  const mag = 10 ** Math.floor(Math.log10(raw)), max = Math.ceil(raw / mag / 2) * mag * 2 || 1;
+  const y = v => top + (H - top - bottom) * (1 - v / max), bw = (W - left) / Math.max(1, byMonth.length);
+  const ticks = [0, .25, .5, .75, 1].map(f => f * max);
+  const short = v => v >= 1000 ? (v / 1000).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' k' : num(v);
+  const every = Math.max(1, Math.ceil(byMonth.length / 12));
+  const MOIS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Chiffre d'affaires mensuel">`
+    + ticks.map(t => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text x="${left - 6}" y="${y(t) + 3}" text-anchor="end">${short(t)}</text>`).join('')
+    + byMonth.map((m, i) => {
+      const x = left + i * bw + bw * .15, w = bw * .7, subs = m.directCA + m.postCA;
+      const label = i % every === 0 ? `<text x="${x + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${byMonth.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
+      return `<g><title>${m.month} : ${money(m.total)} (programmes ${money(m.sales)}, abonnements ${money(subs)})</title>
+        <rect x="${x}" y="${y(m.sales)}" width="${w}" height="${y(0) - y(m.sales)}" rx="2" fill="var(--sage)"/>
+        <rect x="${x}" y="${y(m.total)}" width="${w}" height="${Math.max(0, y(m.sales) - y(m.total))}" rx="2" fill="var(--clay)"/></g>${label}`;
+    }).join('') + '</svg>';
+}
+
+function synthesePage() {
+  const r = results();
+  const total = r.sum('total'), sales = r.sum('sales'), subs = r.sum('directCA') + r.sum('postCA'), net = r.sum('net'), cost = r.sum('cost');
+  const last = r.byMonth.at(-1) || {};
+  const pct = x => total ? (x / total * 100).toFixed(1) : 0;
+  return `<div class="hero">
+      <div><small>Chiffre d'affaires ${periodName()}</small><div class="big">${money(total)}</div></div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <div class="share"><i style="width:${pct(sales)}%;background:var(--sage)"></i><i style="width:${pct(subs)}%;background:var(--clay)"></i></div>
+        <div class="split"><div><span>Programmes</span><b>${money(sales)}</b></div><div><span>Abonnements</span><b>${money(subs)}</b></div></div>
+      </div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><small>Résultat avant impôts</small><b class="${net < 0 ? 'bad' : 'good'}">${money(net)}</b></div>
+      <div class="kpi"><small>CA mensuel moyen</small><b>${money(total / Math.max(1, r.keys.length))}</b></div>
+      <div class="kpi"><small>Inscriptions aux programmes</small><b>${num(r.sum('admissions'))}</b></div>
+      <div class="kpi"><small>Abonnées en fin de période</small><b>${num((last.direct || 0) + (last.post || 0))}</b></div>
+    </div>
+    ${cost === 0 ? '<p class="muted">Aucune charge saisie : le résultat est égal au chiffre d\'affaires. Les charges se règlent dans Réglages.</p>' : ''}
+    <div class="two">
+      <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
+        <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
+        <div class="chart">${chart(r.byMonth)}</div></details>
+      <details class="card" id="s-prod" open><summary>Revenus par produit</summary><div>${productLines(r)}</div></details>
+    </div>`;
+}
+
+function previsionnelPage() {
+  const r = results();
+  const heads = ['Mois', 'Programmes', 'Abo. direct', 'Abo. après prog.', 'CA', 'Charges', 'Résultat', 'En programme', 'Abonnées'];
+  const line = m => [m.month, money(m.sales), money(m.directCA), money(m.postCA), `<b>${money(m.total)}</b>`, money(m.cost), signed(m.net), num(m.active), num(m.direct + m.post)];
+  // Un bloc dépliable par trimestre, avec son total en en-tête.
+  const quarters = new Map();
+  for (const m of r.byMonth) { const q = m.month.slice(0, 4) + ' · T' + Math.ceil(+m.month.slice(5) / 3); (quarters.get(q) || quarters.set(q, []).get(q)).push(m); }
+  const blocks = [...quarters].map(([q, ms], i) => {
+    const s = f => ms.reduce((t, m) => t + m[f], 0);
+    const tot = { month: 'Total', sales: s('sales'), directCA: s('directCA'), postCA: s('postCA'), total: s('total'), cost: s('cost'), net: s('net'), active: ms.at(-1).active, direct: ms.at(-1).direct, post: ms.at(-1).post };
+    const id = 'q' + q.replace(/\W/g, '');
+    const open = view.open.has(id) || (!view.open.size && i === 0) ? 'open' : '';
+    return `<details class="card" id="${id}" ${open}><summary>${q}<span class="sum-sub">${money(tot.total)} · résultat ${money(tot.net)}</span></summary>
+      <div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>`;
+  }).join('');
+  return `<h2>Prévisions mois par mois</h2>${blocks}
+    <details class="card" id="pv-prod"><summary>Par produit</summary><div>${productLines(r)}</div></details>`;
+}
+
+function capacitePage() {
+  const r = results();
+  const wr = r.scope.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name, limit: x.a.hours })));
+  const over = wr.filter(w => w.people > w.cap || w.hours > w.limit).length;
+  return `<div class="kpis">
+      <div class="kpi"><small>Pic de clientes en même temps</small><b>${num(Math.max(0, ...wr.map(w => w.people)))}</b></div>
+      <div class="kpi"><small>Pic d'heures de coaching / semaine</small><b>${Math.max(0, ...wr.map(w => w.hours)).toFixed(1)} h</b></div>
+      <div class="kpi"><small>Semaines au-dessus de la capacité</small><b class="${over ? 'bad' : 'good'}">${over}</b></div>
+      <div class="kpi"><small>En attente en fin de période</small><b>${num(wr.at(-1)?.waiting || 0)}</b></div>
+    </div>
+    <details class="card" id="c-weeks"><summary>Détail semaine par semaine</summary>
+      <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Capacité', 'Heures', 'En attente'],
+        wr.map(w => [w.date, esc(w.name), w.demand, w.admitted, w.people, w.cap, w.hours.toFixed(1), w.waiting]))}</table></div></details>`;
+}
+
+// ---------- Rendu ----------
+
+function renderToolbar() {
+  const settings = SETTINGS_PAGES.includes(view.page);
+  if (settings && view.app === 'all') view.app = '0';
+  $('app').innerHTML = (settings ? '' : '<option value="all">Om Holistic · consolidé</option>')
+    + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
+  $('app').value = view.app;
+  document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings; });
+  const years = [...new Set(state.apps.flatMap(a => { const y = +a.start.slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
+  if (!years.includes(view.year)) view.year = years[0];
+  $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
+  $('year').value = view.year;
+  $('period').value = view.period;
+  document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('current', a.hash === '#' + view.page));
+}
+
+function render(fresh = false) {
+  // Garde ouvertes les zones dépliées, sauf en arrivant sur une nouvelle page.
+  view.open = fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
+  renderToolbar();
+  const i = +view.app || 0, a = state.apps[i];
+  const pages = { synthese: synthesePage, previsionnel: previsionnelPage, capacite: capacitePage, produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  $('page').innerHTML = pages[view.page]();
+}
+
+// ---------- Événements ----------
+
+function route() {
+  const page = location.hash.slice(1);
+  view.page = PAGES.includes(page) ? page : 'synthese';
+  render(true);
+  window.scrollTo(0, 0);
+}
+window.addEventListener('hashchange', route);
+
+document.addEventListener('change', async e => {
+  const t = e.target;
+  if (t.dataset.path) {
+    const [o, k] = resolve(t.dataset.path);
+    o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
+    save();
+    if (t.type === 'checkbox' || k === 'name') render(); else renderToolbar();
+  } else if (t.id === 'app') { view.app = t.value; render(true); }
+  else if (t.id === 'year') { view.year = +t.value; render(); }
+  else if (t.id === 'period') { view.period = +t.value; render(); }
+  else if (t.id === 'import') {
+    try {
+      const x = JSON.parse(await t.files[0].text());
+      if (!isValidState(x)) throw Error('Ce fichier ne ressemble pas à un export de ce tableau de bord.');
+      state = migrate(x); view.app = '0'; save(); render();
+    } catch (err) { $('importMsg').textContent = err.message; }
+  }
+});
+
+document.addEventListener('click', e => {
+  const t = e.target;
+  if (t.dataset.add) {
+    const [o, k] = resolve(t.dataset.add);
+    const fresh = {
+      programs: () => program('Nouveau programme', thisMonth, [100, 150, 200], 8),
+      paliers: () => ({ rate: 2, weeks: 8 }),
+      promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
+      capacityChanges: () => ({ date: thisMonth, capacity: 60 })
+    }[k];
+    o[k].push(fresh()); save(); render();
+  } else if (t.dataset.remove) {
+    const [o, k] = resolve(t.dataset.remove);
+    o.splice(+k, 1); save(); render();
+  } else if (t.dataset.removeApp) {
+    state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
+  } else if (t.id === 'addApp') {
+    state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
+  } else if (t.id === 'export') {
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }));
+    link.download = 'om-holistic-finances.json';
+    link.click();
+  }
+});
+
+route();
