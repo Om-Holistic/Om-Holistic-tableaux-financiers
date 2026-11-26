@@ -1,0 +1,244 @@
+'use strict';
+// Moteur de simulation : calcule semaine par semaine les admissions aux programmes,
+// la capacité de coaching et les abonnements, puis agrège le tout par mois.
+// Aucune dépendance au navigateur : ce fichier est aussi testé avec Node.
+
+if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, coachAt, addMonths } = require('./model.js');
+
+const DAY = 86400000, WEEK = 7 * DAY;
+const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
+const monthDate = k => new Date(k + '-01T00:00:00Z');
+const monthKey = d => d.toISOString().slice(0, 7);
+const addWeeks = (d, k) => new Date(+d + k * WEEK);
+const shiftMonth = (d, k) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1));
+// Premier lundi à partir de la date (la date elle-même si c'est un lundi).
+const firstMonday = d => new Date(+d + ((8 - d.getUTCDay()) % 7) * DAY);
+
+// Une semaine qui chevauche deux mois est répartie au prorata des jours,
+// pour que les mois de 4 et de 5 lundis ne créent pas de dents de scie.
+function weekShares(d) {
+  const next = shiftMonth(d, 1);
+  const inFirst = Math.min(7, (next - d) / DAY) / 7;
+  return inFirst >= 1 ? [[monthKey(d), 1]] : [[monthKey(d), inFirst], [monthKey(next), 1 - inFirst]];
+}
+
+// Rythme d'acquisition hebdomadaire après w semaines : progression linéaire
+// par paliers de l'objectif de départ à l'objectif cible, ou paliers personnalisés.
+function weeklyRate(p, w) {
+  const a = Math.floor(pos(p.initial)), b = Math.floor(pos(p.target));
+  const step = Math.max(1, Math.floor(pos(p.step, 1)));
+  const duration = Math.max(1, Math.round(pos(p.months, 24) * 52 / 12));
+  const changes = Math.ceil(Math.abs(b - a) / step);
+  if (p.palierMode && p.paliers?.length) {
+    for (const q of p.paliers) {
+      if (w < pos(q.weeks)) return Math.floor(pos(q.rate));
+      w -= pos(q.weeks);
+    }
+    return b;
+  }
+  return a + Math.sign(b - a) * Math.min(Math.abs(b - a), Math.floor(Math.max(0, w) * changes / duration) * step);
+}
+
+// Taux de survie mensuel d'un abonnement : résiliation mensuelle = 1 / durée moyenne.
+const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 1;
+
+function emptyMonth(month, a) {
+  return {
+    month, sales: 0, admissions: 0, finished: 0, active: 0,
+    newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
+    products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0
+  };
+}
+
+// Abonnées CHRYSALISS seul qui achètent un programme : il faut connaître le nombre d'abonnées de chaque mois.
+// On fait donc un premier passage sans ces achats (ils ne modifient pas ce nombre), puis le passage complet.
+function simulate(a, soloStock) {
+  if (!soloStock && a.programs.some(p => p.enabled && pos(p.fromSolo) > 0)) {
+    const first = simulate(a, new Map());
+    soloStock = new Map(first.months.map(m => [m.month, m.direct + m.post]));
+  }
+  soloStock = soloStock || new Map();
+  const start = monthDate(appStart(a));
+  const end = new Date(Date.UTC(start.getUTCFullYear() + 5, 11, 31));
+  const months = new Map();
+  for (let d = start; d <= end; d = shiftMonth(d, 1)) months.set(monthKey(d), emptyMonth(monthKey(d), a));
+  // Ajoute une valeur hebdomadaire aux mois couverts par la semaine.
+  const credit = (d, fn) => { for (const [k, share] of weekShares(d)) { const m = months.get(k); if (m) fn(m, share); } };
+
+  const events = [], weekly = [], pending = a.programs.map(() => 0);
+  const coaching = a.programs.length > 0;
+
+  // Calendrier de chaque programme : cohortes de test (premier lundi de leur mois), puis lancement commercial.
+  const configs = a.programs.map(p => ({
+    p,
+    cohorts: (p.cohorts || []).filter(c => c.date).map(c => ({ week: +firstMonday(monthDate(c.date)), size: Math.floor(pos(c.size)) })),
+    commercial: p.start ? firstMonday(monthDate(p.start)) : null
+  }));
+
+  const subStart = a.sub.start ? firstMonday(monthDate(a.sub.start)) : null;
+
+  for (let d = firstMonday(start); d <= end; d = addWeeks(d, 1)) {
+    const m = months.get(monthKey(d));
+    if (!m) continue;
+    const active = events.filter(e => e.end > d);
+    const step = capacityAt(a, monthKey(d));
+    // Heures par cliente ce mois-ci : le temps de coaching peut baisser avec le temps (paliers du programme).
+    const perH = i => coachAt(a.programs[i], monthKey(d)) / 60;
+    // Une seule limite : les heures de coaching disponibles (les tiennes + celles des coachs embauchées).
+    const own = step ? pos(step.hours) : Infinity, hired = step ? pos(step.hired) : 0, limit = own + hired;
+    let availableH = Math.max(0, limit - active.reduce((s, e) => s + e.count * perH(e.i), 0));
+    let demand = 0, admitted = 0;
+
+    configs.forEach(({ p, cohorts, commercial }, i) => {
+      if (!p.enabled) return;
+      let want = cohorts.filter(c => c.week === +d).reduce((s, c) => s + c.size, 0);
+      if (commercial) {
+        const w = Math.floor((d - commercial) / WEEK);
+        const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
+        want += w < 0 ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
+      }
+      // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage annuel, réparti par semaine), dès son lancement.
+      let fromSolo = 0;
+      if (commercial && d >= commercial && pos(p.fromSolo) > 0) {
+        const prev = soloStock.get(monthKey(shiftMonth(monthDate(monthKey(d)), -1))) || 0;
+        fromSolo = prev * Math.min(100, pos(p.fromSolo)) / 100 / 52;
+        want += fromSolo;
+      }
+      if (a.waitlist) want += pending[i];
+      demand += want;
+      const perClient = perH(i);
+      const count = a.restrict && perClient > 0 ? Math.min(want, Math.floor(availableH / perClient + 1e-9)) : want;
+      pending[i] = a.waitlist ? want - count : 0;
+      availableH = Math.max(0, availableH - count * perClient);
+      if (!count) return;
+
+      let price = pos(phaseAt(p.pricing, monthKey(d)).price);
+      const promo = (p.promos || []).find(q => monthKey(d) >= q.start && monthKey(d) <= q.end);
+      if (promo) price = pos(promo.price);
+
+      const e = { i, count, solo: want > 0 ? count * fromSolo / want : 0, end: addWeeks(d, Math.max(1, Math.floor(pos(p.duration)))) };
+      events.push(e); active.push(e);
+      credit(d, (mm, share) => {
+        mm.sales += count * price * share; mm.admissions += count * share;
+        mm.products[i].sales += count * price * share; mm.products[i].admissions += count * share;
+        mm.products[i].fromSolo += e.solo * share;
+      });
+      admitted += count;
+    });
+
+    const people = active.reduce((s, e) => s + e.count, 0);
+    const hours = active.reduce((s, e) => s + e.count * perH(e.i), 0);
+    m.active = people;
+    m.products.forEach((p, i) => { p.active = active.filter(e => e.i === i).reduce((s, e) => s + e.count, 0); });
+    // Clientes moyennes du mois (semaines-clientes / semaines du mois) et heures de coaching, par programme.
+    if (hired) credit(d, (mm, share) => { mm.hiredHours += hired * share; });
+    credit(d, (mm, share) => {
+      const weeksInMonth = new Date(Date.UTC(+mm.month.slice(0, 4), +mm.month.slice(5), 0)).getUTCDate() / 7;
+      for (const e of active) {
+        mm.products[e.i].clients += e.count * share / weeksInMonth;
+        mm.products[e.i].coachHours += e.count * perH(e.i) * share;
+      }
+    });
+    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, own, hired, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
+
+    // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
+    if (subStart && d >= subStart) {
+      const trial = pos(a.sub.trialDays);
+      const count = weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * (trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1);
+      const paid = new Date(+d + trial * DAY);
+      const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
+      credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
+      if (trial > 0) credit(d, (mm, share) => { mm.trials += weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * share; });
+    }
+  }
+
+  // Fins de programme. Les clientes venues de CHRYSALISS seul y sont déjà abonnées : elles ne comptent pas dans la conversion.
+  for (const e of events) credit(e.end, (m, share) => {
+    m.finished += e.count * share; m.products[e.i].finished += e.count * share; m.products[e.i].finishedNew += (e.count - e.solo) * share;
+  });
+
+  // Stocks d'abonnées, par phase de prix d'entrée (pour garder le prix d'entrée si demandé).
+  const directGrid = a.sub.directPricing, postGrid = a.sub.postPricing;
+  let direct = [0, 0, 0], post = a.programs.map(() => [0, 0, 0]);
+  const revenue = (stock, grid, month) => a.sub.lockPrice
+    ? stock.reduce((s, v, k) => s + v * pos(grid[k]?.price), 0)
+    : stock.reduce((s, v) => s + v, 0) * pos(phaseAt(grid, month).price);
+
+  for (const m of months.values()) {
+    direct = direct.map((v, k) => v * survival(a.sub.duration) + m.newDirect[k]);
+    const postPhase = phaseAt(postGrid, m.month).index;
+    post = post.map((stock, i) => stock.map((v, k) => v * survival(a.sub.postDuration)
+      + (k === postPhase ? m.products[i].finishedNew * Math.min(100, pos(a.programs[i].toSolo)) / 100 : 0)));
+    m.direct = direct.reduce((s, v) => s + v, 0);
+    m.post = post.reduce((s, stock) => s + stock.reduce((t, v) => t + v, 0), 0);
+    m.directCA = revenue(direct, directGrid, m.month);
+    m.products.forEach((p, i) => { p.post = revenue(post[i], postGrid, m.month); });
+    m.postCA = m.products.reduce((s, p) => s + p.post, 0);
+    m.total = m.sales + m.directCA + m.postCA;
+  }
+  return { months: [...months.values()], weekly };
+}
+
+// Objectifs d'abonnées par paliers : pour chaque palier (au bout de X mois, N abonnées),
+// le plus petit rythme hebdomadaire qui l'atteint, en simulant (durée d'abonnement et essai compris).
+// Ne compte que les abonnées directes : celles qui viennent d'un programme s'ajoutent en plus.
+function goalPlan(a) {
+  const g = a.sub.goal || {}, start = a.sub.start;
+  const steps = (g.steps || []).filter(s => pos(s.months) > 0 && pos(s.count) > 0).sort((x, y) => x.months - y.months);
+  const conv = pos(a.sub.trialDays) > 0 ? Math.max(1, Math.min(100, pos(a.sub.trialConversion, 100))) / 100 : 1;
+  if (!start || !steps.length) return { segs: [], steps: [] };
+  const base = JSON.parse(JSON.stringify(a));
+  base.programs = [];
+  const stockAt = (segs, month) => {
+    base.sub.palierMode = true; base.sub.paliers = segs; base.sub.target = segs[segs.length - 1].rate;
+    const m = simulate(base).months.find(x => x.month === month);
+    return m ? m.direct : 0;
+  };
+  const segs = [], out = [];
+  let used = 0;
+  for (const st of steps) {
+    const weeks = Math.round(pos(st.months) * 52 / 12) - used;
+    if (weeks <= 0) continue;
+    const at = addMonths(start, Math.round(pos(st.months)));
+    let rate;
+    if (g.kind === 'new') rate = Math.ceil(pos(st.count) / 52 / conv - 1e-9);
+    else {
+      let lo = 0, hi = 1;
+      while (hi < 1e6 && stockAt([...segs, { rate: hi, weeks }], at) < pos(st.count)) { lo = hi; hi *= 2; }
+      while (hi - lo > 1) { const mid = (lo + hi) >> 1; if (stockAt([...segs, { rate: mid, weeks }], at) >= pos(st.count)) hi = mid; else lo = mid; }
+      rate = hi;
+    }
+    segs.push({ rate, weeks });
+    used += weeks;
+    out.push({ months: pos(st.months), count: pos(st.count), at, rate, paid: rate * conv, reached: g.kind === 'new' ? rate * conv * 52 : stockAt(segs.slice(), at) });
+  }
+  return { segs, steps: out, conv };
+}
+
+// Objectif d'inscriptions d'un programme par paliers (au bout de X mois après le lancement, N inscriptions par an).
+// Les abonnées de l'abonnement seul qui achètent le programme (d'après la simulation `sim`) comptent dans l'objectif.
+// Pour chaque palier : rythme direct nécessaire, clientes en même temps et heures de coaching qu'il demande.
+function programGoalPlan(a, j, sim) {
+  const q = a.programs[j], g = q.goal || {};
+  const steps = (g.steps || []).filter(s => pos(s.months) > 0 && pos(s.count) > 0).sort((x, y) => x.months - y.months);
+  if (!q.start || !steps.length) return { segs: [], steps: [] };
+  const segs = [], out = [];
+  let used = 0;
+  for (const st of steps) {
+    const weeks = Math.round(pos(st.months) * 52 / 12) - used;
+    if (weeks <= 0) continue;
+    const at = addMonths(q.start, Math.round(pos(st.months)));
+    const m = sim.find(x => x.month === at);
+    const fromSoloYear = m ? m.products[j].fromSolo * 12 : 0;
+    const rate = Math.ceil(Math.max(0, pos(st.count) - fromSoloYear) / 52 - 1e-9);
+    const parallel = (rate + fromSoloYear / 52) * pos(q.duration);
+    const step = capacityAt(a, at);
+    segs.push({ rate, weeks });
+    used += weeks;
+    out.push({ months: pos(st.months), count: pos(st.count), at, rate, fromSoloYear, parallel, hours: parallel * coachAt(q, at) / 60, minutes: coachAt(q, at),
+      capHours: step ? pos(step.hours) + pos(step.hired) : null, planYear: m ? m.products[j].admissions * 12 : 0 });
+  }
+  return { segs, steps: out };
+}
+
+if (typeof module !== 'undefined') module.exports = { simulate, weeklyRate, weekShares, goalPlan, programGoalPlan };
