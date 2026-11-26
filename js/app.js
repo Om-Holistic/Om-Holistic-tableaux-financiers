@@ -1870,6 +1870,7 @@ function renderToolbar() {
   $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
   $('year').value = view.year;
   $('period').value = view.period;
+  $('year').disabled = String(view.period) === '7';
   document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('current', a.hash === '#' + view.page));
 }
 

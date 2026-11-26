@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="utf-8">
-  <meta name="om-version" content="2026.11.26-25">
+  <meta name="om-version" content="2026.11.26-27">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <title>Om Finances</title>
   <meta name="theme-color" content="#1f1636">
@@ -13,7 +13,7 @@
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600&display=swap">
-  <link rel="stylesheet" href="styles.css?v=2026.11.26-25">
+  <link rel="stylesheet" href="styles.css?v=2026.11.26-27">
 </head>
 <body>
   <header>
@@ -35,32 +35,32 @@
   <main>
     <section class="toolbar">
       <label class="appsel"><span class="sr">Application</span><select id="app"></select></label>
-      <label class="stepsel" hidden><span class="sr">Découpage</span><select id="step">
-        <option value="m">Par mois</option>
-        <option value="q">Par trimestre</option>
-        <option value="s">Par semestre</option>
-        <option value="y">Par année</option>
+      <label class="period-only"><span class="lab">Année</span><select id="year"></select></label>
+      <label class="period-only"><span class="lab">Période</span><select id="period">
+        <option value="0">Toute l'année</option>
+        <option value="1">1er semestre</option>
+        <option value="2">2e semestre</option>
+        <option value="3">1er trimestre</option>
+        <option value="4">2e trimestre</option>
+        <option value="5">3e trimestre</option>
+        <option value="6">4e trimestre</option>
+        <option value="7">Tout le plan</option>
       </select></label>
-      <label class="period-only"><span class="sr">Année</span><select id="year"></select></label>
-      <label class="period-only"><span class="sr">Période</span><select id="period">
-        <option value="0">Année</option>
-        <option value="1">S1</option>
-        <option value="2">S2</option>
-        <option value="3">T1</option>
-        <option value="4">T2</option>
-        <option value="5">T3</option>
-        <option value="6">T4</option>
-        <option value="7">Tout</option>
+      <label class="stepsel" hidden><span class="lab">Détail par</span><select id="step">
+        <option value="m">mois</option>
+        <option value="q">trimestre</option>
+        <option value="s">semestre</option>
+        <option value="y">année</option>
       </select></label>
     </section>
     <section id="page"></section>
     <p class="muted foot">Hypothèses modifiables, enregistrées dans ce navigateur. Prévisions et non résultats observés. Pense à exporter tes paramètres régulièrement (page Réglages).</p>
   </main>
   <button id="saveBtn" class="savebtn" type="button"></button>
-  <script src="js/model.js?v=2026.11.26-25"></script>
-  <script src="js/engine.js?v=2026.11.26-25"></script>
-  <script src="js/pnl.js?v=2026.11.26-25"></script>
-  <script src="js/sync.js?v=2026.11.26-25"></script>
-  <script src="js/app.js?v=2026.11.26-25"></script>
+  <script src="js/model.js?v=2026.11.26-27"></script>
+  <script src="js/engine.js?v=2026.11.26-27"></script>
+  <script src="js/pnl.js?v=2026.11.26-27"></script>
+  <script src="js/sync.js?v=2026.11.26-27"></script>
+  <script src="js/app.js?v=2026.11.26-27"></script>
 </body>
 </html>
