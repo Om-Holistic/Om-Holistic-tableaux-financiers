@@ -248,6 +248,8 @@ function defaultBench() {
     payback: { good: 6, ok: 12 },  // retour sur CAC, mois
     gm: { good: 70, ok: 50 },      // marge brute, %
     rule40: { good: 40, ok: 20 },  // règle des 40 : croissance annuelle % + marge EBITDA %
+    ebitda: { good: 20, ok: 0 },   // marge EBITDA, % du CA
+    arr: { good: 1000000, ok: 250000 }, // ARR : environ 1 M€ attendu pour une série A, 250 k€ en amorçage
     runway: { good: 18, ok: 12 }   // autonomie, mois
   };
 }

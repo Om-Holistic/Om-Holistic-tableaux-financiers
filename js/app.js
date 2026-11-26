@@ -420,7 +420,7 @@ function syncStrip() {
   if (s.state === 'error') return `<a class="sync-strip" href="#reglages" data-goto="reglages" data-open="st-sync" data-anchor="st-sync">${esc(s.msg)} ›</a>`;
   return '';
 }
-const BENCH_ROWS = [['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
+const BENCH_ROWS = [['arr', 'ARR (€)', true], ['growth', 'Croissance du MRR (% / mois)', true], ['churn', 'Churn mensuel (%)', false], ['ltvcac', 'LTV / CAC', true], ['payback', 'Retour sur CAC (mois)', false], ['gm', 'Marge brute (%)', true], ['ebitda', 'Marge EBITDA (%)', true], ['rule40', 'Règle des 40', true], ['runway', 'Autonomie (mois)', true]];
 function benchSection() {
   const B = state.bench || defaultBench();
   return section('st-bench', 'promo', 'Repères investisseurs', 'seuils bon et correct des indicateurs clés', `
@@ -1284,16 +1284,17 @@ function kpiCard(r) {
   const f = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
   // Repère investisseur : vert (bon), orange (correct), rouge (en dessous). up : plus c'est haut, mieux c'est.
   const B = state.bench || defaultBench();
-  const mark = (k, v, unit, up = true) => {
-    if (v === null || v === undefined || !isFinite(v) || !B[k]) return '';
+  const mark = (k, v, unit, up = true, fmt = num) => {
+    const inf = v === Infinity;
+    if (v === null || v === undefined || (!isFinite(v) && !inf) || !B[k]) return '';
     const { good, ok } = B[k], lvl = up ? (v >= good ? 'good' : v >= ok ? 'ok' : 'low') : (v <= good ? 'good' : v <= ok ? 'ok' : 'low');
     // Jauge : zones faible / correct / bon, repère en trait, position de la valeur en point.
-    const max = Math.max(up ? good * 1.6 : ok * 1.5, v * 1.05, 1e-9), pos = x => Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
+    const max = Math.max(up ? good * 1.6 : ok * 1.5, inf ? 0 : v * 1.05, 1e-9), pos = x => x === Infinity ? '100.0' : Math.max(0, Math.min(100, x / max * 100)).toFixed(1);
     const zones = up ? `<i class="z low" style="width:${pos(ok)}%"></i><i class="z ok" style="width:${pos(good) - pos(ok)}%"></i><i class="z good" style="width:${100 - pos(good)}%"></i>`
       : `<i class="z good" style="width:${pos(good)}%"></i><i class="z ok" style="width:${pos(ok) - pos(good)}%"></i><i class="z low" style="width:${100 - pos(ok)}%"></i>`;
-    const gap = v - good, gapTxt = (gap >= 0 ? '+' : '−') + num(Math.abs(Math.round(gap * 10) / 10)).replace(/^(\d+)$/, '$1') + unit.replace(' / mois', '');
+    const gap = v - good, gapTxt = inf ? 'sans limite' : (gap >= 0 ? '+' : '−') + fmt(Math.abs(Math.round(gap * 10) / 10)) + unit;
     return `<div class="gauge ${lvl}"><div class="g-track">${zones}<b class="g-dot" style="left:${pos(v)}%"></b></div>
-      <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${num(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
+      <div class="g-t"><span class="tgt">repère ${up ? '≥' : '≤'} ${fmt(good)}${unit}</span><span class="gap">${gapTxt}${{ good: ' · bon', ok: ' · correct', low: ' · faible' }[lvl]}</span></div></div>`;
   };
   const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
   const yearGrowth = cmgr === null ? null : (Math.pow(1 + cmgr / 100, 12) - 1) * 100, ebitdaPct = t.ca ? ebitda / t.ca * 100 : null;
@@ -1302,7 +1303,7 @@ function kpiCard(r) {
   return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
-      kpi('ARR', short(mrr * 12), 'MRR × 12'),
+      kpi('ARR', short(mrr * 12), 'MRR × 12 · environ 1 M€ attendu pour une série A', '', mark('arr', mrr * 12, '', true, short)),
       kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', '', mark('growth', cmgr, ' %')),
       kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
     ${group('Économie unitaire', [
@@ -1316,16 +1317,16 @@ function kpiCard(r) {
     ${group('Rentabilité', [
       kpi('Chiffre d\'affaires HT', short(t.ca), periodName()),
       kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)', '', t.ca ? mark('gm', gm * 100, ' %') : ''),
-      kpi('EBITDA', short(ebitda), `${pctOf(ebitda, t.ca)} du CA · résultat d'exploitation, sans amortissements`, ebitda < 0 ? 'bad' : 'good'),
+      kpi('Marge EBITDA', ebitdaPct === null ? '—' : f(ebitdaPct) + ' %', `EBITDA ${short(ebitda)} · résultat d'exploitation, sans amortissements`, '', mark('ebitda', ebitdaPct, ' %')),
       kpi('Règle des 40', rule40 === null ? '—' : f(rule40, 0), mrr * 12 >= 1e6 ? 'croissance annuelle (%) + marge EBITDA (%)' : 'croissance + marge EBITDA ; regardée à partir d\'environ 1 M€ d\'ARR', '', mrr * 12 >= 1e6 ? mark('rule40', rule40, '') : ''),
       kpi('Point mort', tr.breakEven ? monthName(tr.breakEven) : 'non atteint', `résultat mensuel positif ensuite${view.app === 'all' ? ', toute la société' : ''}`)])}
     ${group(view.app === 'all' ? 'Financement (toute la société)' : `Financement de ${esc(r.scope[0].a.name)}, comme une société à part`, [
       kpi('Besoin de financement', short(need), need ? `point bas en ${monthName(tr.low.month)}${view.app === 'all' ? ', apport de départ compris' : ', à lever ou à apporter'}` : 'la trésorerie ne passe pas sous zéro', need ? 'bad' : 'good'),
       kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
-      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel', '', runway === null ? '' : mark('runway', runway, ' mois')),
+      kpi('Autonomie (runway)', runway === null ? 'illimitée' : f(runway, 0) + ' mois', runway === null ? 'la trésorerie ne baisse pas sur la période' : 'au rythme de consommation actuel', '', mark('runway', runway === null ? Infinity : runway, ' mois')),
       kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
     <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente. Impôts et cotisations du financement selon l'implantation « ${esc((state.implantation.scenarios.find(x => x.id === state.implantation.current) || {}).name || '—')} » (carte Implantation juste au-dessus).</p>
-    <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 % et règle des 40 (références courantes du logiciel par abonnement) ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
+    <p class="muted">Repères indicatifs pour une application d'abonnement grand public, à ajuster dans <a href="#reglages" data-goto="reglages" data-open="st-bench" data-anchor="st-bench">Réglages › Repères investisseurs</a>. Sources : LTV / CAC de 3 ou plus (a16z, « Why do investors care so much about LTV:CAC ») ; churn et rétention des abonnements santé et forme (RevenueCat, State of Subscription Apps), qui conseille aussi de suivre le retour sur CAC plutôt que le seul LTV / CAC ; marge brute de 70 %, marge EBITDA de 20 % et règle des 40 (références courantes du logiciel par abonnement) ; ARR d'environ 1 M€ pour une série A ; croissance de 15 % par mois et 18 mois d'autonomie après une levée (pratiques courantes des fonds d'amorçage).</p></details>`;
 }
 
 function resultatPage() {
