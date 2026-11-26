@@ -458,7 +458,7 @@ function coachingPage() {
     const a = state.apps[x.i], ai = x.i, ps = coachPaliers(a);
     const cards = ps.map((p, k) => palierCard(a, ai, p, palierStats(a, x.weekly, p), k === ps.length - 1)).join('');
     return `${view.app === 'all' ? `<h2>${esc(a.name)}</h2>` : ''}${cards}
-      <details class="card" id="co-chart-${ai}" open><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · par semaine, au plus fort de chaque mois</span></span></summary>
+      <details class="card" id="co-chart-${ai}" ${view.open.has(`co-chart-${ai}`) ? 'open' : ''}><summary><span>Heures nécessaires et tes heures<br><span class="sum-sub">${periodName()} · par semaine, au plus fort de chaque mois</span></span></summary>
         <div class="legend"><span><i style="background:var(--k-ins)"></i>Heures nécessaires</span><span><i style="background:var(--bad)"></i>Au-delà de tes heures</span><span><i class="dash"></i>Tes heures</span></div>
         <div class="chart cap-chart">${capacityChart(x)}</div></details>
       <details class="card" id="co-set-${ai}"><summary><span>Coût des coachs<br><span class="sum-sub">${money(+a.coachRate || 0)} de l'heure</span></span></summary>
@@ -604,7 +604,7 @@ function settingsPage(a, i) {
         { label: 'Dernière sauvegarde', mini: 'Sauvegarde', value: days === null ? 'Jamais' : days === 0 ? 'Aujourd\'hui' : `Il y a ${days} j`, cls: days === null || days > 14 ? 'warn-v' : '', hint: 'export du fichier', go: { page: 'reglages', open: 'st-save' } },
         { label: 'Données', mini: 'Synchro', value: Sync.on ? 'Synchronisées' : 'Cet appareil', cls: 'txt', hint: Sync.on ? 'iPhone, iPad et ordinateur' : 'active la synchro', go: { page: 'reglages', open: 'st-sync' } }
       ] })}
-    <details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
+    <details class="card product solo" id="st-app" ${view.open.has('st-app') ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
       ${fields(a, p, [['name', 'Nom de l\'application', 'text']])}
       <ul class="where">
         <li><a href="#produits">Produits et prix</a> : calendrier, cohortes de test, lancement, durée, prix en 3 phases, rythme d'inscriptions, objectifs d'abonnées, promotions, passerelles, période d'essai${a.programs.length ? ', capacité de coaching' : ''}.</li>
@@ -612,7 +612,7 @@ function settingsPage(a, i) {
       </ul>
       ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
     </details>
-    <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
+    <details class="card product tool-all" id="st-all" ${view.open.has('st-all') ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
       ${section('st-scen', 'ins', 'Scénarios', state.scenarios.list.map(x => esc(x.name)).join(' · ') + ' · affiché : ' + esc((currentScenario() || {}).name || ''), `
         <div class="grid">${select('Scénario affiché', 'scenarios.current', state.scenarios.current, state.scenarios.list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
         ${state.scenarios.list.map((x, k) => x.id === 'central' ? '' : `<h4>${esc(x.name)}</h4><div class="grid">${field('Inscriptions et\nabonnées (%)', `scenarios.list.${k}.volume`, x.volume)}${field('Prix\n(%)', `scenarios.list.${k}.price`, x.price)}${field('Durée\nd\'abonnement (%)', `scenarios.list.${k}.duration`, x.duration)}${field('Charges\n(%)', `scenarios.list.${k}.costs`, x.costs)}</div>`).join('')}
@@ -784,7 +784,7 @@ function alertsCard(r) {
   if (b) items.push(['mid', `${b} : exporte-les pour ne pas les perdre.`, { page: 'reglages', open: 'st-save' }]);
   if (t.breakEven) items.push(['ok', `Point mort en ${monthName(t.breakEven)} ; ton revenu de ${money(t.goal)} par mois ${t.payReached ? 'est atteint en ' + monthName(t.payReached) : 'n\'est pas encore atteint'}.`, { page: 'tresorerie' }]);
   const go = g => `href="#${g.page}" data-goto="${g.page}" data-open="${g.open || ''}" data-anchor="${g.open || ''}"${g.app !== undefined ? ` data-app="${g.app}"` : ''}`;
-  return `<details class="card" id="s-alerts" ${view.open.has('s-alerts') || !view.open.size ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">${items.filter(x => x[0] !== 'ok').length} point${items.filter(x => x[0] !== 'ok').length > 1 ? 's' : ''} d'attention · toutes applications</span></span></summary>
+  return `<details class="card" id="s-alerts" ${view.open.has('s-alerts') ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">${items.filter(x => x[0] !== 'ok').length} point${items.filter(x => x[0] !== 'ok').length > 1 ? 's' : ''} d'attention · toutes applications</span></span></summary>
     <ul class="alerts">${items.map(([k, text, g]) => `<li class="${k}"><a ${go(g)}>${text}<span class="from">›</span></a></li>`).join('') || '<li class="ok">Rien à signaler.</li>'}</ul></details>`;
 }
 
@@ -936,9 +936,9 @@ function usersPage() {
   return `${banner({ label: 'Utilisatrices', chip: periodChip(), big: num(total),
       note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
       tiles: base.slice(0, 4).map(tile) })}
-    ${bs.length ? `<details class="card" id="us-chart" open><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
+    ${bs.length ? `<details class="card" id="us-chart" ${view.open.has('us-chart') ? 'open' : ''}><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
       ${legend}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
-    <details class="card" id="us-table" ${view.open.has('us-table') || !view.open.has('us-table-closed') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
+    <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
       <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
 }
 
@@ -981,12 +981,12 @@ function tresoreriePage() {
         { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } }
       ] })}
     ${implantPick('tr-imp', 'les impôts et cotisations retirés de la trésorerie en dépendent')}
-    ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">point bas du plan : ${short(t.low.balance)} en ${monthName(t.low.month)}${lowIn && !months.some(m => m.month === t.low.month) ? ', hors de la période affichée' : ''}</span></span></summary>
+    ${need ? `<details class="card" id="tr-alert" ${view.open.has('tr-alert') ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">point bas du plan : ${short(t.low.balance)} en ${monthName(t.low.month)}${lowIn && !months.some(m => m.month === t.low.month) ? ', hors de la période affichée' : ''}</span></span></summary>
       <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
-    ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
+    ${bs.length ? `<details class="card" id="tr-chart" ${view.open.has('tr-chart') ? 'open' : ''}><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
       <div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
       <div class="chart">${cashChart(bs)}</div></details>
-    <details class="card" id="tr-table" open><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${rangeName} · touche une ligne pour le détail</span></span></summary>
+    <details class="card" id="tr-table" ${view.open.has('tr-table') ? 'open' : ''}><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${rangeName} · touche une ligne pour le détail</span></span></summary>
       ${ledger}
       <p class="muted">Encaissements : l'argent reçu (les ventes payées en plusieurs fois arrivent sur plusieurs mois), hors TVA. Impôts et cotisations selon l'implantation choisie, comptés chaque mois (en réalité, une partie se paie l'année suivante).</p></details>
     <details class="card" id="tr-range" ${view.open.has('tr-range') ? 'open' : ''}><summary><span>Plage de mois<br><span class="sum-sub">${view.cashFrom || view.cashTo ? 'personnalisée : ' : 'celle choisie en haut : '}${rangeName}</span></span></summary>
@@ -1004,14 +1004,14 @@ function tresoreriePage() {
 const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase()) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '');
 // Replié par défaut (une ligne : chiffre clé + 2 ou 3 repères) ; déplié, la note et les quatre tuiles.
 // Le choix replié / déplié est mémorisé sur l'appareil et vaut pour toutes les pages.
-const bannerOpen = () => { try { return localStorage.getItem('om-banner') === 'open'; } catch { return false; } };
+const bannerOpen = () => view.open.has('banner');
 function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
   const tile = t => {
     const inner = `<span class="t-l">${t.label}</span><b class="${t.cls || ''}">${compact(t.value)}</b>${t.hint ? `<span class="t-h">${compact(t.hint)}</span>` : ''}`;
     return t.go ? `<a class="b-tile" href="#${t.go.page}" data-goto="${t.go.page}" data-open="${t.go.open || ''}" data-anchor="${t.go.anchor || t.go.open || ''}">${inner}</a>` : `<div class="b-tile">${inner}</div>`;
   };
   const minis = tiles.filter(t => t.mini !== false).slice(0, 3).map((t, k) => `<span class="b-mini${k === 2 ? ' m3' : ''}"><small>${t.mini || t.label}</small><b class="${t.cls || ''}">${compact(t.value)}</b></span>`).join('');
-  return `<details class="hero banner" ${bannerOpen() ? 'open' : ''}>
+  return `<details class="hero banner" id="banner" ${bannerOpen() ? 'open' : ''}>
       <summary class="b-sum"><span class="b-head"><span class="b-label"><small>${label}</small>${chip ? `<span class="chip">${chip}</span>` : ''}</span>
         <b class="b-big ${bigCls}">${compact(big)}</b></span><span class="b-minis">${minis}</span></summary>
       <div class="b-body"><div class="b-main">${note ? `<p class="b-note">${compact(note)}</p>` : ''}${bar}</div>
@@ -1049,10 +1049,10 @@ function synthesePage() {
     ${alertsCard(r)}
     ${cashLink(r)}
     <div class="two">
-      <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
+      <details class="card" id="s-chart" ${view.open.has('s-chart') ? 'open' : ''}><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
         <div class="chart">${chart(r.byMonth)}</div></details>
-      <details class="card" id="s-prod" open><summary>Revenus par produit</summary><div>${productLines(r)}</div></details>
+      <details class="card" id="s-prod" ${view.open.has('s-prod') ? 'open' : ''}><summary>Revenus par produit</summary><div>${productLines(r)}</div></details>
     </div>`;
 }
 
@@ -1075,7 +1075,7 @@ function previsionnelPage() {
   const blocks = [...quarters].map(([q, qm], i) => {
     const t = f => qm.reduce((s, m) => s + m[f], 0);
     const id = 'q' + q.replace(/\W/g, '');
-    const open = view.open.has(id) || (!view.open.size && i === 0) ? 'open' : '';
+    const open = view.open.has(id) ? 'open' : '';
     const qn = t('net');
     return `<details class="card quarter" id="${id}" ${open}><summary><span>${q}<br><span class="sum-sub">CA ${money(t('total'))} · charges ${money(t('cost'))} · résultat <b class="${qn < 0 ? 'neg' : 'pos'}">${money(qn)}</b></span></span></summary>
       <div class="months">${qm.map(card).join('')}</div></details>`;
@@ -1100,7 +1100,7 @@ function previsionnelPage() {
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
     <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
-    <details class="card" id="pv-prod" ${view.open.has('pv-prod') || !view.open.size ? 'open' : ''}><summary>Par produit</summary><p class="muted">Touche un produit pour ouvrir ses réglages.</p><div>${productLines(r)}</div></details>
+    <details class="card" id="pv-prod" ${view.open.has('pv-prod') ? 'open' : ''}><summary>Par produit</summary><p class="muted">Touche un produit pour ouvrir ses réglages.</p><div>${productLines(r)}</div></details>
     ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}
     ${printButton()}`;
 }
@@ -1312,10 +1312,10 @@ function chargesPeriodCard(a, i, r) {
       `<dl class="pl-lines">${on.map(l => `<dt>${esc(l.name)}<small>${l.sub}</small></dt><dd>${money(l.v)}</dd>`).join('')}</dl>`);
   }).join('');
   const vTot = sum(variable), fTot = sum(fixed), sTot = sum(struct), margin = ca - vTot, result = ca - total;
-  const level = (id, title, v, body, open) => `<details class="pl-lvl" id="${id}" ${view.open.has(id) || (open && !view.open.size) ? 'open' : ''}><summary><span>${title}</span><b>${money(-v)}</b><small>${pctOf(v, ca)}</small></summary><div class="pl-body">${body || '<p class="muted">Aucune sur la période.</p>'}</div></details>`;
+  const level = (id, title, v, body, open) => `<details class="pl-lvl" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${title}</span><b>${money(-v)}</b><small>${pctOf(v, ca)}</small></summary><div class="pl-body">${body || '<p class="muted">Aucune sur la période.</p>'}</div></details>`;
   const sub = (title, v, cls = '') => `<div class="pl-sub ${cls}"><span>${title}</span><b class="${v < 0 ? 'neg' : ''}">${money(v)}</b><small>${pctOf(v, ca)}</small></div>`;
   const sc = currentScenario();
-  return `<details class="card" id="ch-period" ${view.open.has('ch-period') || !view.open.size ? 'open' : ''}><summary><span>Compte d'exploitation ${periodName()}<br><span class="sum-sub">charges ${money(total)} · résultat <b class="${result < 0 ? 'neg' : 'pos'}">${money(result)}</b></span></span></summary>
+  return `<details class="card" id="ch-period" ${view.open.has('ch-period') ? 'open' : ''}><summary><span>Compte d'exploitation ${periodName()}<br><span class="sum-sub">charges ${money(total)} · résultat <b class="${result < 0 ? 'neg' : 'pos'}">${money(result)}</b></span></span></summary>
     <div class="pl">
       ${sub('Chiffre d\'affaires HT', ca, 'pl-ca')}
       ${level('pl-var', 'Charges variables', vTot, byCat(variable, 'pv'), true)}
@@ -1352,7 +1352,7 @@ function chargesPage(a, i) {
       ] })}
     ${chargesPeriodCard(a, i, r)}
     ${acquisitionCard(a, p)}
-    <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
+    <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
       ${a.programs.length ? `<p class="muted">Coaching : heures à payer à des coachs × ${money(+a.coachRate || 0)} / h, calculées dans l'onglet <a href="#coaching" data-goto="coaching">Coaching</a>.</p>` : ''}
@@ -1421,7 +1421,7 @@ function scenarioCard() {
   const tests = [['volume', -10, 'Inscriptions et abonnées −10 %'], ['price', -10, 'Prix −10 %'], ['duration', -10, 'Durée d\'abonnement −10 %'], ['costs', 10, 'Charges +10 %']]
     .map(([k, d, label]) => ({ label, delta: scenarioTotals({ ...cur, id: 'sens', [k]: (+cur[k] || 0) + d }).result - base.result }));
   const max = Math.max(1, ...tests.map(x => Math.abs(x.delta)));
-  return `<details class="card" id="r-scen" ${view.open.has('r-scen') || !view.open.size ? 'open' : ''}><summary><span>Scénarios et sensibilité<br><span class="sum-sub">affiché partout : ${esc(cur.name)} · ${list.map(x => `${esc(x.name)} ${short(cols.find(c => c.sc.id === x.id).result)}`).join(' · ')}</span></span></summary>
+  return `<details class="card" id="r-scen" ${view.open.has('r-scen') ? 'open' : ''}><summary><span>Scénarios et sensibilité<br><span class="sum-sub">affiché partout : ${esc(cur.name)} · ${list.map(x => `${esc(x.name)} ${short(cols.find(c => c.sc.id === x.id).result)}`).join(' · ')}</span></span></summary>
     <div class="grid">${select('Scénario affiché dans tous les tableaux', 'scenarios.current', state.scenarios.current, list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="scroll"><table class="scen"><thead><tr><th></th>${cols.map(x => `<th class="${x.sc.id === cur.id ? 'cur' : ''}">${esc(x.sc.name)}</th>`).join('')}</tr></thead><tbody>
       ${row('Chiffre d\'affaires', x => x.ca)}${row('Charges', x => x.charges)}${row('<b>Résultat d\'exploitation</b>', x => x.result, true)}${row('Net pour toi', x => x.net, true)}
@@ -1480,7 +1480,7 @@ function implantCard(r) {
   const { im, ca, result, res, yearCa, over, best, cur, appName, share } = implantCalc(r);
   const row = x => [`${x.sc.id === curImplant() ? '<b>' : ''}${esc(x.sc.name)}${x.sc.id === curImplant() ? '</b>' : ''}${x === best ? ' <span class="tag on">Meilleur</span>' : ''}${over(x) ? ' <span class="tag todo">Plafond de CA dépassé</span>' : ''}`,
     signed(-x.fixed || 0), signed(-x.social || 0), signed(-(x.tax + x.dist) || 0), `<b>${signed(x.net)}</b>`, ca ? `${(x.net / ca * 100).toFixed(0)} %` : '—'];
-  return `<details class="card" id="r-implant" ${view.open.has('r-implant') || !view.open.size ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
+  return `<details class="card" id="r-implant" ${view.open.has('r-implant') ? 'open' : ''}><summary><span>Résultat net selon l'implantation<br><span class="sum-sub">${esc(cur.sc.name)} : ${money(cur.net)} ${periodName()}</span></span></summary>
     <div class="grid">${select('Implantation retenue', implantPath(), curImplant(), im.scenarios.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="net-split"><div><span>Résultat d'exploitation</span><b>${money(result)}</b></div><div><span>Frais de structure</span><b>${money(-cur.fixed || 0)}</b></div><div><span>Cotisations sociales</span><b>${money(-cur.social || 0)}</b></div><div><span>Impôts</span><b>${money(-(cur.tax + cur.dist) || 0)}</b></div><div class="net"><span>Net pour toi</span><b class="${cur.net < 0 ? 'neg' : ''}">${money(cur.net)}</b></div></div>
     ${over(cur) ? `<p class="warn">Le chiffre d'affaires de la société, toutes applications (environ ${money(yearCa)} par an), dépasse le plafond de ${money(+cur.sc.caLimit)} de ce statut.</p>` : ''}
@@ -1584,7 +1584,7 @@ function kpiCard(r) {
   const { s, t, last, mrr, cmgr, churn, base, arpu, gm, ltv, cac, ratio, payback, ebitda, ebitdaPct, rule40, tr, need, tm, endCash, burn, runway } = K, f = fmtN;
   const kpi = (label, value, hint, cls = '', bench = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${bench}</div>`;
   const group = (title, items) => `<h4 class="kpi-h">${title}</h4><div class="kpis">${items.join('')}</div>`;
-  return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
+  return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
     ${group('Revenus récurrents', [
       kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
       kpi('ARR', short(mrr * 12), 'revenu annuel récurrent : tes abonnements du mois × 12', '', arrMark(mrr * 12)),
@@ -1806,7 +1806,7 @@ function dossierCard(r) {
     : F.amount < +R.roundMin ? ` C'est sous une levée de pré-amorçage habituelle (${short(+R.roundMin)} à ${short(+R.roundMax)}) : des proches, un prêt d'honneur ou la BPI peuvent suffire.`
     : ` C'est le montant habituel d'une levée de pré-amorçage en France (${short(+R.roundMin)} à ${short(+R.roundMax)}), auprès de business angels, de proches et de la BPI.`;
   const implants = state.implantation.scenarios.map(sc => [sc.id, sc.name]);
-  return `<details class="card" id="${id}" ${view.open.has(id) || !view.open.size ? 'open' : ''}><summary><span>Dossier de levée de ${esc(a.name)}<br><span class="sum-sub">${short(F.amount)} en ${monthName(F.month)} (le plan demande ${short(F.need)}) · ${num(n)} mois d'autonomie · ${num(+P.target)} nouvelles abonnées par an ${hit ? 'dès ' + monthName(hit.month) : 'non atteint'}</span></span></summary>
+  return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Dossier de levée de ${esc(a.name)}<br><span class="sum-sub">${short(F.amount)} en ${monthName(F.month)} (le plan demande ${short(F.need)}) · ${num(n)} mois d'autonomie · ${num(+P.target)} nouvelles abonnées par an ${hit ? 'dès ' + monthName(hit.month) : 'non atteint'}</span></span></summary>
     <div class="kpis">
       ${kpi('Montant levé', short(F.amount), F.amount === F.need ? `en ${monthName(F.month)}, juste ce que le plan demande` : `en ${monthName(F.month)} · le plan demande ${short(F.need)} : ${F.amount >= F.need ? `${short(F.amount - F.need)} de marge` : `il manque ${short(F.need - F.amount)}`}`, F.amount >= F.need ? 'good' : 'bad')}
       ${kpi('Ta rémunération', money(+P.salary) + ' net', `${money(Math.round(+P.salary * (1 + (+P.social || 0) / 100)))} par mois pour la société${+P.salary2 > 0 && +P.salary2 !== +P.salary ? `, puis ${money(+P.salary2)} net après un an` : ''}`)}
@@ -1872,7 +1872,7 @@ function tiersCard(i) {
     row('Point mort', c => c.F.breakEven ? shortMonth(c.F.breakEven) : 'non atteint')
   ].join('');
   const id = 'lv-tiers';
-  return `<details class="card" id="${id}" ${view.open.has(id) || !view.open.size ? 'open' : ''}><summary><span>Les trois plans côte à côte<br><span class="sum-sub">${cols.map(c => `${{ avec: 'modeste', ambi: 'ambitieux', tres: 'très ambitieux' }[c.k]} ${K(c, 2030, v => short(v.t.ca))} en 2030`).join(' · ')}</span></span></summary>
+  return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>Les trois plans côte à côte<br><span class="sum-sub">${cols.map(c => `${{ avec: 'modeste', ambi: 'ambitieux', tres: 'très ambitieux' }[c.k]} ${K(c, 2030, v => short(v.t.ca))} en 2030`).join(' · ')}</span></span></summary>
     <div class="scroll"><table class="traj cmpx"><thead><tr><th></th>${cols.map(c => `<th class="${c.k === (view.levPlan || 'avec') ? 'cur' : ''}">${{ avec: 'Modeste', ambi: 'Ambitieux', tres: 'Très ambitieux' }[c.k]}</th>`).join('')}</tr></thead><tbody>${rows}</tbody></table></div>
     <p class="muted">Équipe : toi, plus une personne recrutée chaque fois que le chiffre d'affaires annualisé dépasse ${short(+planP(state.apps[i]).revPerFte)} de plus, à ${money(+planP(state.apps[i]).fteCost)} par mois charges comprises ; les coachs des programmes sont payées à l'heure à part. S'y ajoutent les frais généraux (${num(+planP(state.apps[i]).overhead)} % du CA), la publicité, les frais de paiement et les coûts par abonnée.</p></details>`;
 }
@@ -1939,7 +1939,7 @@ function leveePage() {
       ['LTV / CAC', o => ltvAll === null ? '—' : `<span class="lvt ${benchLevel('ltvcac', ltvAll / o.c)}">${fmtN(ltvAll / o.c, 1)}</span>`]
     ].map(([l, f]) => `<tr><th>${l}</th>${sens.map(o => cell(o, f(o))).join('')}</tr>`).join('');
     const worst = sens.filter(o => o.F.need > F.amount);
-    const sensCard = `<details class="card" id="lv-sens" ${view.open.has('lv-sens') || !view.open.size ? 'open' : ''}><summary><span>Si la publicité coûte plus ou moins cher<br><span class="sum-sub">${worst.length ? `ta levée ne suffit plus dès ${money(worst[0].c)} par abonnée` : `ta levée suffit jusqu'à ${money(cacs.at(-1))} par abonnée`}</span></span></summary>
+    const sensCard = `<details class="card" id="lv-sens" ${view.open.has('lv-sens') ? 'open' : ''}><summary><span>Si la publicité coûte plus ou moins cher<br><span class="sum-sub">${worst.length ? `ta levée ne suffit plus dès ${money(worst[0].c)} par abonnée` : `ta levée suffit jusqu'à ${money(cacs.at(-1))} par abonnée`}</span></span></summary>
       <div class="scroll"><table class="traj cmpx"><thead><tr><th>Coût d'une abonnée</th>${sens.map(o => `<th class="${o.c === cac ? 'cur' : ''}">${money(o.c)}</th>`).join('')}</tr></thead><tbody>${sensRows}</tbody></table></div></details>`;
     const p = planPath(i);
     const leversCard = section('lv-levers', 'promo', 'Leviers', `abonnement ${+P.duration > 0 ? num(+P.duration) + ' mois' : 'comme dans Produits'} · bouche-à-oreille ${num(+P.organic || 0)} % · passerelle ${+P.fromSolo > 0 ? num(+P.fromSolo) + ' % par an' : 'comme dans Produits'} · maintien après programme ${+P.toSolo > 0 ? num(+P.toSolo) + ' %' : 'comme dans Produits'}`, `
@@ -2008,10 +2008,10 @@ function resultatPage() {
     ${kpiCard(r)}
     ${trajectoryCard(r)}
     ${scenarioCard()}
-    <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
+    <details class="card" id="r-bars" ${view.open.has('r-bars') ? 'open' : ''}><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
         <div>${barsHtml}</div></details>
-    <details class="card" id="r-table" open><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary><p class="muted">Touche le nom d'${view.app === 'all' ? 'une application' : 'un produit'} pour ouvrir ses réglages.</p>${tableHtml}</details>
+    <details class="card" id="r-table" ${view.open.has('r-table') ? 'open' : ''}><summary>Compte d'exploitation ${view.app === 'all' ? 'par application' : 'par produit'}</summary><p class="muted">Touche le nom d'${view.app === 'all' ? 'une application' : 'un produit'} pour ouvrir ses réglages.</p>${tableHtml}</details>
     ${natureCard(r)}
     ${implantCard(r)}
     <details class="card" id="r-read"><summary>Comment lire ce compte</summary>
@@ -2079,7 +2079,6 @@ function route() {
 }
 window.addEventListener('hashchange', route);
 // Bandeau replié / déplié : mémorisé pour toutes les pages.
-document.addEventListener('toggle', e => { if (e.target.classList && e.target.classList.contains('banner')) { try { localStorage.setItem('om-banner', e.target.open ? 'open' : 'closed'); } catch { /* stockage indisponible */ } } }, true);
 
 document.addEventListener('change', async e => {
   const t = e.target;
@@ -2346,4 +2345,16 @@ saveLabel();
   document.getElementById('tabs').addEventListener('click', e => { if (e.target.closest('a')) set(false); });
   document.addEventListener('keydown', e => { if (e.key === 'Escape') set(false); });
   window.addEventListener('hashchange', () => set(false));
+})();
+
+// Téléphone : en-tête, sélecteurs et bandeau de la page restent en haut. On mesure leur hauteur réelle.
+(() => {
+  const set = () => {
+    const h = document.querySelector('header'), t = document.querySelector('.toolbar');
+    if (h) document.documentElement.style.setProperty('--hdr-h', h.offsetHeight + 'px');
+    if (t) document.documentElement.style.setProperty('--tb-h', t.offsetHeight + 'px');
+  };
+  window.addEventListener('resize', set);
+  new MutationObserver(set).observe(document.getElementById('page') || document.body, { childList: true });
+  set();
 })();
