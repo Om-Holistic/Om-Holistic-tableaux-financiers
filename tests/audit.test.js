@@ -154,3 +154,29 @@ test('acquisition : coût par nouvelle cliente, hors clientes venues de l\'abonn
   const after = P.sumPnl(P.buildPnl(s, sims)[0]).total.variable;
   assert.ok(Math.abs(after - before - expected) < 1e-6 * Math.max(1, expected));
 });
+
+test('trésorerie : solde = apport + encaissements − charges − impôts − rémunération', () => {
+  const s = M.defaultState();
+  s.cash = { start: 5000, payGoal: 1500, payFrom: '2029-01' };
+  const all = s.apps.map(a => ({ a, ...E.simulate(a) }));
+  const pnl = P.buildPnl(s, all);
+  all.forEach((x, i) => { x.pnl = pnl[i]; });
+  const t = P.treasury(s, all);
+  const flows = t.months.reduce((b, m) => b + m.inflow - m.charges - m.taxes - m.pay, 5000);
+  assert.ok(Math.abs(flows - t.months.at(-1).balance) < 1e-6 * Math.max(1, Math.abs(flows)));
+  assert.equal(t.months.find(m => m.month === '2028-12').pay, 0);
+  assert.equal(t.months.find(m => m.month === '2029-01').pay, 1500);
+  assert.ok(t.low.balance <= Math.min(...t.months.map(m => m.balance)) + 1e-9);
+  // Sans paiement en plusieurs fois, les encaissements valent le chiffre d'affaires.
+  assert.ok(t.months.every(m => Math.abs(m.inflow - m.ca) < 1e-6));
+});
+
+test('trésorerie : le paiement en 3 fois retarde l\'argent sans changer le chiffre d\'affaires', () => {
+  const s = M.defaultState();
+  const run = n => { s.apps[0].programs.forEach(q => { q.installments = n; }); const all = s.apps.map(a => ({ a, ...E.simulate(a) })); const pnl = P.buildPnl(s, all); all.forEach((x, i) => { x.pnl = pnl[i]; }); return P.treasury(s, all); };
+  const one = run(1), three = run(3);
+  const ca = t => t.months.reduce((x, m) => x + m.ca, 0);
+  assert.ok(Math.abs(ca(one) - ca(three)) < 1e-6 * ca(one));
+  const k = one.months.findIndex(m => m.month === '2027-08');
+  assert.ok(three.months[k].balance < one.months[k].balance);
+});

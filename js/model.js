@@ -44,7 +44,7 @@ function program(name, start, prices, duration) {
     toSolo: 40, fromSolo: 0,
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
-    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0
+    palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1
   };
 }
 
@@ -238,8 +238,10 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 13,
+    version: 14,
     vat: { ttc: false, rate: 20 },
+    // Trésorerie : apport de départ, revenu mensuel visé, mois où tu commences à te le verser.
+    cash: { start: 0, payGoal: 2000, payFrom: '' },
     shared: defaultShared(),
     implantation: defaultImplantation(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
@@ -389,7 +391,11 @@ function migrate(state) {
     if (a.sub.acq === undefined) a.sub.acq = 0;
     for (const q of a.programs || []) if (q.acq === undefined) q.acq = 0;
   }
-  state.version = 13;
+  if ((state.version || 1) < 14) {
+    if (!state.cash) state.cash = { start: 0, payGoal: 2000, payFrom: '' };
+    for (const a of state.apps) for (const q of a.programs || []) if (q.installments === undefined) q.installments = 1;
+  }
+  state.version = 14;
   return state;
 }
 

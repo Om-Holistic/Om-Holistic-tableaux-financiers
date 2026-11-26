@@ -99,12 +99,12 @@ function section(id, kind, title, summary, body) {
 }
 
 // Grille de prix en trois phases : chaque phase est une pastille numérotée.
-function pricingEditor(grid, path, title, anchor) {
+function pricingEditor(grid, path, title, anchor, extra = '') {
   const now = phaseAt(grid, thisMonth);
   const rows = grid.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, path + '.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('');
   const summary = grid.map(ph => price(ph.price)).join(' › ');
   return section(anchor, 'price', title, summary, `${rows}
-    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique. Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p>`);
+    <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique. Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p>${extra}`);
 }
 
 const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine'], ['months', 'Progression (mois)'], ['step', 'Augmentation par palier']];
@@ -147,7 +147,8 @@ function programCard(a, q, j, p) {
         <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
         ${fields(q, t, [['start', 'Lancement commercial', 'month']])}
         <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>`)}
-      ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j)}
+      ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
+        <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
       ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
         <h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
         ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
@@ -410,6 +411,10 @@ function settingsPage(a, i) {
       ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
     </details>
     <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
+      ${section('st-cash', 'cal', 'Trésorerie et revenu', `apport ${money(+state.cash.start || 0)} · revenu visé ${money(+state.cash.payGoal || 0)} / mois${state.cash.payFrom ? ' dès ' + monthName(state.cash.payFrom) : ''}`, `
+        <div class="grid">${field('Apport de départ\nargent mis dans la société (€)', 'cash.start', state.cash.start)}${field('Revenu mensuel visé\nnet pour toi (€)', 'cash.payGoal', state.cash.payGoal)}</div>
+        ${fields(state.cash, 'cash', [['payFrom', 'Je commence à me le verser à partir de', 'month']])}
+        <p class="muted">Sans date, la trésorerie est montrée avant ta rémunération : tu vois ce que la société accumule. Avec une date, ton revenu est retiré chaque mois de la trésorerie. Ne remplis pas en plus la charge « Rémunération du dirigeant », pour ne pas la compter deux fois. Valeurs par défaut à ajuster : apport 0 €, revenu visé 2 000 € par mois.</p>`)}
       ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
         ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
       ${implantSection()}
@@ -501,6 +506,41 @@ function chart(byMonth) {
     }).join('') + '</svg>';
 }
 
+// ---------- Trésorerie ----------
+// Solde de trésorerie mois par mois (toutes les applications), avec le point bas et la ligne zéro.
+function cashChart(t) {
+  const ms = t.months, W = Math.max(320, ms.length * 12), H = 180, left = 52, bottom = 22, top = 10;
+  const vals = ms.map(m => m.balance), lo = Math.min(0, ...vals), hi = Math.max(1, ...vals);
+  const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1)), x = i => left + (W - left - 8) * i / Math.max(1, ms.length - 1);
+  const pts = ms.map((m, i) => `${x(i).toFixed(1)},${y(m.balance).toFixed(1)}`).join(' ');
+  const ticks = [lo, lo + (hi - lo) / 2, hi];
+  const li = ms.findIndex(m => m.month === t.low.month);
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie mois par mois">`
+    + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
+    + (lo < 0 ? `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--bad)" stroke-dasharray="4 3"/>` : '')
+    + `<polyline points="${pts}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
+    + ms.map((m, i) => m.month.endsWith('-01') ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${m.month.slice(0, 4)}</text>` : '').join('')
+    + (li >= 0 ? `<circle cx="${x(li)}" cy="${y(t.low.balance)}" r="4.5" fill="${t.low.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"><title>Point bas ${t.low.month} : ${money(t.low.balance)}</title></circle>` : '')
+    + '</svg>';
+}
+function cashData() {
+  const r = results();
+  return treasury(state, r.all);
+}
+function cashCard() {
+  const t = cashData(), c = state.cash || {};
+  const end = t.months.at(-1) || { balance: 0 }, need = t.low.balance < 0 ? -t.low.balance : 0;
+  return `<details class="card" id="pv-cash" ${view.open.has('pv-cash') || !view.open.size ? 'open' : ''}><summary><span>Trésorerie et revenu<br><span class="sum-sub">${need ? `<b class="neg">besoin de ${money(need)}</b> en ${monthName(t.low.month)}` : `point bas ${short(t.low.balance)} en ${monthName(t.low.month)}`} · point mort ${t.breakEven ? monthName(t.breakEven) : 'non atteint'}</span></span></summary>
+    <div class="kpis">
+      <div class="kpi"><small>Point bas</small><b class="${t.low.balance < 0 ? 'bad' : ''}">${short(t.low.balance)}</b><small>${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}</small></div>
+      <div class="kpi"><small>Point mort</small><b>${t.breakEven ? monthName(t.breakEven) : '—'}</b><small>résultat positif chaque mois ensuite</small></div>
+      <div class="kpi"><small>Ton revenu (${short(t.goal)} / mois)</small><b class="${t.payReached ? 'good' : ''}">${t.payReached ? monthName(t.payReached) : 'non atteint'}</b><small>net après impôts, toutes applis</small></div>
+      <div class="kpi"><small>Trésorerie fin ${end.month ? end.month.slice(0, 4) : ''}</small><b class="${end.balance < 0 ? 'bad' : 'good'}">${short(end.balance)}</b><small>${c.payFrom ? `après ta rémunération dès ${monthName(c.payFrom)}` : 'avant ta rémunération'}</small></div>
+    </div>
+    <div class="chart">${cashChart(t)}</div>
+    <p class="muted">Toute la société, toutes applications. Apport de départ ${money(t.start)}. Les impôts et cotisations de l'implantation choisie sont déduits chaque mois (en réalité, une partie se paie l'année suivante). <a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport et ton revenu</a></p></details>`;
+}
+
 // ---------- Bandeaux en tête de page ----------
 // Un chiffre clé à gauche, quatre tuiles de même taille à droite (2 × 2), sur toutes les pages.
 const periodChip = () => periodName().replace(/^(en|au|sur) /, '').replace(/^./, c => c.toUpperCase());
@@ -586,6 +626,7 @@ function previsionnelPage() {
         { label: 'Abonnées', value: num(subsEnd), hint: `fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}` },
         { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
       ] })}
+    ${cashCard()}
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
     <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
