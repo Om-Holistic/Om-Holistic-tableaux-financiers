@@ -767,13 +767,13 @@ function tresoreriePage() {
   return `${banner({ label: 'Trésorerie', chip: view.cashFrom || view.cashTo ? rangeChip(from, to) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '') : periodChip(), big: end ? money(end.balance) : '—', bigCls: end && end.balance < 0 ? 'neg-hero' : '',
       note: `Solde en banque fin ${end ? monthName(end.month) : ''} · ${flow >= 0 ? '+' : ''}${money(flow)} sur la période<br>${soloTag(r)}.${view.app === 'all' ? ` Apport de départ ${money(t.start)}${c.payFrom ? ` · ta rémunération de ${money(+c.payGoal || 0)} dès ${monthName(c.payFrom)}` : ' · avant ta rémunération'}.` : ''}`,
       tiles: [
-        { label: 'Point bas', mini: 'Point bas', value: short(t.low.balance), cls: t.low.balance < 0 ? 'neg-hero' : '', hint: `${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}` },
+        { label: 'Point bas', mini: 'Point bas', value: short(lowIn ? lowIn.balance : t.low.balance), cls: (lowIn ? lowIn.balance : t.low.balance) < 0 ? 'neg-hero' : '', hint: lowIn ? monthName(lowIn.month) : monthName(t.low.month) },
         { label: 'Point mort', value: t.breakEven ? monthShort(t.breakEven) : 'non atteint', cls: 'txt', hint: 'résultat positif chaque mois ensuite', go: { page: 'resultat' } },
         { label: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' },
         { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } }
       ] })}
     ${implantPick('tr-imp', 'les impôts et cotisations retirés de la trésorerie en dépendent')}
-    ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">trésorerie négative en ${monthName(t.low.month)}</span></span></summary>
+    ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">point bas du plan : ${short(t.low.balance)} en ${monthName(t.low.month)}${lowIn && !months.some(m => m.month === t.low.month) ? ', hors de la période affichée' : ''}</span></span></summary>
       <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
     ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
       <div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
