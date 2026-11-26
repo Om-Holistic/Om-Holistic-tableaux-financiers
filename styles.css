@@ -599,3 +599,15 @@ ul.hist li { display: flex; align-items: center; justify-content: space-between;
 .savebtn.warn { border-color: var(--clay); }
 @media (min-width: 768px) { .savebtn { bottom: max(20px, env(safe-area-inset-bottom, 0px)); right: 24px; } }
 @media print { .savebtn { display: none !important; } }
+
+/* Sélecteurs du haut : un petit intitulé au-dessus de chaque choix (Année, Période, Détail par). */
+.toolbar { align-items: end; }
+.toolbar label:not(.appsel) { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.toolbar .lab { font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--ink-soft); padding-left: 4px; }
+.toolbar select:disabled { opacity: .45; }
+.toolbar label[hidden] { display: none; }
+@media (max-width: 767px) {
+  .toolbar { grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr) minmax(0, 1.25fr); }
+  .toolbar.four { grid-template-columns: minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .9fr); }
+  .toolbar select { padding-left: 10px; }
+}
