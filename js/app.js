@@ -3,7 +3,7 @@
 
 const $ = id => document.getElementById(id);
 const money = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
-const price = x => (+x || 0).toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' €';
+const price = x => { const v = +x || 0; return v.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0€'; };
 const num = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0');
 const esc = x => String(x ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const thisMonth = new Date().toISOString().slice(0, 7);
@@ -92,9 +92,9 @@ function programCard(a, q, j, p) {
   const cohorts = q.cohorts.map((c, k) => lineEditor(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['size', 'Clientes'], ['date', 'Démarrage', 'month']], 'Retirer cette cohorte')).join('');
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
   const insSummary = `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${num(q.initial)} → ${num(q.target)} / sem.`;
-  return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
+  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))}<br><span class="sum-sub">${num(q.duration)} semaines · ${calSummary}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
       ${check('Programme actif', t + '.enabled', q.enabled)}
-      ${fields(q, t, [['name', 'Nom', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes de coaching / cliente / semaine']])}
+      ${fields(q, t, [['name', 'Nom du programme', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes de coaching / cliente / semaine']])}
       ${section('cal-p' + j, 'cal', 'Calendrier', calSummary, `
         <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
         ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
@@ -118,19 +118,22 @@ function programCard(a, q, j, p) {
 
 function productsPage(a, i) {
   const p = 'apps.' + i;
-  const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
-  const post = a.programs.length ? `<details class="card" id="sp" ${view.open.has('sp') ? 'open' : ''}><summary><span>Abonnement après un programme<br><span class="sum-sub">${num(a.sub.conversion)} % des clientes en fin de programme</span></span></summary>
-      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel', 'price-sp')}
-      ${section('conv-sp', 'sub', 'Conversion', `${num(a.sub.conversion)} % · ${num(a.sub.postDuration)} mois en moyenne`, fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']]))}</details>` : '';
-  return `<h2>Programmes de ${esc(a.name)}</h2>${programs || '<p class="muted">Aucun programme.</p>'}
-    <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
-    <h2>Abonnements ${esc(a.name)}</h2>
-    <div class="card">${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}</div>
-    <details class="card" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}<br><span class="sum-sub">${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
-      ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
+  const g = a.sub.directPricing;
+  // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
+  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${price(phaseAt(g, thisMonth).price)} · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span></span></summary>
+      ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
       ${section('open-sd', 'cal', 'Ouverture et rythme d\'abonnements', `${a.sub.start ? monthName(a.sub.start) : '—'} · ${num(a.sub.initial)} → ${num(a.sub.target)} / sem.`, `${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
-      <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}</details>
-    ${post}`;
+        <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p>`)}
+      ${pricingEditor(g, p + '.sub.directPricing', 'Prix mensuel', 'price-sd')}
+      ${a.programs.length ? section('conv-sp', 'sub', 'Après un programme', `${num(a.sub.conversion)} % des clientes s'abonnent · ${num(a.sub.postDuration)} mois en moyenne`, `
+        ${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}
+        <h4>Prix mensuel après un programme</h4>
+        ${a.sub.postPricing.map((ph, k) => `<div class="phase-row"><span class="badge">${k + 1}</span>${lineEditor(ph, p + '.sub.postPricing.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('')}`) : ''}
+    </details>`;
+  const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
+  return `<p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
+    ${solo}${programs}
+    <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>`;
 }
 
 // Tous les jalons d'une application, dans l'ordre chronologique.
@@ -139,13 +142,13 @@ function timeline(a) {
   const items = [];
   a.programs.forEach((q, j) => {
     if (!q.enabled) return;
-    const cal = { page: 'produits', open: 'p' + j, anchor: 'cal-p' + j, from: `Produits › ${esc(q.name)} › Calendrier` };
-    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(q.name)}`, sub: `${num(c.size)} clientes`, go: cal }));
-    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(q.name)}`, sub: '', go: cal });
-    const pr = { page: 'produits', open: 'p' + j, anchor: 'price-p' + j, from: `Produits › ${esc(q.name)} › Prix` };
-    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(q.name)}`, sub: price(ph.price), go: pr }));
+    const cal = { page: 'produits', open: 'p' + j, anchor: 'cal-p' + j, from: `Produits › ${esc(progName(a, q))} › Calendrier` };
+    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(progName(a, q))}`, sub: `${num(c.size)} clientes`, go: cal }));
+    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(progName(a, q))}`, sub: '', go: cal });
+    const pr = { page: 'produits', open: 'p' + j, anchor: 'price-p' + j, from: `Produits › ${esc(progName(a, q))} › Prix` };
+    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(progName(a, q))}`, sub: price(ph.price), go: pr }));
   });
-  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture de l'abonnement ${esc(a.name)}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › Abonnement ${esc(a.name)}` } });
+  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › ${esc(soloName(a))}` } });
   (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine`, go: { page: 'reglages', open: 'st-cap', anchor: 'st-cap', from: 'Réglages › Capacité de coaching' } }));
   items.sort((x, y) => x.date.localeCompare(y.date));
   if (!items.length) return '<p class="muted">Aucune date pour l\'instant : ajoute une cohorte de test ou une date de lancement dans Produits et prix.</p>';
@@ -225,11 +228,11 @@ function productLines(r) {
   const lines = [];
   for (const x of r.scope) {
     const ms = x.months.filter(m => inPeriod(m.month)), last = ms.at(-1);
-    const prefix = r.scope.length > 1 ? esc(x.a.name) + ' · ' : '';
-    x.a.programs.forEach((p, i) => lines.push({ name: prefix + esc(p.name), off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
+    const a = x.a, direct = last?.direct || 0, post = last?.post || 0;
+    lines.push({ name: esc(soloName(a)), color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
+      detail: a.programs.length ? `${num(direct + post)} abonnées en fin de période, dont ${num(post)} après un programme` : `${num(direct)} abonnées en fin de période` });
+    a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
       detail: `${num(ms.reduce((s, m) => s + m.products[i].admissions, 0))} inscriptions · ${num(last?.products[i].active || 0)} en cours en fin de période` }));
-    lines.push({ name: prefix + 'Abonnement ' + esc(x.a.name), color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA, 0), detail: `${num(last?.direct || 0)} abonnées en fin de période` });
-    if (x.a.programs.length) lines.push({ name: prefix + 'Abonnement après programme', color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.postCA, 0), detail: `${num(last?.post || 0)} abonnées en fin de période` });
   }
   const max = Math.max(1, ...lines.map(l => l.ca));
   return lines.map(l => `<div class="prod"><span>${l.name}${l.off ? ' <span class="tag">Inactif</span>' : ''}</span><b>${money(l.ca)}</b>
@@ -323,15 +326,16 @@ function capacityBlock(r) {
 const CHARGE_TYPES = [['fixe', 'Fixe, par mois'], ['cliente', 'Par cliente active, par mois'], ['inscription', 'Par inscription à un programme'], ['ca', 'Pourcentage du chiffre d\'affaires']];
 const AMOUNT_LABEL = { fixe: 'Montant (€ / mois)', cliente: 'Montant (€ / cliente / mois)', inscription: 'Montant (€ / inscription)', ca: 'Pourcentage (%)' };
 function chargeSummary(c, a) {
-  const scope = c.scope === 'sub' ? 'Abonnement ' + a.name : (a.programs.find(p => p.id === c.scope)?.name || 'Commune à ' + a.name);
-  const amount = c.type === 'ca' ? `${price(c.amount).replace(' €', '')} % du CA` : `${price(c.amount)}${{ fixe: ' / mois', cliente: ' / cliente / mois', inscription: ' / inscription' }[c.type]}`;
+  const prog = a.programs.find(p => p.id === c.scope);
+  const scope = c.scope === 'sub' ? soloName(a) : prog ? progName(a, prog) : 'Commune à ' + a.name;
+  const amount = c.type === 'ca' ? `${price(c.amount).replace('\u00a0€', '')} % du CA` : `${price(c.amount)}${{ fixe: ' / mois', cliente: ' / cliente / mois', inscription: ' / inscription' }[c.type]}`;
   const when = c.start || c.end ? ` · ${c.start ? monthName(c.start) : '…'} → ${c.end ? monthName(c.end) : '…'}` : '';
   return `${amount} · ${esc(scope)}${when}`;
 }
 
 function chargesPage(a, i) {
   const p = 'apps.' + i;
-  const scopes = [['app', 'Commune à toute l\'application'], ['sub', 'Abonnement ' + a.name], ...a.programs.map(q => [q.id, 'Programme ' + q.name])];
+  const scopes = [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])];
   const list = (a.charges || []).map((c, j) => {
     const t = `${p}.charges.${j}`, id = 'ch' + c.id;
     return `<details class="card" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)}<br><span class="sum-sub">${chargeSummary(c, a)}</span></span></summary>

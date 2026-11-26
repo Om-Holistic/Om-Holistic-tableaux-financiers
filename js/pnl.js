@@ -5,9 +5,13 @@
 const pnlPos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
 const inWindow = (c, month) => (!c.start || month >= c.start) && (!c.end || month <= c.end);
 
-// Colonnes d'une application : l'abonnement puis chaque programme.
+// Noms des produits : « CHRYSALISS seul » pour l'abonnement, « CHRYSALISS Refit » pour un programme.
+const soloName = a => a.programs.length ? a.name + ' seul' : a.name;
+const progName = (a, p) => a.name + ' ' + p.name;
+
+// Colonnes d'une application : le produit seul puis chaque programme.
 function productKeys(a) {
-  return [{ key: 'sub', name: 'Abonnement ' + a.name }, ...a.programs.map(p => ({ key: p.id, name: p.name, off: !p.enabled }))];
+  return [{ key: 'sub', name: soloName(a) }, ...a.programs.map(p => ({ key: p.id, name: progName(a, p), off: !p.enabled }))];
 }
 
 const emptyCol = () => ({ ca: 0, fees: 0, variable: 0, coaching: 0, fixed: 0 });
@@ -89,4 +93,4 @@ function sumPnl(entries) {
   return out;
 }
 
-if (typeof module !== 'undefined') module.exports = { productKeys, monthPnl, buildPnl, sumPnl };
+if (typeof module !== 'undefined') module.exports = { soloName, progName, productKeys, monthPnl, buildPnl, sumPnl };
