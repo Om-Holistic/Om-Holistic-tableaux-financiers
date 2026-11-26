@@ -134,3 +134,9 @@ Si deux appareils ont modifié sans se voir, l'appli demande laquelle garder au 
 
 Le serveur (`sync-server/`) tourne sur Fly (`om-holistic-finances-sync`, Paris, arrêt automatique quand il ne sert pas).
 Il est déployé par l'action GitHub « Serveur de synchro » à chaque changement sur `main`, avec le secret de dépôt `FLY_API_TOKEN`.
+
+## Mise à jour sur l'iPhone et l'iPad
+
+`index.html` porte un numéro de version (`<meta name="om-version">`), répété en `?v=` sur chaque fichier CSS et JS.
+**À chaque changement, augmenter ce numéro partout** (le test `tests/version.test.js` vérifie qu'ils concordent).
+L'appli compare sa version à celle en ligne à l'ouverture et au retour, et propose un bandeau « Nouvelle version disponible ».

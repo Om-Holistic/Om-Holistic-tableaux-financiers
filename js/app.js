@@ -651,14 +651,16 @@ function cashRange(all) {
 }
 // Barres : entrées vers le haut, sorties vers le bas ; courbe : solde en fin de période.
 function cashChart(bs) {
-  const W = Math.max(320, bs.length * 34), H = 210, left = 52, bottom = 24, top = 10, right = 8;
+  // Largeur réelle de la carte : le texte et les barres gardent leur taille, sur iPhone comme sur iPad.
+  const avail = Math.max(300, ($('page')?.clientWidth || 360) - 34);
+  const W = Math.max(avail, bs.length * 34), H = 210, left = 52, bottom = 24, top = 10, right = 8;
   const hi = Math.max(1, ...bs.map(b => Math.max(b.inflow, b.balance))), lo = Math.min(0, ...bs.map(b => Math.min(-(b.charges + b.taxes + b.pay), b.balance)));
   const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1));
-  const slot = (W - left - right) / Math.max(1, bs.length), bw = Math.max(3, Math.min(22, slot * 0.6)), cx = i => left + slot * (i + 0.5);
+  const slot = (W - left - right) / Math.max(1, bs.length), bw = Math.max(3, Math.min(28, slot * 0.5)), cx = i => left + slot * (i + 0.5);
   const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
   const every = Math.ceil(bs.length / 12);
   const step = view.cashStep;
-  const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MONTHS[+b.key.slice(5) - 1].slice(0, 3) + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
+  const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MSHORT[+b.key.slice(5) - 1].replace('.', '') + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
   return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie par période">`
     + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
     + bs.map((b, i) => { const out = b.charges + b.taxes + b.pay;
@@ -690,30 +692,36 @@ function tresoreriePage() {
   const rangeName = from && to ? (from === to ? monthName(from) : `${monthName(from)} – ${monthName(to)}`) : '—';
   const flow = end ? end.balance - (bs[0]?.open || 0) : 0;
   const lowIn = months.reduce((l, m) => !l || m.balance < l.balance ? m : l, null);
-  const heads = ['Période', 'Solde début', 'Encaissements', 'Charges', 'Impôts et cotisations', 'Ta rémunération', 'Variation', 'Solde fin'];
-  const row = b => [bucketName(b.key, view.cashStep), money(b.open), money(b.inflow), money(-b.charges), money(-b.taxes), b.pay ? money(-b.pay) : '—', signed(b.flow), `<b class="${b.balance < 0 ? 'neg' : ''}">${money(b.balance)}</b>`];
-  const total = bs.length ? ['Total', money(bs[0].open), money(tot('inflow')), money(-tot('charges')), money(-tot('taxes')), tot('pay') ? money(-tot('pay')) : '—', signed(tot('flow')), `<b class="${end.balance < 0 ? 'neg' : ''}">${money(end.balance)}</b>`] : null;
+  // Relevé : une ligne fine par période (variation et solde), le détail se déplie au toucher.
+  const maxFlow = Math.max(1, ...bs.map(b => Math.abs(b.flow)));
+  const sign = v => (v > 0 ? '+' : '') + money(v);
+  const detail = (o, inflow, charges, taxes, pay, close) => `<dl class="cl-d"><dt>Solde au début</dt><dd>${money(o)}</dd><dt>Encaissements</dt><dd class="pos">${sign(inflow)}</dd><dt>Charges</dt><dd>${money(-charges)}</dd><dt>Impôts et cotisations</dt><dd>${money(-taxes)}</dd>${pay ? `<dt>Ta rémunération</dt><dd>${money(-pay)}</dd>` : ''}<dt class="cl-end">Solde à la fin</dt><dd class="cl-end ${close < 0 ? 'neg' : ''}">${money(close)}</dd></dl>`;
+  const line = (id, label, flow, close, body, cls = '') => `<details class="cl-row ${cls}" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span class="cl-p">${label}</span>
+      <span class="cl-bar"><i class="${flow < 0 ? 'dn' : 'up'}" style="width:${(Math.abs(flow) / maxFlow * 100).toFixed(1)}%"></i></span>
+      <span class="cl-v ${flow < 0 ? 'neg' : 'pos'}">${short(flow).replace(/^(?!-)/, flow > 0.5 ? '+' : '')}</span><span class="cl-b ${close < 0 ? 'neg' : ''}">${short(close)}</span></summary>${body}</details>`;
+  const ledger = bs.length ? `<div class="cl"><div class="cl-h"><span>Période</span><span></span><span>Variation</span><span>Solde</span></div>`
+    + bs.map(b => line('cl-' + b.key, bucketName(b.key, view.cashStep), b.flow, b.balance, detail(b.open, b.inflow, b.charges, b.taxes, b.pay, b.balance))).join('')
+    + (bs.length > 1 ? line('cl-total', 'Total', tot('flow'), end.balance, detail(bs[0].open, tot('inflow'), tot('charges'), tot('taxes'), tot('pay'), end.balance), 'cl-tot') : '') + '</div>' : '';
   const apps = from ? cashByApp(r, from, to) : [];
-  return `${banner({ label: 'Trésorerie', chip: rangeChip(from, to) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : ''), big: end ? money(end.balance) : '—', bigCls: end && end.balance < 0 ? 'neg-hero' : '',
+  return `${banner({ label: 'Trésorerie', chip: view.cashFrom || view.cashTo ? rangeChip(from, to) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '') : periodChip(), big: end ? money(end.balance) : '—', bigCls: end && end.balance < 0 ? 'neg-hero' : '',
       note: `Solde en banque fin ${end ? monthName(end.month) : ''} · ${flow >= 0 ? '+' : ''}${money(flow)} sur la période<br>Toute la société, toutes applications. Apport de départ ${money(t.start)}${c.payFrom ? ` · ta rémunération de ${money(+c.payGoal || 0)} dès ${monthName(c.payFrom)}` : ' · avant ta rémunération'}.`,
       tiles: [
         { label: 'Point bas', mini: 'Point bas', value: short(t.low.balance), cls: t.low.balance < 0 ? 'neg-hero' : '', hint: `${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}` },
-        { label: 'Point mort', mini: false, value: t.breakEven ? monthName(t.breakEven) : 'non atteint', cls: 'txt', hint: 'résultat positif chaque mois ensuite', go: { page: 'resultat' } },
-        { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } },
-        { label: 'Variation', mini: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' }
+        { label: 'Point mort', value: t.breakEven ? monthShort(t.breakEven) : 'non atteint', cls: 'txt', hint: 'résultat positif chaque mois ensuite', go: { page: 'resultat' } },
+        { label: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' },
+        { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } }
       ] })}
-    <div class="card cash-ctl">
-      <div class="seg" role="group" aria-label="Découpage">${STEPS.map(([k, l]) => `<button class="${view.cashStep === k ? 'on' : ''}" data-step="${k}">${l}</button>`).join('')}</div>
-      <div class="cash-range"><label><span>Du</span><select id="cashFrom">${opts(from)}</select></label><label><span>au</span><select id="cashTo">${opts(to)}</select></label>
-        ${view.cashFrom || view.cashTo ? '<button class="link" id="cashReset">Suivre la période du haut</button>' : ''}</div>
-    </div>
-    ${need ? `<p class="cash-alert">Ta trésorerie passe sous zéro : il manque <b>${money(need)}</b> en ${monthName(t.low.month)}. Prévois un apport ou un prêt, ou décale des charges. <a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport</a></p>` : ''}
+    ${need ? `<details class="card" id="tr-alert" open><summary><span>À surveiller<br><span class="sum-sub">trésorerie négative en ${monthName(t.low.month)}</span></span></summary>
+      <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
     ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
       <div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
       <div class="chart">${cashChart(bs)}</div></details>
-    <details class="card" id="tr-table" open><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${bs.length} ligne${bs.length > 1 ? 's' : ''} · ${rangeName}</span></span></summary>
-      <div class="scroll"><table class="cash-t">${table(heads, [...bs.map(row), total], [...bs.map(b => b.balance < 0 ? 'low' : ''), 'total'])}</table></div>
+    <details class="card" id="tr-table" open><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${rangeName} · touche une ligne pour le détail</span></span></summary>
+      ${ledger}
       <p class="muted">Encaissements : l'argent reçu (les ventes payées en plusieurs fois arrivent sur plusieurs mois), hors TVA. Impôts et cotisations selon l'implantation choisie, comptés chaque mois (en réalité, une partie se paie l'année suivante).</p></details>
+    <details class="card" id="tr-range" ${view.open.has('tr-range') ? 'open' : ''}><summary><span>Plage de mois<br><span class="sum-sub">${view.cashFrom || view.cashTo ? 'personnalisée : ' : 'celle choisie en haut : '}${rangeName}</span></span></summary>
+      <div class="grid"><label>Du<select id="cashFrom">${opts(from)}</select></label><label>Au<select id="cashTo">${opts(to)}</select></label></div>
+      ${view.cashFrom || view.cashTo ? '<div class="row"><button id="cashReset">Revenir à la période du haut</button></div>' : '<p class="muted">Pour voir par exemple de juin 2027 à mai 2028. Le découpage (mois, trimestre…) se choisit en haut.</p>'}</details>
     <details class="card" id="tr-apps" ${view.open.has('tr-apps') ? 'open' : ''}><summary><span>Par application<br><span class="sum-sub">${apps.map(x => `${esc(x.name)} ${short(x.result)}`).join(' · ')}</span></span></summary>
       <div class="scroll"><table>${table(['Application', 'Chiffre d\'affaires HT', 'Charges', 'Apport à la trésorerie'], apps.map(x => [esc(x.name), money(x.ca), money(-x.charges), signed(x.result)]), [])}</table></div>
       <p class="muted">${rangeName}. Avant impôts, cotisations et ta rémunération, qui se calculent pour toute la société.</p></details>` : '<p class="muted">Aucun mois dans cette période.</p>'}
@@ -1252,6 +1260,8 @@ function renderToolbar() {
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
   // La trésorerie est celle de toute la société : pas de choix d'application.
   document.querySelector('.appsel').hidden = view.page === 'tresorerie';
+  $('step').parentElement.hidden = view.page !== 'tresorerie';
+  $('step').value = view.cashStep;
   const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
   if (!years.includes(view.year)) view.year = years[0];
   $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
@@ -1267,7 +1277,7 @@ function render(fresh = false) {
   const i = +view.app || 0, a = state.apps[i];
   const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
-  $('page').innerHTML = syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
+  $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
 
 // ---------- Événements ----------
@@ -1320,6 +1330,11 @@ document.addEventListener('change', async e => {
   } else if (t.id === 'app') { view.app = t.value; render(true); }
   else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
+  else if (t.id === 'step') {
+    view.cashStep = t.value;
+    try { localStorage.setItem('om-cash-step', view.cashStep); } catch { /* stockage indisponible */ }
+    render();
+  }
   else if (t.id === 'cashFrom' || t.id === 'cashTo') {
     view.cashFrom = $('cashFrom').value; view.cashTo = $('cashTo').value;
     if (view.cashFrom > view.cashTo) [view.cashFrom, view.cashTo] = [view.cashTo, view.cashFrom];
@@ -1410,10 +1425,8 @@ document.addEventListener('click', e => {
     const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
     if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
     save(); render();
-  } else if (t.dataset.step) {
-    view.cashStep = t.dataset.step;
-    try { localStorage.setItem('om-cash-step', view.cashStep); } catch { /* stockage indisponible */ }
-    render();
+  } else if (t.id === 'updateApp') {
+    location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();
@@ -1437,6 +1450,21 @@ document.addEventListener('click', e => {
     render();
   }
 });
+
+// Nouvelle version de l'appli : l'écran d'accueil de l'iPhone et de l'iPad garde parfois l'ancienne en mémoire.
+// À l'ouverture et au retour sur l'appli, on regarde la version en ligne ; si elle a changé, un bandeau propose de recharger.
+const appVersion = () => document.querySelector('meta[name="om-version"]')?.content || '';
+let newVersion = null;
+async function checkUpdate() {
+  if (!/^https?:/.test(location.protocol) || !appVersion()) return;
+  try {
+    const html = await (await fetch(location.pathname + '?check=' + Date.now(), { cache: 'no-store' })).text();
+    const v = (html.match(/name="om-version" content="([^"]+)"/) || [])[1];
+    if (v && v !== appVersion() && v !== newVersion) { newVersion = v; render(); }
+  } catch { /* hors ligne */ }
+}
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate(); });
+setTimeout(checkUpdate, 1500);
 
 // Une version plus récente arrive d'un autre appareil : on la prend, sans la renvoyer.
 Sync.init({
