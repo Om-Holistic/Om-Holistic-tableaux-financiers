@@ -36,7 +36,7 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'resultat', 'tresorerie', 'charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
 const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
@@ -1425,16 +1425,21 @@ const implantPath = () => planApp() ? `apps.${view.app}.raisePlan.implant` : 'im
 const raiseDefaultDate = a => a.raiseDate || appDates([a]).launch || appStart(a);
 // Nouvelles abonnées d'un mois : directes et clientes d'un programme qui s'abonnent ensuite.
 const newSubs = (a, m) => m.newDirect.reduce((t, v) => t + v, 0) + m.products.reduce((t, q, j) => t + q.finishedNew * Math.min(100, +a.programs[j]?.toSolo || 0) / 100, 0);
-function applyRaisePlan(st, i) {
-  const s = st === state ? JSON.parse(JSON.stringify(st)) : st, a = s.apps[i];
-  if (!a || !a.raisePlan?.on) return s;
-  const P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(s.raise || {}) };
+function applyRaisePlan(st, i, over = {}) {
+  const s = st === state || Object.keys(over).length ? JSON.parse(JSON.stringify(st)) : st, a = s.apps[i];
+  if (!a || (!a.raisePlan?.on && !over.force)) return s;
+  const P = { ...defaultRaisePlan(), ...a.raisePlan, ...over }, R = { ...defaultRaise(), ...(s.raise || {}) };
   const date = raiseDefaultDate(a), ramp = Math.max(1, Math.round(+P.ramp || 1));
+  // Leviers : durée d'abonnement, achats de programmes par les abonnées (passerelle), bouche-à-oreille.
+  if (+P.duration > 0) { a.sub.duration = +P.duration; if (+a.sub.postDuration > 0) a.sub.postDuration = +P.duration; }
+  if (+P.fromSolo > 0) a.programs.forEach(q => { if (q.enabled !== false) q.fromSolo = Math.min(100, +P.fromSolo); });
   // Nouvelles abonnées sans publicité supplémentaire, en moyenne sur l'année qui suit la levée.
   const base = simulate(a).months, k0 = Math.max(0, base.findIndex(m => m.month >= date));
   const yr = base.slice(k0, k0 + 12), organic = yr.length ? yr.reduce((t, m) => t + newSubs(a, m), 0) / yr.length : 0;
-  const perMonth = Math.max(0, (+P.target || 0) / 12 - organic), budget = perMonth * Math.max(0, +P.cac || 0);
-  a.paid = { from: date, perMonth, ramp };
+  const perMonth = Math.max(0, (+P.target || 0) / 12 * (1 - Math.min(100, +P.organic || 0) / 100) - organic), budget = perMonth * Math.max(0, +P.cac || 0);
+  const word = (+P.target || 0) / 12 * Math.min(100, +P.organic || 0) / 100;
+  // Les abonnées du bouche-à-oreille arrivent comme celles de la publicité, sans coût d'acquisition.
+  a.paid = { from: date, perMonth: perMonth + word, ramp };
   const extra = { scope: 'app', anchor: 'date', start: date, estimate: false, plan: true };
   a.charges = [...(a.charges || []),
     charge('Ta rémunération (plan avec levée)', 'fixe', Math.round((+P.salary || 0) * (1 + (+P.social || 0) / 100)), 'app', date, '', { ...extra, category: 'personnel' }),
@@ -1446,11 +1451,11 @@ function applyRaisePlan(st, i) {
   a.funding = null;
   const all = s.apps.map((ap, k) => ({ a: ap, i: k, ...simulate(ap) })), pnl = buildPnl(s, all);
   all.forEach((x, k) => { x.pnl = pnl[k]; });
-  const ms = treasury(s, [all[i]], true).months, k = Math.max(0, ms.findIndex(m => m.month >= date));
+  const tr0 = treasury(s, [all[i]], true), ms = tr0.months, k = Math.max(0, ms.findIndex(m => m.month >= date));
   // Au moins l'autonomie visée, et jusqu'au bout des prévisions : la trésorerie ne doit plus repasser sous zéro ensuite.
   const low = ms.slice(k).reduce((l, m) => Math.min(l, m.balance), 0);
   const need = Math.ceil(-low / 10000) * 10000;
-  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic };
+  a.funding = { month: date, amount: +P.amount > 0 ? +P.amount : need, need, budget, perMonth, organic, word, breakEven: tr0.breakEven };
   return s;
 }
 
@@ -1482,39 +1487,6 @@ function raiseValues(r) {
   const verdict = !ask ? 'none' : ask > hi ? 'high' : ask < lo ? 'low' : 'ok';
   return { a, i: x.i, R, date, auto, isAuto: date === auto, win, need, ask, arr, prog12, stage, vLo, vHi, lo, hi, dil, verdict, lowMonth: win.find(m => m.balance === low) };
 }
-function raiseCard(r) {
-  const id = 'r-raise', open = view.open.has(id) ? 'open' : '';
-  if (view.app === 'all') return `<details class="card" id="${id}" ${open}><summary><span>Levée de fonds<br><span class="sum-sub">par application : choisis-en une en haut</span></span></summary>
-    <p class="muted">Chaque application lève pour elle-même, comme une société à part. Choisis CHRYSALISS, Bujo ou Doodle Studio dans la liste en haut de page.</p></details>`;
-  if (view.plan === 'avec') return dossierCard(r);
-  const v = raiseValues(r), R = v.R;
-  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
-  const msg = {
-    none: `Le plan n'a pas besoin d'argent extérieur sur ${num(R.runway)} mois. Une levée servirait à accélérer : entre ${short(v.lo)} et ${short(v.hi)} reste raisonnable à ce stade.`,
-    ok: `Demander ${short(v.ask)} est cohérent : c'est dans la fourchette que ta valorisation permet, pour environ ${fmtN(v.dil)} % du capital.`,
-    low: `Ton besoin est modeste. Tu peux demander jusqu'à ${short(v.lo)}, voire ${short(v.hi)}, pour te donner de la marge, ou passer par un prêt d'honneur ou une aide publique sans céder de capital.`,
-    high: `${short(v.ask)}, c'est plus que ce que ta valorisation permet à ce stade (environ ${fmtN(v.dil)} % du capital). Pistes : lever ${short(v.hi)} maintenant et le reste au tour suivant, compléter par un prêt ou une aide publique, ou réduire le besoin.`
-  }[v.verdict];
-  const lvl = { none: 'good', ok: 'good', low: 'ok', high: 'bad' }[v.verdict];
-  return `<details class="card" id="${id}" ${open}><summary><span>Levée de fonds de ${esc(v.a.name)}<br><span class="sum-sub">${v.stage} · ${v.ask ? 'à demander ' + short(v.ask) : 'pas de besoin'} · possible ${short(v.lo)} – ${short(v.hi)}</span></span></summary>
-    <div class="kpis">
-      ${kpi('Montant à demander', v.ask ? short(v.ask) : '0 €', v.ask ? `trésorerie à couvrir sur ${num(R.runway)} mois dès ${monthName(v.date)}${v.lowMonth ? `, point bas en ${monthName(v.lowMonth.month)}` : ''}` : `aucun manque sur ${num(R.runway)} mois dès ${monthName(v.date)}`, v.ask ? '' : 'good')}
-      ${kpi('Ce que ta valorisation permet', `${short(v.lo)} – ${short(v.hi)}`, `${fmtN(R.dilMin)} à ${fmtN(R.dilMax)} % du capital cédé`)}
-      ${kpi('Valorisation indicative', `${short(v.vLo)} – ${short(v.vHi)}`, v.arr < (state.bench || defaultBench()).arr.ok ? 'avant levée · usage du pré-amorçage, l\'ARR est encore faible' : `avant levée · ARR × ${fmtN(R.multMin)} à ${fmtN(R.multMax)}${v.prog12 ? ' + programmes sur 12 mois' : ''}`)}
-      ${kpi('Stade', esc(v.stage), `ARR de ${short(v.arr)} en ${monthName(v.date)}`, 'txt')}
-    </div>
-    <p class="raise-v ${lvl}">${msg}</p>
-    ${v.a.raisePlan?.on ? `<p class="muted">Ton dossier de levée (rémunération, communication, montant, jalons) : choisis « ${esc(v.a.name)} · avec levée » en haut de page.</p>` : ''}
-    ${section('r-raise-h', 'promo', 'Hypothèses de la levée', `${v.isAuto ? 'date : premier besoin' : monthName(v.date)} · ${num(R.runway)} mois · ARR × ${fmtN(R.multMin)}–${fmtN(R.multMax)}`, `
-      <div class="grid">${monthField('Date de la levée', `apps.${v.i}.raiseDate`, v.a.raiseDate || '', 'Au premier besoin')}
-      ${field('Autonomie à financer (mois)', 'raise.runway', R.runway)}
-      ${field('Capital cédé, au moins (%)', 'raise.dilMin', R.dilMin)}${field('Capital cédé, au plus (%)', 'raise.dilMax', R.dilMax)}
-      ${field('Multiple de l\'ARR, bas', 'raise.multMin', R.multMin)}${field('Multiple de l\'ARR, haut', 'raise.multMax', R.multMax)}
-      ${field('Valorisation pré-amorçage, basse (€)', 'raise.preMin', R.preMin)}${field('Valorisation pré-amorçage, haute (€)', 'raise.preMax', R.preMax)}</div>
-      <div class="row"><button id="raiseReset">Revenir aux valeurs par défaut</button></div>`)}
-    <p class="muted">Ordres de grandeur, pas une offre : la valorisation se négocie avec chaque investisseur. Sources : 10 à 20 % du capital cédé en pré-amorçage (Carta, State of Pre-Seed 2025) ; valorisation des sociétés d'abonnement non cotées autour de 4 à 8 fois l'ARR (SaaS Capital, Private SaaS Company Valuations) ; stades fixés par l'ARR des Repères investisseurs (Réglages).</p></details>`;
-}
-
 // Dossier de levée : le plan avec levée de l'application, comparé au plan sans levée.
 function dossierCard(r) {
   const id = 'r-raise', x = r.scope[0], a = x.a, F = a.funding;
@@ -1580,6 +1552,73 @@ function dossierCard(r) {
     <p class="muted">Coût d'acquisition : une application bien-être paie en général 3 à 6 $ par installation et 20 à 40 $ par essai, et 3 à 4 % des installations deviennent payantes ; compter de 40 à 120 € par abonnée payante selon les canaux (Adapty, Customer acquisition cost 2026 ; Airbridge, Cost per trial and cost per subscription ; RevenueCat, State of Subscription Apps 2025). Commence prudemment et ajuste avec tes vrais chiffres dès les premières campagnes. Ordres de grandeur, à valider avec ton expert-comptable.</p></details>`;
 }
 
+// ---------- Page Levée de fonds : le dossier de l'application, toujours avec le plan avec levée ----------
+function leveePage() {
+  const i = +view.app || 0, a0 = state.apps[i];
+  if (!a0.raisePlan?.on) return `${banner({ label: 'Levée de fonds', chip: esc(a0.name), big: 'Pas de plan', note: 'Aucun plan avec levée pour cette application', tiles: [] })}
+    <div class="card"><p>Prépare un plan avec levée pour ${esc(a0.name)} : ta rémunération, un budget de communication pour ton objectif d'abonnées, et le montant à lever.</p>
+    <div class="row"><button id="raiseOn" data-app="${i}">Préparer le plan avec levée de ${esc(a0.name)}</button></div></div>`;
+  const keep = view.plan; view.plan = 'avec';
+  try {
+    const r = results(), x = r.scope[0], a = x.a, F = a.funding, P = { ...defaultRaisePlan(), ...a.raisePlan }, R = { ...defaultRaise(), ...(state.raise || {}) }, v = raiseValues(r);
+    // Valeur d'une abonnée, sur la première année pleine après la levée.
+    const ys = yearlyKpis(r), y1 = +F.month.slice(0, 4) + 1, Y = (ys.find(o => o.y === y1) || ys.at(-1) || {}).K;
+    const ht = v2 => state.vat?.ttc ? v2 / (1 + (+state.vat.rate || 0) / 100) : v2;
+    const yms = x.months.filter(m => +m.month.slice(0, 4) === y1), subsM = yms.reduce((t, m) => t + m.direct + m.post, 0);
+    const progSolo = yms.reduce((t, m) => t + m.products.reduce((u, q) => u + (q.admissions > 0 ? ht(q.sales) * q.fromSolo / q.admissions : 0), 0), 0);
+    const ltv = Y?.ltv ?? null, ltvAll = Y && Y.churn > 0 && subsM ? (Y.arpu + progSolo / subsM) * Y.gm / Y.churn : ltv, cac = +P.cac || 0;
+    const ratio = ltvAll !== null && cac ? ltvAll / cac : null, payback = Y && cac && Y.arpu * Y.gm > 0 ? cac / ((Y.arpu + (subsM ? progSolo / subsM : 0)) * Y.gm) : null;
+    const kpi = (label, value, hint, cls = '', g = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small>${g}</div>`;
+    const valueCard = `<details class="card" id="lv-value" ${view.open.has('lv-value') ? 'open' : ''}><summary><span>Valeur d'une abonnée<br><span class="sum-sub">LTV ${ltvAll === null ? '—' : short(ltvAll)} · CAC ${money(cac)} · LTV / CAC ${ratio === null ? '—' : fmtN(ratio, 1)}</span></span></summary>
+      <div class="kpis">
+        ${kpi('LTV de l\'abonnement', ltv === null ? '—' : short(ltv), `marge laissée par une abonnée sur sa durée de vie, en ${y1}`)}
+        ${kpi('LTV avec les programmes', ltvAll === null ? '—' : short(ltvAll), progSolo > 0.5 ? 'abonnement + programmes achetés par les abonnées' : 'aucune abonnée n\'achète de programme : levier « passerelle » ci-dessous', progSolo > 0.5 ? '' : 'warn-v')}
+        ${kpi('LTV / CAC', ratio === null ? '—' : fmtN(ratio, 1), `au coût d'acquisition de ${money(cac)}`, '', mark('ltvcac', ratio, ''))}
+        ${kpi('Retour sur CAC', payback === null ? '—' : fmtN(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition', '', mark('payback', payback, ' mois', false))}
+      </div></details>`;
+    // Sensibilité au coût d'acquisition.
+    const sc = currentScenario(), base = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
+    const cacs = [...new Set([40, 60, 80, 100, 120, cac].map(Number))].sort((p1, p2) => p1 - p2);
+    const sens = cacs.map(c => ({ c, F: c === cac ? F : applyRaisePlan(base, i, { cac: c }).apps[i].funding }));
+    const cell = (o, h) => `<td class="${o.c === cac ? 'cur' : ''}">${h}</td>`;
+    const sensRows = [
+      ['Communication / mois', o => short(o.F.budget)],
+      ['Le plan demande', o => short(o.F.need)],
+      [`Avec ${short(F.amount)} levés`, o => F.amount >= o.F.need ? `<span class="pos">+${short(F.amount - o.F.need)}</span>` : `<span class="neg">−${short(o.F.need - F.amount)}</span>`],
+      ['Point mort', o => o.F.breakEven ? shortMonth(o.F.breakEven) : 'non atteint'],
+      ['LTV / CAC', o => ltvAll === null ? '—' : `<span class="lvt ${benchLevel('ltvcac', ltvAll / o.c)}">${fmtN(ltvAll / o.c, 1)}</span>`]
+    ].map(([l, f]) => `<tr><th>${l}</th>${sens.map(o => cell(o, f(o))).join('')}</tr>`).join('');
+    const worst = sens.filter(o => o.F.need > F.amount);
+    const sensCard = `<details class="card" id="lv-sens" ${view.open.has('lv-sens') || !view.open.size ? 'open' : ''}><summary><span>Si la publicité coûte plus ou moins cher<br><span class="sum-sub">${worst.length ? `ta levée ne suffit plus dès ${money(worst[0].c)} par abonnée` : `ta levée suffit jusqu'à ${money(cacs.at(-1))} par abonnée`}</span></span></summary>
+      <div class="scroll"><table class="traj sens"><thead><tr><th>Coût d'une abonnée</th>${sens.map(o => `<th class="${o.c === cac ? 'cur' : ''}">${money(o.c)}</th>`).join('')}</tr></thead><tbody>${sensRows}</tbody></table></div></details>`;
+    const p = `apps.${i}.raisePlan`;
+    const leversCard = section('lv-levers', 'promo', 'Leviers', `abonnement ${+P.duration > 0 ? num(+P.duration) + ' mois' : 'comme dans Produits'} · bouche-à-oreille ${num(+P.organic || 0)} % · passerelle ${+P.fromSolo > 0 ? num(+P.fromSolo) + ' % par an' : 'comme dans Produits'}`, `
+      <div class="grid">${field('Durée moyenne d\'abonnement (mois, 0 = celle de Produits)', `${p}.duration`, P.duration)}
+      ${field('Part de l\'objectif venue du bouche-à-oreille et du parrainage (%)', `${p}.organic`, P.organic)}
+      ${field('Abonnées qui achètent un programme chaque année (%, 0 = comme dans Produits)', `${p}.fromSolo`, P.fromSolo)}</div>`);
+    const marketCard = section('lv-market', 'cal', 'Repères du pré-amorçage', `${fmtN(R.dilMin)} à ${fmtN(R.dilMax)} % du capital · valorisation ${short(R.preMin)} à ${short(R.preMax)} · levée ${short(R.roundMin)} à ${short(R.roundMax)}`, `
+      <div class="grid">${field('Capital cédé, au moins (%)', 'raise.dilMin', R.dilMin)}${field('Capital cédé, au plus (%)', 'raise.dilMax', R.dilMax)}
+      ${field('Valorisation avant levée, basse (€)', 'raise.preMin', R.preMin)}${field('Valorisation avant levée, haute (€)', 'raise.preMax', R.preMax)}
+      ${field('Levée habituelle, basse (€)', 'raise.roundMin', R.roundMin)}${field('Levée habituelle, haute (€)', 'raise.roundMax', R.roundMax)}
+      ${field('Multiple de l\'ARR, bas', 'raise.multMin', R.multMin)}${field('Multiple de l\'ARR, haut', 'raise.multMax', R.multMax)}</div>
+      <div class="row"><button id="raiseReset">Revenir aux valeurs par défaut</button></div>`);
+    return `${banner({ label: 'Levée de fonds', chip: esc(a.name), big: short(F.amount), bigCls: F.amount < F.need ? 'neg-hero' : '',
+        note: `en ${monthName(F.month)} · le plan demande ${short(F.need)}${F.amount >= F.need ? ` · ${short(F.amount - F.need)} de marge` : ` · il manque ${short(F.need - F.amount)}`}`,
+        tiles: [
+          { label: 'Capital cédé', mini: 'Capital', value: `${fmtN(v.dil)} %`, hint: `valorisation ${short(v.vLo)} – ${short(v.vHi)}` },
+          { label: 'Communication', mini: 'Pub', value: `${short(F.budget)} / mois`, hint: `${num(Math.round(F.perMonth))} abonnées / mois à ${money(cac)}` },
+          { label: 'Point mort', value: F.breakEven ? shortMonth(F.breakEven) : 'non atteint', hint: 'rémunération comprise' },
+          { label: 'LTV / CAC', value: ratio === null ? '—' : fmtN(ratio, 1), cls: ratio !== null && ratio < 1 ? 'neg-hero' : '', hint: 'repère ≥ 3' }
+        ] })}
+      ${dossierCard(r)}
+      ${sensCard}
+      ${valueCard}
+      ${leversCard}
+      ${marketCard}
+      <p class="muted">Toutes les autres pages montrent ce plan quand tu choisis « ${esc(a.name)} · avec levée » dans la liste en haut.</p>`;
+  } finally { view.plan = keep; }
+}
+
 function resultatPage() {
   const r = results();
   const { cols, total } = pnlColumns(r);
@@ -1614,7 +1653,6 @@ function resultatPage() {
     ${implantBar(r)}
     ${kpiCard(r)}
     ${trajectoryCard(r)}
-    ${raiseCard(r)}
     ${scenarioCard()}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
@@ -1631,8 +1669,17 @@ function resultatPage() {
 // ---------- Rendu ----------
 
 function renderToolbar() {
-  const settings = SETTINGS_PAGES.includes(view.page);
-  if (settings && view.app === 'all') view.app = '0';
+  const settings = SETTINGS_PAGES.includes(view.page), levee = view.page === 'levee';
+  if ((settings || levee) && view.app === 'all') view.app = String(Math.max(0, state.apps.findIndex(a => a.raisePlan?.on)));
+  if (levee) {
+    $('app').innerHTML = state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
+    $('app').value = view.app;
+    document.querySelectorAll('.period-only').forEach(el => { el.hidden = true; });
+    $('step').parentElement.hidden = true;
+    document.querySelector('.toolbar').classList.remove('four');
+    document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('current', a.hash === '#' + view.page));
+    return;
+  }
   $('app').innerHTML = (settings ? '' : '<option value="all">Om Holistic · consolidé</option>')
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`
       + (!settings || view.page === 'charges' ? (a.raisePlan?.on ? `<option value="${i}+">${esc(a.name)} · avec levée</option>` : '') : '')).join('');
@@ -1656,7 +1703,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -1708,7 +1755,7 @@ document.addEventListener('change', async e => {
       render();
       if (next) document.querySelector(`[data-path="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
     }, 0);
-  } else if (t.id === 'app') { view.plan = t.value.endsWith('+') ? 'avec' : 'sans'; view.app = t.value.replace('+', ''); render(true); }
+  } else if (t.id === 'app') { if (view.page !== 'levee') view.plan = t.value.endsWith('+') ? 'avec' : 'sans'; view.app = t.value.replace('+', ''); render(true); }
   else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'step') {
@@ -1809,6 +1856,7 @@ document.addEventListener('click', e => {
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
   } else if (t.id === 'benchReset') { state.bench = defaultBench(); save(); render();
+  } else if (t.id === 'raiseOn') { const a = state.apps[+t.dataset.app]; a.raisePlan = { ...defaultRaisePlan(), ...(a.raisePlan || {}), on: true }; save(); render();
   } else if (t.id === 'raiseReset') { state.raise = defaultRaise(); save(); render();
   } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);

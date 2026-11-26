@@ -57,7 +57,7 @@ header {
 
 #tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(7, 1fr);
+  display: grid; grid-template-columns: repeat(8, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
@@ -576,3 +576,8 @@ table.cmp tr.c-a td, table.cmp tr.c-a th { border-bottom: 1px solid var(--line);
 .gauge.stage .z.fill { background: var(--clay); border-radius: 3px 0 0 3px; } .gauge.stage .z.rest { background: var(--line); border-radius: 0 3px 3px 0; }
 .gauge.stage .gap { color: var(--ink-soft); font-weight: 600; }
 table.traj small.stg { display: block; font-size: 10.5px; color: var(--ink-soft); font-weight: 500; }
+@media (max-width: 420px) { #tabs a { font-size: 9.5px; padding-inline: 0; } #tabs svg { width: 20px; height: 20px; } }
+/* Levée : sensibilité et leviers */
+table.sens td.cur, table.sens th.cur { background: var(--sage-tint); }
+.lvt { display: inline-block; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
+.lvt.good { background: #dff4ea; color: #1d7a4f; } .lvt.ok { background: #fdf0d3; color: #8a5800; } .lvt.low { background: #fbe1dc; color: #b2392a; }

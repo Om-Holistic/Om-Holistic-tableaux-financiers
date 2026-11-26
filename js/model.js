@@ -278,7 +278,10 @@ function defaultRaisePlan(on = false) {
     ramp: 6,        // mois pour atteindre le plein budget de communication
     extra: 0,       // autres dépenses financées par la levée (freelances, contenus…), € par mois
     implant: 'fr-sas', // statut de la société une fois la levée faite
-    amount: 250000     // montant que tu comptes lever (0 = juste ce que le plan demande)
+    amount: 250000,    // montant que tu comptes lever (0 = juste ce que le plan demande)
+    duration: 0,       // levier : durée moyenne d'abonnement en mois (0 = celle de Produits)
+    organic: 0,        // levier : part de l'objectif apportée par le bouche-à-oreille et le parrainage, %
+    fromSolo: 0        // levier : abonnées qui achètent un programme chaque année, % (0 = comme dans Produits)
   };
 }
 
