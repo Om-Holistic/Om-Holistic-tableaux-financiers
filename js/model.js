@@ -235,7 +235,7 @@ function defaultImplantation() {
 
 function defaultState() {
   return {
-    version: 8,
+    version: 9,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     implantation: defaultImplantation(),
@@ -366,7 +366,9 @@ function migrate(state) {
     if (!c.type) c.type = 'fixe';
   }
   if (!state.implantation) state.implantation = defaultImplantation();
-  state.version = 8;
+  // Version 9 : passerelle abonnement → programme exprimée en % par an (au lieu de % par mois).
+  if ((state.version || 1) < 9) for (const a of state.apps) for (const p of a.programs) p.fromSolo = Math.min(100, (+p.fromSolo || 0) * 12);
+  state.version = 9;
   return state;
 }
 

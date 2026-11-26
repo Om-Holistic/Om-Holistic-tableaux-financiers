@@ -59,9 +59,18 @@ function fields(obj, prefix, defs) {
 // Les deux passerelles entre un programme et l'abonnement seul, chacune sur toute la largeur.
 function linkFields(a, q, path) {
   return '<div class="grid one">' +
-    field(`Achat du programme depuis l'abonnement (% par mois)\nPart des abonnées ${soloName(a)} qui achètent ${q.name} chaque mois`, path + '.fromSolo', q.fromSolo) +
+    field(`Achat du programme depuis l'abonnement (% par an)\nPart des abonnées ${soloName(a)} qui achètent ${q.name} dans l'année`, path + '.fromSolo', q.fromSolo) +
     field(`Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
-    '</div>';
+    '</div>' + linkCount(a, q);
+}
+// Ce que la passerelle représente concrètement : achats par an et abonnées concernées, un an après le lancement du programme.
+function linkCount(a, q) {
+  if (!(+q.fromSolo > 0) || !q.start) return '';
+  const j = a.programs.indexOf(q), from = addMonths(q.start, 12), to = addMonths(q.start, 23);
+  const ms = simulate(a).months.filter(m => m.month >= from && m.month <= to);
+  if (!ms.length) return '';
+  const buys = ms.reduce((t, m) => t + m.products[j].fromSolo, 0), subs = ms[0].direct + ms[0].post;
+  return `<p class="muted">Soit environ <b>${num(Math.round(buys))} achats de ${esc(q.name)}</b> entre ${monthName(from)} et ${monthName(to)}, pour environ ${num(Math.round(subs))} abonnées ${esc(soloName(a))} au début de cette période.</p>`;
 }
 function resolve(path) {
   const keys = path.split('.'), last = keys.pop();
@@ -119,7 +128,7 @@ function programCard(a, q, j, p) {
         ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
         ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
       ${programGoalSection(a, q, j, t)}
-      ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / mois`, `
+      ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / an`, `
         <p class="muted">Aussi réglable dans la carte ${esc(soloName(a))}, bloc « Passerelles avec les programmes ».</p>
         ${linkFields(a, q, t)}
         <p class="muted">Les abonnées qui achètent le programme gardent leur abonnement. Elles occupent une place de coaching et ne sont pas recomptées à la fin du programme.</p>`)}
@@ -216,7 +225,7 @@ function productsPage(a, i) {
       ${section('trial-sd', 'promo', 'Période d\'essai', +a.sub.trialDays > 0 ? `${num(a.sub.trialDays)} jours gratuits · ${num(a.sub.trialConversion)} % passent payantes` : 'aucune', `
         ${fields(a.sub, p + '.sub', [['trialDays', 'Durée de l\'essai gratuit (jours)'], ['trialConversion', 'Essais qui deviennent payants (%)']])}
         <p class="muted">Le rythme d'abonnements ci-dessus compte alors les essais. Seule la part indiquée devient payante, à la fin de l'essai. 0 jour = pas d'essai.</p>`)}
-      ${a.programs.length ? section('conv-sp', 'sub', 'Passerelles avec les programmes', a.programs.map(q => `${esc(q.name)} : ${num(q.fromSolo)} % y vont / mois · ${num(q.toSolo)} % restent`).join(' · '), `
+      ${a.programs.length ? section('conv-sp', 'sub', 'Passerelles avec les programmes', a.programs.map(q => `${esc(q.name)} : ${num(q.fromSolo)} % y vont / an · ${num(q.toSolo)} % restent`).join(' · '), `
         <p class="muted">Mêmes réglages que le bloc « Passerelles » de chaque programme : une modification ici se retrouve là-bas.</p>
         ${a.programs.map((q, j) => `<h4>${esc(progName(a, q))}${q.enabled ? '' : ' (désactivé)'}</h4>${linkFields(a, q, p + '.programs.' + j)}`).join('')}
         <h4>Abonnement après un programme</h4>

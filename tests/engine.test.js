@@ -158,8 +158,8 @@ test('passerelles : programme → abonnement seul, abonnement seul → programme
   let a = base(), r = simulate(a).months;
   const fin = sum(r, m => m.products[0].finished);
   assert.ok(Math.abs(r.at(-1).post - fin * 0.5) < 1e-6);
-  // 10 % des abonnées seules achètent le programme chaque mois : plus d'inscriptions, mêmes abonnées après programme qu'avant pour les nouvelles.
-  a = base(); a.programs[0].fromSolo = 10;
+  // 60 % des abonnées seules achètent le programme dans l'année : plus d'inscriptions, mêmes abonnées après programme qu'avant pour les nouvelles.
+  a = base(); a.programs[0].fromSolo = 60;
   const r2 = simulate(a).months;
   assert.ok(sum(r2, m => m.products[0].admissions) > sum(r, m => m.products[0].admissions));
   assert.ok(sum(r2, m => m.products[0].fromSolo) > 0);
@@ -262,4 +262,25 @@ test('implantation : du résultat d\'exploitation au net', () => {
   const s2 = afterTax(sasu, 10000, 6000, 6);
   assert.equal(s2.fixed, 600);
   assert.ok(Math.abs(s2.net - (5400 * 0.85 * 0.7)) < 1e-9);
+});
+
+test('migration v9 : la passerelle passe de % par mois à % par an', () => {
+  const s = defaultState();
+  s.version = 8;
+  s.apps[0].programs[1].fromSolo = 5;
+  s.apps[0].programs[2].fromSolo = 10;
+  const m = migrate(s);
+  assert.equal(m.apps[0].programs[1].fromSolo, 60);
+  assert.equal(m.apps[0].programs[2].fromSolo, 100);
+});
+
+test('passerelle en % par an : 12 % par an ≈ 1 % des abonnées par mois', () => {
+  const s = defaultState(), a = s.apps[0];
+  a.programs[1].fromSolo = 12;
+  a.sub.duration = 0;
+  const sim = simulate(a).months;
+  const k = sim.findIndex(m => m.month === '2030-06');
+  const prev = sim[k - 1].direct + sim[k - 1].post;
+  const ratio = sim[k].products[1].fromSolo / prev;
+  assert.ok(ratio > 0.008 && ratio < 0.012, String(ratio));
 });

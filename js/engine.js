@@ -94,11 +94,11 @@ function simulate(a, soloStock) {
         const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
         want += w < 0 ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
       }
-      // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage mensuel, réparti par semaine), dès son lancement.
+      // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage annuel, réparti par semaine), dès son lancement.
       let fromSolo = 0;
       if (commercial && d >= commercial && pos(p.fromSolo) > 0) {
         const prev = soloStock.get(monthKey(shiftMonth(monthDate(monthKey(d)), -1))) || 0;
-        fromSolo = prev * Math.min(100, pos(p.fromSolo)) / 100 * 12 / 52;
+        fromSolo = prev * Math.min(100, pos(p.fromSolo)) / 100 / 52;
         want += fromSolo;
       }
       if (a.waitlist) want += pending[i];
