@@ -57,7 +57,7 @@ header {
 
 #tabs {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: grid; grid-template-columns: repeat(6, 1fr);
+  display: grid; grid-template-columns: repeat(7, 1fr);
   background: var(--surface); border-top: 1px solid var(--line);
   padding-bottom: env(safe-area-inset-bottom, 0px);
   padding-left: env(safe-area-inset-left, 0px); padding-right: env(safe-area-inset-right, 0px);
@@ -389,7 +389,7 @@ details.banner[open] .b-sum::after { transform: rotate(225deg); }
 .b-head .chip { font-size: 11px; padding: 2px 8px; }
 .b-big { font-family: var(--display); font-size: 1.55rem; font-weight: 600; line-height: 1.1; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .b-big.neg-hero { color: #f3a593; }
-.b-minis { display: flex; gap: 18px; margin-left: auto; min-width: 0; }
+.b-minis { display: flex; gap: 18px; margin-left: auto; min-width: 0; flex-shrink: 0; }
 .b-mini { display: flex; flex-direction: column; gap: 1px; padding-left: 14px; border-left: 1px solid rgba(255, 255, 255, .16); min-width: 0; }
 .b-mini small { font-size: 11px; opacity: .7; white-space: nowrap; }
 .b-mini b { font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -469,3 +469,28 @@ table.real-t .pos { color: var(--good); }
 .sync-state.ok { color: var(--good); }
 .sync-state.conflict, .sync-state.error, .sync-state.offline { color: #a05a00; }
 @media print { .sync-strip { display: none !important; } }
+/* Trésorerie */
+.cash-ctl { display: flex; flex-wrap: wrap; gap: 12px 20px; align-items: center; justify-content: space-between; padding: 12px 14px; }
+.seg { display: inline-flex; background: var(--line); border-radius: 12px; padding: 3px; gap: 2px; }
+.seg button { border: 0; background: none; padding: 7px 12px; border-radius: 9px; font: inherit; font-size: 14px; color: var(--ink-soft); min-height: 0; }
+.seg button.on { background: var(--surface); color: var(--ink); font-weight: 600; box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+.cash-range { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 14px; }
+.cash-range label { display: flex; flex-direction: row; gap: 6px; align-items: center; margin: 0; }
+.cash-range select { padding: 6px 8px; font-size: 14px; border-radius: 9px; }
+.cash-range .link { border: 0; background: none; color: var(--sage); text-decoration: underline; padding: 4px; font-size: 13px; }
+.cash-alert { padding: 12px 14px; border-radius: 12px; background: #fdecea; color: #8a1c13; font-size: 14px; }
+table.cash-t tr.low td { background: #fff4f2; }
+table.cash-t tr.low td:first-child { background: #fff4f2; }
+.cash-link { display: flex; justify-content: space-between; align-items: baseline; flex-wrap: wrap; gap: 6px; text-decoration: none; color: inherit; padding: 14px 16px; }
+.cash-link small { display: block; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
+.cash-link b { font-size: 20px; margin-right: 6px; }
+@media print { .cash-ctl { display: none !important; } }
+/* Charges de la période */
+table.ch-period td:first-child { white-space: normal; min-width: 180px; }
+table.ch-period .cl-name { display: block; font-weight: 500; }
+table.ch-period small { display: block; color: var(--ink-soft); font-size: 12px; font-weight: 400; }
+table.ch-period tr.grp td { font-weight: 700; background: var(--sage-tint); padding-top: 10px; }
+table.ch-period tr.grp td:first-child { background: var(--sage-tint); }
+table.ch-months td, table.ch-months th { padding: 7px 6px; font-size: 12px; }
+details.sub-d { margin-top: 10px; border-top: 1px solid var(--line); padding-top: 8px; }
+details.sub-d > summary { font-weight: 600; font-size: 14px; cursor: pointer; padding: 6px 0; }
