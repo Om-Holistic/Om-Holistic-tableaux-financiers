@@ -162,6 +162,7 @@ function goalSection(a, p) {
     <div class="row"><button data-add="${p}.sub.goal.steps">Ajouter un palier</button></div>
     ${after}
     <p class="muted">Pour chaque palier, l'outil cherche le plus petit rythme qui l'atteint à la date voulue, en tenant compte des résiliations${plan.conv < 1 ? ' et de l\'essai gratuit' : ''}. Les abonnées qui viennent d'un programme s'ajoutent en plus.</p>
+    ${plan.segs.length ? `<p class="muted"><b>Appliquer</b> coche « Paliers personnalisés » dans « Ouverture et rythme d'abonnements » et y écrit ces rythmes (${plan.segs.map(x => `${num(x.rate)} / sem. pendant ${num(x.weeks)} sem.`).join(', puis ')}, puis ${num(plan.segs[plan.segs.length - 1].rate)} / sem. ensuite). Toutes les pages sont recalculées. Ton ancien rythme reste enregistré : décoche « Paliers personnalisés » pour y revenir.</p>` : ''}
     ${plan.segs.length ? `<div class="row"><button data-goal="${p}" ${applied ? 'disabled' : ''}>${applied ? 'Rythme appliqué' : 'Appliquer ces paliers au rythme d\'abonnements'}</button></div>` : ''}`);
 }
 
@@ -190,8 +191,9 @@ function productsPage(a, i) {
     </details>`;
   const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
   return `<p class="muted">Chaque produit de ${esc(a.name)} se déplie pour régler son calendrier, ses prix et son rythme de ventes.</p>
-    ${solo}${programs}
-    <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>`;
+    ${calendarCard(a)}${solo}${programs}
+    <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
+    ${a.programs.length ? capacityCard(a, p) : ''}`;
 }
 
 // Tous les jalons d'une application, dans l'ordre chronologique.
@@ -207,42 +209,54 @@ function timeline(a) {
     phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(progName(a, q))}`, sub: price(ph.price), go: pr }));
   });
   if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture des abonnements · ${esc(soloName(a))}`, sub: '', go: { page: 'produits', open: 'sd', anchor: 'open-sd', from: `Produits › ${esc(soloName(a))}` } });
-  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine`, go: { page: 'reglages', open: 'st-cap', anchor: 'st-cap', from: 'Réglages › Capacité de coaching' } }));
+  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine`, go: { page: 'produits', open: 'pr-cap', anchor: 'pr-cap', from: 'Produits › Capacité de coaching' } }));
   items.sort((x, y) => x.date.localeCompare(y.date));
   if (!items.length) return '<p class="muted">Aucune date pour l\'instant : ajoute une cohorte de test ou une date de lancement dans Produits et prix.</p>';
   return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><a href="#${it.go.page}" data-goto="${it.go.page}" data-open="${it.go.open}" data-anchor="${it.go.anchor}">
       <span class="when">${monthName(it.date)}</span><span class="what">${it.text}${it.sub ? ` · <span class="muted">${it.sub}</span>` : ''}<span class="from">${it.go.from} ›</span></span></a></li>`).join('')}</ol>`;
 }
 
-function settingsPage(a, i) {
-  const p = 'apps.' + i;
+// Calendrier de l'application : rassemble les dates saisies dans chaque produit (lecture seule).
+const timelineCount = a => (timeline(a).match(/<li /g) || []).length;
+function calendarCard(a) {
+  const n = timelineCount(a);
+  return `<details class="card product tool-cal" id="pr-cal" ${view.open.has('pr-cal') ? 'open' : ''}><summary><span>Calendrier de ${esc(a.name)}<br><span class="sum-sub">${n} dates · à partir de ${monthName(appStart(a))}</span></span></summary>
+      <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates saisies dans chaque produit et dans la capacité de coaching. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
+      ${timeline(a)}</details>`;
+}
+// Capacité de coaching : commune à tous les programmes de l'application.
+function capacityCard(a, p) {
   const steps = (a.capacitySteps || []).map((c, j) => lineEditor(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['capacity', 'Clientes en même temps'], ['hours', 'Heures / semaine']], 'Retirer ce palier')).join('');
-  return `<h2>${esc(a.name)}</h2>
-    <div class="card">${fields(a, p, [['name', 'Nom de l\'application', 'text']])}</div>
-    <details class="card" id="st-cal" ${view.open.has('st-cal') || !view.open.size ? 'open' : ''}><summary>Calendrier de ${esc(a.name)}</summary>
-      <p class="muted">Ce calendrier ne se saisit pas ici : il rassemble les dates que tu as saisies dans chaque programme, chaque abonnement et la capacité. Touche une date pour aller la modifier. Les prévisions commencent à la première date.</p>
-      ${timeline(a)}</details>
-    ${a.programs.length ? `<details class="card" id="st-cap" ${view.open.has('st-cap') ? 'open' : ''}><summary>Capacité de coaching</summary>
+  const last = (a.capacitySteps || [])[a.capacitySteps.length - 1];
+  return `<details class="card product tool-cap" id="pr-cap" ${view.open.has('pr-cap') ? 'open' : ''}><summary><span>Capacité de coaching<br><span class="sum-sub">${last ? `${a.capacitySteps.length} paliers · jusqu'à ${num(last.capacity)} clientes et ${num(last.hours)} h / semaine` : 'illimitée'} · tous les programmes</span></span></summary>
       <p class="muted">Ajoute un palier à chaque fois que tu peux accompagner plus de clientes : par exemple 10 pendant la cohorte alpha, 25 au lancement, 40 un an plus tard.</p>
       ${steps || '<p class="muted">Aucun palier : capacité illimitée.</p>'}
       <div class="row"><button data-add="${p}.capacitySteps">Ajouter un palier de capacité</button></div>
       ${check('Refuser les inscriptions au-delà de la capacité', p + '.restrict', a.restrict)}
-      ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}</details>` : ''}
-    <details class="card" id="st-where"><summary>Où régler le reste</summary>
+      ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}</details>`;
+}
+
+function settingsPage(a, i) {
+  const p = 'apps.' + i;
+  const vat = state.vat.ttc ? `prix saisis TTC · TVA ${num(state.vat.rate)} %` : 'prix saisis HT';
+  return `<details class="card product solo" id="st-app" ${view.open.has('st-app') || !view.open.size ? 'open' : ''}><summary><span>${esc(a.name)}<br><span class="sum-sub">${a.programs.length ? a.programs.length + ' programme' + (a.programs.length > 1 ? 's' : '') + ' et ' : ''}l'abonnement ${esc(soloName(a))}</span></span></summary>
+      ${fields(a, p, [['name', 'Nom de l\'application', 'text']])}
       <ul class="where">
-        <li><a href="#produits">Produits et prix</a> : cohortes de test, date de lancement, durée, prix en 3 phases, rythme d'inscriptions, promotions, passerelles entre programmes et abonnement, période d'essai.</li>
+        <li><a href="#produits">Produits et prix</a> : calendrier, cohortes de test, lancement, durée, prix en 3 phases, rythme d'inscriptions, objectifs d'abonnées, promotions, passerelles, période d'essai${a.programs.length ? ', capacité de coaching' : ''}.</li>
         <li><a href="#charges">Charges</a> : charges de l'application, coût du coaching, charges de structure Om Holistic.</li>
-        <li>Ci-dessous : TVA, ajout d'une application, export et import.</li>
-      </ul></details>
-    ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
-    <h2>Toutes les applications</h2>
-    <div class="card">
-    ${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
-    ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}
-    <div class="row"><button id="addApp">Ajouter une application</button><button id="export">Exporter les paramètres</button>
-    <label class="file">Importer des paramètres<input id="import" type="file" accept=".json"></label></div>
-    <p id="importMsg" class="warn"></p>
-    <div class="row">${view.confirmReset ? '<button class="danger" id="resetYes">Oui, tout remplacer par les exemples</button><button id="resetNo">Annuler</button>' : '<button class="danger" id="reset">Revenir aux valeurs d\'exemple</button>'}</div></div>`;
+      </ul>
+      ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
+    </details>
+    <details class="card product tool-all" id="st-all" ${view.open.has('st-all') || !view.open.size ? 'open' : ''}><summary><span>Toutes les applications<br><span class="sum-sub">${state.apps.map(x => esc(x.name)).join(' · ')}</span></span></summary>
+      ${section('st-vat', 'price', 'TVA', vat, `${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
+        ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}`)}
+      ${section('st-save', 'sub', 'Sauvegarde', 'export et import du fichier de paramètres', `<p class="muted">Tes paramètres restent dans ce navigateur. Exporte-les régulièrement pour les garder ou les ouvrir sur un autre appareil.</p>
+        <div class="row"><button id="export">Exporter les paramètres</button><label class="file"><span>Importer des paramètres</span><input id="import" type="file" accept=".json"></label></div>
+        <p id="importMsg" class="warn"></p>`)}
+      ${section('st-new', 'ins', 'Ajouter une application', 'nouvelle application avec son abonnement', '<div class="row"><button id="addApp">Ajouter une application</button></div>')}
+      ${section('st-reset', 'promo', 'Revenir aux exemples', 'remplace tous tes paramètres', `<p class="muted">Remplace toutes les applications, produits et charges par les valeurs d'exemple. Pense à exporter avant.</p>
+        <div class="row">${view.confirmReset ? '<button class="danger" id="resetYes">Oui, tout remplacer par les exemples</button><button id="resetNo">Annuler</button>' : '<button class="danger" id="reset">Revenir aux valeurs d\'exemple</button>'}</div>`)}
+    </details>`;
 }
 
 // ---------- Pages de résultats ----------

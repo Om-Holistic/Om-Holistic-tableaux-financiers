@@ -294,3 +294,9 @@ a.golink::after { content: ' ›'; color: var(--sage); font-weight: 700; }
 .goal-res { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: baseline; padding: 6px 2px 0; }
 .goal-res b { color: var(--clay); font-family: Outfit, Inter, sans-serif; font-size: 18px; font-weight: 600; }
 .goal-res span { font-size: 13px; color: var(--ink-soft); }
+details.card.product.tool-cal > summary > span:first-child::before { background: var(--k-cal); border-radius: 50%; }
+details.card.product.tool-cap > summary > span:first-child::before { background: var(--k-sub); border-radius: 50%; }
+details.card.product.tool-all > summary > span:first-child::before { background: var(--k-sub); }
+details.card.product > details.sec { margin-top: 10px; }
+label.file { position: relative; display: inline-flex; align-items: center; cursor: pointer; padding: 10px 14px; border-radius: 12px; background: var(--sage-tint); font-weight: 500; color: var(--ink); font-size: 15px; }
+label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; padding: 0; }

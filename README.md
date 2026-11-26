@@ -13,8 +13,8 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 - **Résultat** : compte d'exploitation par produit (abonnement, chaque programme, commun) ou par application en vue consolidée.
 - **Prévisionnel** : un bloc dépliable par trimestre, mois par mois, avec charges et résultat, puis la capacité de coaching.
 - **Charges** : charges de chaque application et charges de structure Om Holistic.
-- **Produits et prix** : programmes (durée, rythme d'inscriptions, promotions) et abonnements.
-- **Réglages** : calendrier de l'application (cohortes, lancements, phases de prix, capacité), paliers de capacité de coaching, TVA, import / export.
+- **Produits et prix** : calendrier de l'application (lecture seule, chaque date mène à son réglage), abonnement seul (prix, essai, objectif d'abonnées, passerelles), programmes (cohortes, lancement, durée, prix, rythme d'inscriptions, promotions) et capacité de coaching.
+- **Réglages** : nom de l'application, TVA, sauvegarde (export / import), ajout d'une application, retour aux exemples.
 
 Applications par défaut : CHRYSALISS, Bujo et Doodle Studio (abonnement mensuel à 9,90 €, avec une phase « Lancement » à ajuster).
 
