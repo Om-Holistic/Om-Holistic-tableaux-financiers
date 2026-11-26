@@ -11,7 +11,7 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 
 - **Vue d'ensemble** : CA de la période, part programmes / abonnements, résultat, graphique mensuel, revenus par produit.
 - **Résultat** : compte d'exploitation par produit (abonnement, chaque programme, commun) ou par application en vue consolidée.
-- **Prévisionnel** : un bloc dépliable par trimestre, mois par mois, avec charges et résultat, puis la capacité de coaching.
+- **Prévisionnel** : résultat de la période, un bloc par trimestre avec une carte par mois (CA programmes / abonnements, charges, résultat, clientes), tableau détaillé, revenus par produit (liens vers les fiches), puis la capacité de coaching en graphique (pic de clientes en même temps face à la capacité prévue, mois dépassés en rouge).
 - **Charges** : charges de chaque application et charges de structure Om Holistic.
 - **Produits et prix** : calendrier de l'application (lecture seule, chaque date mène à son réglage), abonnement seul (prix, essai, objectif d'abonnées, passerelles), programmes (cohortes, lancement, durée, prix, rythme d'inscriptions, promotions) et capacité de coaching.
 - **Réglages** : nom de l'application, TVA, sauvegarde (export / import), ajout d'une application, retour aux exemples.

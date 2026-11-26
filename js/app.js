@@ -329,13 +329,15 @@ function productLines(r) {
   for (const x of r.scope) {
     const ms = x.months.filter(m => inPeriod(m.month)), last = ms.at(-1);
     const a = x.a, direct = last?.direct || 0, post = last?.post || 0;
-    lines.push({ name: esc(soloName(a)), color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
+    const ai = state.apps.indexOf(a);
+    lines.push({ name: esc(soloName(a)), go: { open: 'sd', app: ai }, color: 'var(--clay)', ca: ms.reduce((s, m) => s + m.directCA + m.postCA, 0),
       detail: a.programs.length ? `${num(direct + post)} abonnées en fin de période, dont ${num(post)} après un programme` : `${num(direct)} abonnées en fin de période` });
-    a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
+    a.programs.forEach((p, i) => lines.push({ name: esc(progName(a, p)), go: { open: 'p' + i, app: ai }, off: !p.enabled, color: 'var(--sage)', ca: ms.reduce((s, m) => s + m.products[i].sales, 0),
       detail: `${num(ms.reduce((s, m) => s + m.products[i].admissions, 0))} inscriptions · ${num(last?.products[i].active || 0)} en cours en fin de période` }));
   }
   const max = Math.max(1, ...lines.map(l => l.ca));
-  return lines.map(l => `<div class="prod"><span>${l.name}${l.off ? ' <span class="tag">Inactif</span>' : ''}</span><b>${money(l.ca)}</b>
+  const link = l => `<a class="golink" href="#produits" data-goto="produits" data-open="${l.go.open}" data-anchor="${l.go.open}"${view.app === 'all' ? ` data-app="${l.go.app}"` : ''}>${l.name}</a>`;
+  return lines.map(l => `<div class="prod"><span>${link(l)}${l.off ? ' <span class="tag">Inactif</span>' : ''}</span><b>${money(l.ca)}</b>
     <span class="meter"><i style="width:${(l.ca / max * 100).toFixed(1)}%;background:${l.color}"></i></span><span class="muted">${l.detail}</span></div>`).join('');
 }
 
@@ -389,36 +391,91 @@ function synthesePage() {
 
 function previsionnelPage() {
   const r = results();
-  const heads = ['Mois', 'Programmes', 'Abo. direct', 'Abo. après prog.', 'CA', 'Charges', 'Résultat', 'En programme', 'Abonnées'];
-  const line = m => [m.month, money(m.sales), money(m.directCA), money(m.postCA), `<b>${money(m.total)}</b>`, money(m.cost), signed(m.net), num(m.active), num(m.direct + m.post)];
-  // Un bloc dépliable par trimestre, avec son total en en-tête.
+  const ms = r.byMonth, last = ms.at(-1) || {};
+  const sum = f => ms.reduce((t, m) => t + m[f], 0);
+  const total = sum('total'), net = sum('net'), cost = sum('cost');
+  const maxMonth = Math.max(1, ...ms.map(m => m.total));
+  // Un mois = une carte : CA (barre programmes / abonnements), charges, résultat, clientes.
+  const card = m => {
+    const subs = m.directCA + m.postCA;
+    return `<div class="mcard"><div class="mh"><b>${monthName(m.month).replace(/ \d+$/, '')}</b><span class="${m.net < 0 ? 'neg' : 'pos'}">${money(m.net)}</span></div>
+      <div class="mbar" title="Programmes ${money(m.sales)} · abonnements ${money(subs)}"><i style="width:${(m.sales / maxMonth * 100).toFixed(1)}%;background:var(--sage)"></i><i style="width:${(subs / maxMonth * 100).toFixed(1)}%;background:var(--clay)"></i></div>
+      <dl><dt>Chiffre d'affaires</dt><dd><b>${money(m.total)}</b></dd><dt>Programmes</dt><dd>${money(m.sales)}</dd><dt>Abonnements</dt><dd>${money(subs)}</dd><dt>Charges</dt><dd>${money(-m.cost)}</dd></dl>
+      <small>${num(m.active)} en programme · ${num(m.direct + m.post)} abonnées</small></div>`;
+  };
   const quarters = new Map();
-  for (const m of r.byMonth) { const q = m.month.slice(0, 4) + ' · T' + Math.ceil(+m.month.slice(5) / 3); (quarters.get(q) || quarters.set(q, []).get(q)).push(m); }
-  const blocks = [...quarters].map(([q, ms], i) => {
-    const s = f => ms.reduce((t, m) => t + m[f], 0);
-    const tot = { month: 'Total', sales: s('sales'), directCA: s('directCA'), postCA: s('postCA'), total: s('total'), cost: s('cost'), net: s('net'), active: ms.at(-1).active, direct: ms.at(-1).direct, post: ms.at(-1).post };
+  for (const m of ms) { const q = m.month.slice(0, 4) + ' · T' + Math.ceil(+m.month.slice(5) / 3); (quarters.get(q) || quarters.set(q, []).get(q)).push(m); }
+  const blocks = [...quarters].map(([q, qm], i) => {
+    const t = f => qm.reduce((s, m) => s + m[f], 0);
     const id = 'q' + q.replace(/\W/g, '');
     const open = view.open.has(id) || (!view.open.size && i === 0) ? 'open' : '';
-    return `<details class="card" id="${id}" ${open}><summary>${q}<span class="sum-sub">${money(tot.total)} · résultat ${money(tot.net)}</span></summary>
-      <div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>`;
+    const qn = t('net');
+    return `<details class="card quarter" id="${id}" ${open}><summary><span>${q}<br><span class="sum-sub">CA ${money(t('total'))} · charges ${money(t('cost'))} · résultat <b class="${qn < 0 ? 'neg' : 'pos'}">${money(qn)}</b></span></span></summary>
+      <div class="months">${qm.map(card).join('')}</div></details>`;
   }).join('');
-  return `<h2>Prévisions mois par mois</h2>${blocks}
-    <details class="card" id="pv-prod"><summary>Par produit</summary><div>${productLines(r)}</div></details>
+  const heads = ['Mois', 'Programmes', 'Abo. direct', 'Abo. après prog.', 'CA', 'Charges', 'Résultat', 'En programme', 'Abonnées'];
+  const line = m => [m.month, money(m.sales), money(m.directCA), money(m.postCA), `<b>${money(m.total)}</b>`, money(m.cost), signed(m.net), num(m.active), num(m.direct + m.post)];
+  const tot = { month: 'Total', sales: sum('sales'), directCA: sum('directCA'), postCA: sum('postCA'), total, cost, net, active: last.active || 0, direct: last.direct || 0, post: last.post || 0 };
+  return `<div class="hero">
+      <div><small>Résultat ${periodName()}</small><div class="big ${net < 0 ? 'neg-hero' : ''}">${money(net)}</div></div>
+      <div class="split"><div><span>Chiffre d'affaires</span><b>${money(total)}</b></div><div><span>Charges</span><b>${money(cost)}</b></div>
+        <div><span>Abonnées en fin de période</span><b>${num((last.direct || 0) + (last.post || 0))}</b></div><div><span>En programme en fin de période</span><b>${num(last.active || 0)}</b></div></div>
+    </div>
+    <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
+    ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
+    <details class="card" id="pv-table"><summary>Tableau détaillé ${periodName()}</summary><div class="scroll"><table>${table(heads, [...ms.map(line), line(tot)], [...ms.map(() => ''), 'total'])}</table></div></details>
+    <details class="card" id="pv-prod" ${view.open.has('pv-prod') || !view.open.size ? 'open' : ''}><summary>Par produit</summary><p class="muted">Touche un produit pour ouvrir ses réglages.</p><div>${productLines(r)}</div></details>
     ${r.scope.some(x => x.a.programs.length) ? capacityBlock(r) : ''}`;
 }
 
+// Capacité de coaching : par mois, le pic de clientes en même temps face à la capacité prévue.
+function capacityChart(x) {
+  const months = new Map();
+  for (const w of x.weekly) {
+    const k = w.date.slice(0, 7);
+    if (!inPeriod(k)) continue;
+    const m = months.get(k) || { month: k, people: 0, hours: 0, cap: w.cap, limit: w.limit };
+    m.people = Math.max(m.people, w.people); m.hours = Math.max(m.hours, w.hours); m.cap = w.cap; m.limit = w.limit;
+    months.set(k, m);
+  }
+  const list = [...months.values()];
+  if (!list.length) return '';
+  const W = Math.max(320, list.length * 26), H = 170, left = 34, bottom = 22, top = 8;
+  const raw = Math.max(5, ...list.map(m => Math.max(m.people, m.cap === Infinity ? 0 : m.cap)));
+  const tick = Math.max(5, Math.ceil(raw / 4 / 5) * 5), max = Math.ceil(raw / tick) * tick;
+  const y = v => top + (H - top - bottom) * (1 - v / max), bw = (W - left) / list.length;
+  const every = Math.max(1, Math.ceil(list.length / 12));
+  const MOIS = ['janv', 'févr', 'mars', 'avr', 'mai', 'juin', 'juil', 'août', 'sept', 'oct', 'nov', 'déc'];
+  const capPath = list.map((m, i) => m.cap === Infinity ? '' : `${i && list[i - 1].cap !== Infinity ? 'L' : 'M'}${left + i * bw},${y(m.cap)} L${left + (i + 1) * bw},${y(m.cap)}`).join(' ');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Clientes en même temps et capacité">`
+    + Array.from({ length: max / tick + 1 }, (_, k) => k * tick).map(t => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(t)}" y2="${y(t)}"/><text x="${left - 6}" y="${y(t) + 3}" text-anchor="end">${t}</text>`).join('')
+    + list.map((m, i) => {
+      const bx = left + i * bw + bw * .18, w = bw * .64, over = m.people > m.cap || m.hours > m.limit;
+      const label = i % every === 0 ? `<text x="${bx + w / 2}" y="${H - 6}" text-anchor="middle">${MOIS[+m.month.slice(5) - 1]}${list.length > 12 ? ' ' + m.month.slice(2, 4) : ''}</text>` : '';
+      return `<g><title>${monthName(m.month)} : ${num(m.people)} clientes en même temps${m.cap === Infinity ? '' : ` pour ${num(m.cap)} places`}, ${m.hours.toFixed(1)} h de coaching${m.limit === Infinity ? '' : ` pour ${num(m.limit)} h`}</title>
+        <rect x="${bx}" y="${y(m.people)}" width="${w}" height="${y(0) - y(m.people)}" rx="2" fill="${over ? 'var(--bad)' : 'var(--k-ins)'}"/></g>${label}`;
+    }).join('')
+    + (capPath ? `<path d="${capPath}" fill="none" stroke="var(--ink)" stroke-width="2" stroke-dasharray="5 4"/>` : '') + '</svg>';
+}
+
 function capacityBlock(r) {
-  const wr = r.scope.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name })));
+  const apps = r.scope.filter(x => x.a.programs.length);
+  const wr = apps.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name })));
   const over = wr.filter(w => w.people > w.cap || w.hours > w.limit).length;
+  const firstOver = wr.find(w => w.people > w.cap || w.hours > w.limit);
   return `<h2>Capacité de coaching</h2><div class="kpis">
       <div class="kpi"><small>Pic de clientes en même temps</small><b>${num(Math.max(0, ...wr.map(w => w.people)))}</b></div>
       <div class="kpi"><small>Pic d'heures de coaching / semaine</small><b>${Math.max(0, ...wr.map(w => w.hours)).toFixed(1)} h</b></div>
       <div class="kpi"><small>Semaines au-dessus de la capacité</small><b class="${over ? 'bad' : 'good'}">${over}</b></div>
       <div class="kpi"><small>En attente en fin de période</small><b>${num(wr.at(-1)?.waiting || 0)}</b></div>
     </div>
+    ${apps.map(x => `<div class="card"><div class="legend"><span><i style="background:var(--k-ins)"></i>Clientes en même temps (pic du mois)</span><span><i style="background:var(--bad)"></i>Au-dessus de la capacité</span><span><i class="dash"></i>Capacité prévue</span></div>
+      <div class="chart cap-chart">${capacityChart(x)}</div>
+      <p class="muted">${firstOver ? `Ta capacité est dépassée à partir de ${monthName(firstOver.date.slice(0, 7))}. Ajoute un palier de capacité, ou coche « Refuser les inscriptions au-delà de la capacité ».` : 'La capacité prévue suffit sur toute la période.'}
+      <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap"${view.app === 'all' ? ` data-app="${state.apps.indexOf(x.a)}"` : ''}>Modifier la capacité de coaching</a></p></div>`).join('')}
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Capacité', 'Heures', 'En attente'],
-        wr.map(w => [w.date, esc(w.name), w.demand, w.admitted, w.people, w.cap === Infinity ? '—' : w.cap, w.hours.toFixed(1) + (w.limit === Infinity ? '' : ' / ' + w.limit), w.waiting]))}</table></div></details>`;
+        wr.map(w => [w.date, esc(w.name), num(w.demand), num(w.admitted), num(w.people), w.cap === Infinity ? '—' : w.cap, w.hours.toFixed(1) + (w.limit === Infinity ? '' : ' / ' + w.limit), num(w.waiting)]))}</table></div></details>`;
 }
 
 // ---------- Charges ----------

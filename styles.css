@@ -304,3 +304,20 @@ label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; wi
 .goal-cap.ok { background: color-mix(in srgb, var(--good) 12%, transparent); }
 .goal-cap.bad { background: color-mix(in srgb, var(--bad) 14%, transparent); }
 .goal-cap.bad b { color: var(--bad); }
+/* Prévisionnel : cartes de mois */
+.legend { flex-wrap: wrap; }
+.legend i.dash { width: 16px; height: 0; border-top: 2px dashed var(--ink); border-radius: 0; vertical-align: 3px; }
+details.quarter > summary .sum-sub b { font-weight: 600; }
+.pos { color: var(--good); } .neg { color: var(--bad); }
+.months { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin-top: 10px; }
+.mcard { background: var(--ground); border-radius: 14px; padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.mcard .mh { display: flex; justify-content: space-between; align-items: baseline; }
+.mcard .mh b { font-family: var(--display); font-size: 1.05rem; text-transform: capitalize; }
+.mcard .mh span { font-family: var(--display); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mbar { display: flex; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.mbar i { display: block; height: 100%; }
+.mcard dl { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; margin: 0; font-size: 13px; }
+.mcard dt { color: var(--ink-soft); } .mcard dd { margin: 0; text-align: right; font-variant-numeric: tabular-nums; }
+.mcard small { font-size: 12px; color: var(--ink-soft); }
+.card .chart { margin: 10px 0; }
+@media (min-width: 768px) { .cap-chart svg { max-height: 260px; } }
