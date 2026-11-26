@@ -121,6 +121,7 @@ Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appare
 - **Canaux et acquisition** (Charges › Canaux de vente et acquisition) : part des ventes passée par l'App Store / Google Play et leur commission ; coût d'acquisition par nouvelle cliente ; valeur d'une cliente sur sa durée de vie.
 - **Trésorerie** (onglet à part, réglages dans Réglages › Trésorerie et revenu) : solde de la société par mois, trimestre, semestre ou année, sur la période du haut ou une plage « du … au … », encaissements, charges, impôts, ta rémunération, détail par application, point bas, point mort, mois où ton revenu visé est atteint, paiement des programmes en plusieurs fois.
 - **Scénarios** (Résultat › Scénarios et sensibilité, réglages dans Réglages › Scénarios) : prudent, central, ambitieux côte à côte ; le scénario choisi s'applique à tous les tableaux ; sensibilité du résultat à 10 % d'écart sur chaque hypothèse.
+- **Charges** : compte d'exploitation de la période (CA, charges variables par nature, marge sur coûts variables, charges fixes par nature, quote-part de structure, résultat), dépliable ; fiches rangées en charges variables puis charges fixes.
 - **Réel face au prévu** (Chiffre d'affaires) : saisie mensuelle du CA et des charges réels, écart au prévu.
 - **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.
 - **Export PDF** : bouton en bas de Résultat, Chiffre d'affaires et Trésorerie (sur iPad : Partager › Enregistrer en PDF).

@@ -972,11 +972,11 @@ function chargeRamp(list, dates, extra = []) {
     <p class="muted">Charges fixes mensuelles seulement. S'y ajoutent les charges ponctuelles, les frais proportionnels au CA, par cliente ou par inscription${extra.length ? ', et ' + extra.join(', ') : ''}.</p>`;
 }
 
-function chargeGroups(list, path, a, dates, scopes) {
+function chargeGroups(list, path, a, dates, scopes, keep = () => true) {
   return CHARGE_CATEGORIES.map(([k, n]) => {
-    const items = list.map((c, j) => ({ c, j })).filter(x => (x.c.category || 'autre') === k);
+    const items = list.map((c, j) => ({ c, j })).filter(x => (x.c.category || 'autre') === k && keep(x.c));
     if (!items.length) return '';
-    const id = (a ? 'cg-' : 'sg-') + k;
+    const id = (a ? 'cg-' : 'sg-') + k + (keep === isFixed ? '-f' : keep.length ? '-v' : '');
     const todo = items.filter(x => badge(x.c).includes('todo')).length;
     return section(id, CAT_KIND[k], n, `${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
       items.map(({ c, j }) => chargeEditor(c, `${path}.${j}`, a, dates, scopes)).join(''));
@@ -1013,47 +1013,50 @@ function acquisitionCard(a, p) {
     <p class="muted">Une cliente doit rapporter au moins 3 fois ce qu'elle coûte à acquérir pour que la croissance soit saine. Les clientes venues de l'abonnement ne coûtent rien à acquérir.</p></details>`;
 }
 
-// Charges de la période choisie en haut, ligne par ligne, avec le même total que Résultat.
+// Compte d'exploitation de la période choisie en haut, présenté comme un compte de résultat différentiel :
+// chiffre d'affaires, charges variables (par nature), marge sur coûts variables, charges fixes (par nature),
+// part de la structure, résultat d'exploitation. Le total est celui de la page Résultat.
+const isFixed = c => c.type === 'fixe' || c.type === 'unique';
 function chargesPeriodCard(a, i, r) {
   const x = r.all[i], entries = x.pnl.filter(e => inPeriod(e.month));
-  if (!entries.length) return `<div class="card" id="ch-period"><h4>Charges ${periodName()}</h4><p class="muted">${esc(a.name)} n'a encore aucun mois dans cette période.</p></div>`;
+  if (!entries.length) return `<div class="card" id="ch-period"><h4>Compte d'exploitation ${periodName()}</h4><p class="muted">${esc(a.name)} n'a encore aucun mois dans cette période.</p></div>`;
   const s = sumPnl(entries), dates = appDates([a]), all = appDates(state.apps);
   const appCharges = r.st.apps[i].charges || [], shared = r.st.shared.charges;
   const startOf = (c, ds) => { const st = chargeStart(c, ds); return st ? monthName(st) : 'dès le début'; };
-  const line = (id, name, sub, v, per) => ({ id, name, sub, v, per });
-  const fixedType = c => c.type === 'fixe' || c.type === 'unique';
-  const groups = [
-    ['Ventes et acquisition', [
-      line(':store', 'Commission App Store / Google Play', `${num(+a.channels?.store || 0)} % des ventes`, s.lines[':store'] || 0, e => e.lines[':store'] || 0),
-      line(':acq', 'Acquisition de nouvelles clientes', 'coût par nouvelle cliente', s.lines[':acq'] || 0, e => e.lines[':acq'] || 0),
-      ...appCharges.filter(c => !fixedType(c)).map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · ${amountText(c, +c.amount || 0)}`, s.lines[c.id] || 0, e => e.lines[c.id] || 0))]],
-    ['Coaching', a.programs.length ? [line(':coaching', 'Heures de coachs', `${money(+a.coachRate || 0)} / h`, s.lines[':coaching'] || 0, e => e.lines[':coaching'] || 0)] : []],
-    [`Charges fixes de ${esc(a.name)}`, appCharges.filter(fixedType).map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · ${c.type === 'unique' ? 'une fois' : 'par mois'} · démarre ${startOf(c, dates)}`, s.lines[c.id] || 0, e => e.lines[c.id] || 0))],
-    ['Part de la structure Om Holistic', shared.map(c => line(c.id, c.name, `${CAT_NAME[c.category] || 'Autre'} · démarre ${startOf(c, all)} · ${r.st.shared.key === 'ca' ? 'au prorata du CA' : 'à parts égales'}`, s.structureLines[c.id] || 0, e => e.structureLines[c.id] || 0))]
-  ];
-  const total = s.total.charges;
-  const quiet = [];
-  const rows = groups.map(([title, ls]) => {
-    const on = ls.filter(l => l.v > 0.5);
-    quiet.push(...ls.filter(l => l.v <= 0.5 && !l.id.startsWith(':')).map(l => esc(l.name)));
+  const ca = s.total.ca, total = s.total.charges;
+  const ln = (id, cat, name, sub, v) => ({ id, cat, name, sub, v });
+  // Lignes de charges variables : celles saisies, plus les coûts calculés (stores, acquisition, coaching).
+  const variable = [
+    ln(':store', 'paiement', 'Commissions App Store / Google Play', `${num(+a.channels?.store || 0)} % des ventes passent par les stores`, s.lines[':store'] || 0),
+    ln(':acq', 'marketing', 'Acquisition de nouvelles clientes', 'coût par nouvelle cliente (Produits et prix)', s.lines[':acq'] || 0),
+    ln(':coaching', 'coaching', 'Heures de coachs', `${money(+a.coachRate || 0)} / h`, s.lines[':coaching'] || 0),
+    ...appCharges.filter(c => !isFixed(c)).map(c => ln(c.id, c.category || 'autre', c.name, amountText(c, +c.amount || 0), s.lines[c.id] || 0))];
+  const fixed = appCharges.filter(isFixed).map(c => ln(c.id, c.category || 'autre', c.name, `${c.type === 'unique' ? 'une fois' : money(+c.amount || 0) + ' / mois'} · démarre ${startOf(c, dates)}`, s.lines[c.id] || 0));
+  const struct = shared.map(c => ln(c.id, c.category || 'autre', c.name, `démarre ${startOf(c, all)} · ${r.st.shared.key === 'ca' ? 'au prorata du CA' : 'à parts égales'}`, s.structureLines[c.id] || 0));
+  const quiet = [...variable, ...fixed, ...struct].filter(l => l.v <= 0.5 && !l.id.startsWith(':')).map(l => esc(l.name));
+  const sum = ls => ls.reduce((t, l) => t + l.v, 0);
+  // Une sous-rubrique par nature de charge (comme les comptes 60 à 64 d'un compte de résultat), dépliable.
+  const byCat = (ls, pre) => CHARGE_CATEGORIES.map(([k, n]) => {
+    const on = ls.filter(l => l.cat === k && l.v > 0.5).sort((p, q) => q.v - p.v);
     if (!on.length) return '';
-    const sub = on.reduce((t, l) => t + l.v, 0);
-    return `<tr class="grp"><td>${title}</td><td>${money(sub)}</td><td>${pctOf(sub, total)}</td></tr>`
-      + on.sort((p, q) => q.v - p.v).map(l => `<tr><td><span class="cl-name">${esc(l.name)}</span><small>${l.sub}</small></td><td>${money(l.v)}</td><td>${pctOf(l.v, total)}</td></tr>`).join('');
+    const v = sum(on);
+    return section(`${pre}-${k}`, CAT_KIND[k], n, `<b>${money(v)}</b> · ${pctOf(v, ca)} du CA`,
+      `<dl class="pl-lines">${on.map(l => `<dt>${esc(l.name)}<small>${l.sub}</small></dt><dd>${money(l.v)}</dd>`).join('')}</dl>`);
   }).join('');
-  // Mois par mois : une colonne par mois de la période.
-  const ms = entries.map(e => e.month), flat = groups.flatMap(([, ls]) => ls).filter(l => l.v > 0.5);
-  const monthly = `<div class="scroll"><table class="ch-months"><thead><tr><th>Charge</th>${ms.map(m => `<th>${monthShort(m)}</th>`).join('')}<th>Total</th></tr></thead><tbody>`
-    + flat.map(l => `<tr><td>${esc(l.name)}</td>${entries.map(e => { const v = l.per(e); return `<td>${v > 0.5 ? num(v) : '·'}</td>`; }).join('')}<td><b>${num(l.v)}</b></td></tr>`).join('')
-    + `<tr class="total"><td>Total</td>${entries.map(e => `<td>${num(sumPnl([e]).total.charges)}</td>`).join('')}<td>${num(total)}</td></tr></tbody></table></div>`;
+  const vTot = sum(variable), fTot = sum(fixed), sTot = sum(struct), margin = ca - vTot, result = ca - total;
+  const level = (id, title, v, body, open) => `<details class="pl-lvl" id="${id}" ${view.open.has(id) || (open && !view.open.size) ? 'open' : ''}><summary><span>${title}</span><b>${money(-v)}</b><small>${pctOf(v, ca)}</small></summary><div class="pl-body">${body || '<p class="muted">Aucune sur la période.</p>'}</div></details>`;
+  const sub = (title, v, cls = '') => `<div class="pl-sub ${cls}"><span>${title}</span><b class="${v < 0 ? 'neg' : ''}">${money(v)}</b><small>${pctOf(v, ca)}</small></div>`;
   const sc = currentScenario();
-  return `<details class="card" id="ch-period" ${view.open.has('ch-period') || !view.open.size ? 'open' : ''}><summary><span>Charges ${periodName()}<br><span class="sum-sub">${money(total)} · ${entries.length} mois, de ${monthName(ms[0])} à ${monthName(ms.at(-1))}</span></span></summary>
-    <div class="scroll"><table class="ch-period"><thead><tr><th>Charge</th><th>Montant</th><th>Part</th></tr></thead><tbody>${rows}
-      <tr class="total"><td>Total des charges</td><td>${money(total)}</td><td>100 %</td></tr></tbody></table></div>
-    ${quiet.length ? `<p class="muted">Pas de coût sur cette période (pas encore démarrées ou déjà terminées) : ${quiet.join(', ')}.</p>` : ''}
-    ${sc && sc.id !== 'central' ? `<p class="muted">Scénario ${esc(sc.name)} : montants ajustés comme dans Résultat. Les fiches plus bas montrent le plan central.</p>` : ''}
-    <details class="sub-d" id="ch-monthly" ${view.open.has('ch-monthly') ? 'open' : ''}><summary>Mois par mois</summary>${monthly}</details>
-    <p class="muted">Change d'année ou de période (trimestre, semestre, tout) en haut de la page.</p></details>`;
+  return `<details class="card" id="ch-period" ${view.open.has('ch-period') || !view.open.size ? 'open' : ''}><summary><span>Compte d'exploitation ${periodName()}<br><span class="sum-sub">charges ${money(total)} · résultat <b class="${result < 0 ? 'neg' : 'pos'}">${money(result)}</b></span></span></summary>
+    <div class="pl">
+      ${sub('Chiffre d\'affaires HT', ca, 'pl-ca')}
+      ${level('pl-var', 'Charges variables', vTot, byCat(variable, 'pv'), true)}
+      ${sub('Marge sur coûts variables', margin)}
+      ${level('pl-fix', `Charges fixes de ${esc(a.name)}`, fTot, byCat(fixed, 'pf'))}
+      ${level('pl-str', 'Quote-part de structure Om Holistic', sTot, byCat(struct, 'ps'))}
+      ${sub('Résultat d\'exploitation', result, 'pl-res')}
+    </div>
+    <p class="muted">Pourcentages : part du chiffre d'affaires HT. Le résultat est celui de la page Résultat, ${periodName()}.${quiet.length ? ` Sans coût sur la période (pas encore démarrées ou terminées) : ${quiet.join(', ')}.` : ''}${sc && sc.id !== 'central' ? ` Scénario ${esc(sc.name)} : montants ajustés comme dans Résultat, les fiches plus bas montrent le plan central.` : ''}</p></details>`;
 }
 
 function chargesPage(a, i) {
@@ -1076,9 +1079,12 @@ function chargesPage(a, i) {
     ${chargesPeriodCard(a, i, r)}
     ${acquisitionCard(a, p)}
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') || !view.open.size ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
-    <h2>Charges de ${esc(a.name)}</h2>
+    <h2>Charges variables de ${esc(a.name)}</h2>
+    <p class="muted">Elles suivent l'activité : par cliente, par inscription ou en pourcentage du chiffre d'affaires.</p>
+    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
+    <h2>Charges fixes de ${esc(a.name)}</h2>
     <p class="muted">Classées comme dans un compte d'exploitation. Chaque charge démarre à une date repère de ton calendrier (et la suit si elle bouge), peut monter par paliers et reste une estimation tant que tu ne l'as pas confirmée. Rattache-la au produit qui la provoque pour voir sa vraie rentabilité.</p>
-    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes)}
+    ${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
     <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>
     ${a.programs.length ? `<div class="card" id="ch-coach"><h4>Coaching</h4><p class="muted">Le coût du coaching vient des heures de coachs embauchées et de leur coût horaire (${money(+a.coachRate || 0)} / h), réglés dans <a href="#produits" data-goto="produits" data-open="pr-cap" data-anchor="pr-cap">Produits › Capacité de coaching</a>.</p></div>` : ''}
     <h2>Charges de structure Om Holistic</h2>
