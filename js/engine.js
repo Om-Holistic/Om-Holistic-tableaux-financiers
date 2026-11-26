@@ -190,7 +190,8 @@ function simulate(a, soloStock) {
   for (const m of months.values()) {
     direct = direct.map((v, k) => v * survival(a.sub.duration) + m.newDirect[k]);
     const postPhase = phaseAt(postGrid, m.month).index;
-    post = post.map((stock, i) => stock.map((v, k) => v * survival(a.sub.postDuration)
+    // Après un programme, même durée d'abonnement que les abonnées de l'application.
+    post = post.map((stock, i) => stock.map((v, k) => v * survival(a.sub.duration)
       + (k === postPhase ? m.products[i].finishedNew * Math.min(100, pos(a.programs[i].toSolo)) / 100 : 0)));
     m.direct = direct.reduce((s, v) => s + v, 0);
     m.post = post.reduce((s, stock) => s + stock.reduce((t, v) => t + v, 0), 0);

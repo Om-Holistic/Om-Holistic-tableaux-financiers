@@ -76,7 +76,8 @@ test('charges de structure : réparties entièrement entre les applications', ()
   const months = [...new Set(pnl.flat().map(e => e.month))];
   for (const month of months) {
     const expected = s.shared.charges.reduce((t, c) => t + (M.chargeAt(c, month, dates) || 0), 0);
-    const got = pnl.reduce((t, list) => t + (list.find(e => e.month === month)?.structure || 0), 0);
+    // La TVA récupérable sort des charges : charges HT + TVA récupérée = montants saisis.
+    const got = pnl.reduce((t, list) => { const e = list.find(x => x.month === month); return t + (e ? e.structure + e.structureVatIn : 0); }, 0);
     assert.ok(near(got, expected), month);
   }
 });
@@ -162,13 +163,16 @@ test('trésorerie : solde = apport + encaissements − charges − impôts − r
   const pnl = P.buildPnl(s, all);
   all.forEach((x, i) => { x.pnl = pnl[i]; });
   const t = P.treasury(s, all);
-  const flows = t.months.reduce((b, m) => b + m.inflow - m.charges - m.taxes - m.pay, 5000);
+  const flows = t.months.reduce((b, m) => b + m.inflow - m.charges - m.taxes - m.vatPaid - m.pay, 5000);
   assert.ok(Math.abs(flows - t.months.at(-1).balance) < 1e-6 * Math.max(1, Math.abs(flows)));
   assert.equal(t.months.find(m => m.month === '2028-12').pay, 0);
   assert.equal(t.months.find(m => m.month === '2029-01').pay, 1500);
   assert.ok(t.low.balance <= Math.min(...t.months.map(m => m.balance)) + 1e-9);
-  // Sans paiement en plusieurs fois, les encaissements valent le chiffre d'affaires.
-  assert.ok(t.months.every(m => Math.abs(m.inflow - m.ca) < 1e-6));
+  // Sans paiement en plusieurs fois, les encaissements valent le chiffre d'affaires plus la TVA collectée.
+  assert.ok(t.months.every(m => Math.abs(m.inflow - m.ca - m.vat) < 1e-6));
+  // Toute la TVA due finit reversée, sauf celle du dernier trimestre pas encore échu.
+  const due = t.months.reduce((x, m) => x + m.vat - m.vatIn, 0), paid = t.months.reduce((x, m) => x + m.vatPaid, 0);
+  assert.ok(paid <= due + 1e-6 && paid > 0);
 });
 
 test('trésorerie : le paiement en 3 fois retarde l\'argent sans changer le chiffre d\'affaires', () => {
@@ -205,8 +209,8 @@ test('trésorerie d\'une application seule : sans apport ni rémunération, quot
   // Chaque mois, les charges sont celles du compte d'exploitation de l'application, structure comprise.
   for (const m of solo.months) {
     const k = all[0].months.findIndex(x => x.month === m.month);
-    assert.ok(near(m.charges, P.sumPnl([all[0].pnl[k]]).total.charges));
+    { const T = P.sumPnl([all[0].pnl[k]]).total; assert.ok(near(m.charges, T.charges + T.vatIn)); }
   }
   // Le solde suit encaissements − charges − impôts.
-  let bal = 0; for (const m of solo.months) { bal += m.inflow - m.charges - m.taxes; assert.ok(near(m.balance, bal, 1e-9)); }
+  let bal = 0; for (const m of solo.months) { bal += m.inflow - m.charges - m.taxes - m.vatPaid; assert.ok(near(m.balance, bal, 1e-9)); }
 });

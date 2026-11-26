@@ -108,6 +108,7 @@ test('compte d\'exploitation : charges rattachées aux produits et structure ré
 test('prix TTC convertis en HT dans le compte d\'exploitation', () => {
   const state = model.defaultState();
   state.vat = { ttc: true, rate: 20 };
+  state.implantation.current = 'fr-sas';
   const sims = state.apps.map(a => simulate(a));
   const pnl = buildPnl(state, sims);
   const k = sims[0].months.findIndex(m => m.month === '2027-10');
