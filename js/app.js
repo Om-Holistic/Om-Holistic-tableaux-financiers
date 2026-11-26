@@ -604,9 +604,12 @@ const printButton = () => `<div class="row print-row"><button class="print-btn" 
 // ---------- Trésorerie ----------
 // Toute la société, toutes applications : ce qui rentre, ce qui sort, et le solde en banque.
 function cashData(sc) {
-  const r = results(sc);
-  return treasury(r.st, r.all);
+  return scopeTreasury(results(sc));
 }
+// Trésorerie de l'application choisie (comme une société à part : quote-part de structure et impôts compris,
+// sans apport ni ta rémunération), ou de toute la société en vue consolidée.
+const scopeTreasury = r => view.app === 'all' ? treasury(r.st, r.all) : treasury(r.st, r.scope, true);
+const soloTag = r => view.app === 'all' ? 'Toute la société, toutes applications' : `${esc(r.scope[0].a.name)} seule, comme une société à part : sa quote-part de structure et ses impôts compris, sans apport de départ ni ta rémunération`;
 const MSHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
 const monthShort = k => k ? MSHORT[+k.slice(5) - 1] + ' ' + k.slice(2, 4) : '—';
 // Plage courte pour le bandeau : « 2027 », « T3 2027 » ou « janv. 27 – déc. 32 ».
@@ -682,7 +685,7 @@ function cashByApp(r, from, to) {
   });
 }
 function tresoreriePage() {
-  const r = results(), t = treasury(r.st, r.all), c = state.cash || {};
+  const r = results(), t = scopeTreasury(r), c = view.app === 'all' ? state.cash || {} : {};
   const { from, to, months } = cashRange(t.months);
   const bs = cashBuckets(months, view.cashStep);
   const end = months.at(-1), first = months[0];
@@ -702,9 +705,9 @@ function tresoreriePage() {
   const ledger = bs.length ? `<div class="cl"><div class="cl-h"><span>Période</span><span></span><span>Variation</span><span>Solde</span></div>`
     + bs.map(b => line('cl-' + b.key, bucketName(b.key, view.cashStep), b.flow, b.balance, detail(b.open, b.inflow, b.charges, b.taxes, b.pay, b.balance))).join('')
     + (bs.length > 1 ? line('cl-total', 'Total', tot('flow'), end.balance, detail(bs[0].open, tot('inflow'), tot('charges'), tot('taxes'), tot('pay'), end.balance), 'cl-tot') : '') + '</div>' : '';
-  const apps = from ? cashByApp(r, from, to) : [];
+  const apps = from && view.app === 'all' ? cashByApp(r, from, to) : [];
   return `${banner({ label: 'Trésorerie', chip: view.cashFrom || view.cashTo ? rangeChip(from, to) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : '') : periodChip(), big: end ? money(end.balance) : '—', bigCls: end && end.balance < 0 ? 'neg-hero' : '',
-      note: `Solde en banque fin ${end ? monthName(end.month) : ''} · ${flow >= 0 ? '+' : ''}${money(flow)} sur la période<br>Toute la société, toutes applications. Apport de départ ${money(t.start)}${c.payFrom ? ` · ta rémunération de ${money(+c.payGoal || 0)} dès ${monthName(c.payFrom)}` : ' · avant ta rémunération'}.`,
+      note: `Solde en banque fin ${end ? monthName(end.month) : ''} · ${flow >= 0 ? '+' : ''}${money(flow)} sur la période<br>${soloTag(r)}.${view.app === 'all' ? ` Apport de départ ${money(t.start)}${c.payFrom ? ` · ta rémunération de ${money(+c.payGoal || 0)} dès ${monthName(c.payFrom)}` : ' · avant ta rémunération'}.` : ''}`,
       tiles: [
         { label: 'Point bas', mini: 'Point bas', value: short(t.low.balance), cls: t.low.balance < 0 ? 'neg-hero' : '', hint: `${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}` },
         { label: 'Point mort', value: t.breakEven ? monthShort(t.breakEven) : 'non atteint', cls: 'txt', hint: 'résultat positif chaque mois ensuite', go: { page: 'resultat' } },
@@ -722,10 +725,10 @@ function tresoreriePage() {
     <details class="card" id="tr-range" ${view.open.has('tr-range') ? 'open' : ''}><summary><span>Plage de mois<br><span class="sum-sub">${view.cashFrom || view.cashTo ? 'personnalisée : ' : 'celle choisie en haut : '}${rangeName}</span></span></summary>
       <div class="grid"><label>Du<select id="cashFrom">${opts(from)}</select></label><label>Au<select id="cashTo">${opts(to)}</select></label></div>
       ${view.cashFrom || view.cashTo ? '<div class="row"><button id="cashReset">Revenir à la période du haut</button></div>' : '<p class="muted">Pour voir par exemple de juin 2027 à mai 2028. Le découpage (mois, trimestre…) se choisit en haut.</p>'}</details>
-    <details class="card" id="tr-apps" ${view.open.has('tr-apps') ? 'open' : ''}><summary><span>Par application<br><span class="sum-sub">${apps.map(x => `${esc(x.name)} ${short(x.result)}`).join(' · ')}</span></span></summary>
+    ${apps.length ? `<details class="card" id="tr-apps" ${view.open.has('tr-apps') ? 'open' : ''}><summary><span>Par application<br><span class="sum-sub">${apps.map(x => `${esc(x.name)} ${short(x.result)}`).join(' · ')}</span></span></summary>
       <div class="scroll"><table>${table(['Application', 'Chiffre d\'affaires HT', 'Charges', 'Apport à la trésorerie'], apps.map(x => [esc(x.name), money(x.ca), money(-x.charges), signed(x.result)]), [])}</table></div>
-      <p class="muted">${rangeName}. Avant impôts, cotisations et ta rémunération, qui se calculent pour toute la société.</p></details>` : '<p class="muted">Aucun mois dans cette période.</p>'}
-    <p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport de départ et ton revenu</a></p>
+      <p class="muted">${rangeName}. Avant impôts, cotisations et ta rémunération, qui se calculent pour toute la société.</p></details>` : ''}` : '<p class="muted">Aucun mois dans cette période.</p>'}
+    ${view.app === 'all' ? '<p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l\'apport de départ et ton revenu</a></p>' : '<p class="muted">Choisis « Om Holistic · consolidé » en haut pour voir toute la société, avec ton apport et ta rémunération.</p>'}
     ${printButton()}`;
 }
 
@@ -753,7 +756,7 @@ const pctOf = (x, t) => t ? Math.round(x / t * 100) + ' %' : '—';
 
 // Raccourci vers la page Trésorerie : solde de fin de période et point bas.
 function cashLink(r) {
-  const t = treasury(r.st, r.all), end = [...t.months].reverse().find(m => inPeriod(m.month));
+  const t = scopeTreasury(r), end = [...t.months].reverse().find(m => inPeriod(m.month));
   if (!end) return '';
   return `<a class="card cash-link" href="#tresorerie"><span><small>Trésorerie</small><b class="${end.balance < 0 ? 'neg' : ''}">${short(end.balance)}</b> fin ${monthName(end.month)}</span>
     <span class="muted">point bas ${short(t.low.balance)} en ${monthName(t.low.month)} ›</span></a>`;
@@ -1210,6 +1213,83 @@ function implantCard(r) {
     <p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-implant" data-anchor="st-implant">Modifier les taux et les frais de chaque implantation</a></p></details>`;
 }
 
+// Indicateurs clés pour un investisseur : récurrence (MRR, ARR), rétention (churn), économie unitaire
+// (ARPU, LTV, CAC, LTV / CAC, retour sur CAC), rentabilité (marge brute, EBITDA) et financement (besoin, burn, autonomie).
+// Un programme = un produit : inscriptions, prix moyen, marge et contribution par inscription, retour sur coaching.
+function progKpis(r, s) {
+  if (view.app === 'all') return '';
+  const x = r.scope[0], a = x.a;
+  const rows = a.programs.filter(p => p.enabled !== false).map(p => {
+    const c = s.cols[p.id] || { ca: 0, coaching: 0, margin: 0, contribution: 0 }, i = a.programs.indexOf(p);
+    const ins = x.months.filter(m => inPeriod(m.month)).reduce((t, m) => t + m.products[i].admissions, 0);
+    const per = v => ins > 0.5 ? money(v / ins) : '—';
+    return [esc(p.name), num(ins), per(c.ca), per(c.coaching), `${per(c.contribution)}`, `${signed(c.contribution)}`, pctOf(c.contribution, c.ca)];
+  });
+  if (!rows.length) return '';
+  return `<h4 class="kpi-h">Programmes de ${esc(a.name)}</h4>
+    <div class="scroll"><table>${table(['Programme', 'Inscriptions', 'CA HT / inscription', 'Coaching / inscription', 'Contribution / inscription', 'Contribution', 'Taux'], rows, [])}</table></div>
+    <p class="muted">Contribution : ce que le programme laisse après ses coûts variables, son coaching et ses charges fixes propres, avant les charges communes et la structure.</p>`;
+}
+function kpiCard(r) {
+  const scope = r.scope, ms = r.byMonth;
+  if (!ms.length) return '';
+  const ht = x => state.vat?.ttc ? x / (1 + (+state.vat.rate || 0) / 100) : x;
+  const s = sumPnl(scope.flatMap(x => x.pnl.filter(e => inPeriod(e.month)))), t = s.total;
+  const last = ms.at(-1), first = ms[0];
+  const subCA = m => ht(m.directCA + m.postCA);
+  const mrr = subCA(last), mrr0 = subCA(first), n = ms.length;
+  const cmgr = n > 1 && mrr0 > 0 ? (Math.pow(mrr / mrr0, 1 / (n - 1)) - 1) * 100 : null;
+  // Churn mensuel : abonnées perdues / abonnées en début de mois, sur la période.
+  let lost = 0, base = 0;
+  for (const x of scope) {
+    const dur = +x.a.sub.duration > 0 ? 1 / +x.a.sub.duration : 0, pdur = +x.a.sub.postDuration > 0 ? 1 / +x.a.sub.postDuration : 0;
+    x.months.forEach((m, k) => { if (!k || !inPeriod(m.month)) return; const p = x.months[k - 1]; lost += p.direct * dur + p.post * pdur; base += p.direct + p.post; });
+  }
+  const churn = base ? lost / base : 0;
+  const subsMonths = ms.reduce((a, m) => a + m.direct + m.post, 0), subRev = ms.reduce((a, m) => a + subCA(m), 0);
+  const arpu = subsMonths ? subRev / subsMonths : 0;
+  const gm = t.ca ? (t.ca - t.fees - t.variable - t.coaching) / t.ca : 0;
+  const ltv = churn > 0 ? arpu * gm / churn : null;
+  // CAC : dépenses de publicité et d'acquisition / nouvelles clientes (inscriptions et nouvelles abonnées).
+  const fresh = scope.reduce((a, x) => a + x.months.filter(m => inPeriod(m.month)).reduce((b, m) => b + (m.newDirect || []).reduce((c, v) => c + v, 0) + m.products.reduce((c, q) => c + q.admissions - (q.fromSolo || 0), 0), 0), 0);
+  const mkt = s.cats.marketing || 0, cac = fresh > 0.5 ? mkt / fresh : null;
+  const ratio = ltv !== null && cac ? ltv / cac : null, payback = cac && arpu * gm > 0 ? cac / (arpu * gm) : null;
+  const ebitda = t.result;
+  const tr = scopeTreasury(r), need = tr.low.balance < 0 ? -tr.low.balance : 0;
+  const tm = tr.months.filter(m => inPeriod(m.month)), endCash = tm.at(-1)?.balance ?? 0;
+  const flows = tm.map((m, k) => m.balance - (k ? tm[k - 1].balance : m.balance - (m.inflow - m.charges - m.taxes - m.pay)));
+  const burn = flows.length ? -flows.reduce((a, v) => a + v, 0) / flows.length : 0;
+  const runway = burn > 0 ? endCash / burn : null;
+  const f = (v, d = 0) => v === null || !isFinite(v) ? '—' : v.toLocaleString('fr-FR', { maximumFractionDigits: d });
+  const kpi = (label, value, hint, cls = '') => `<div class="kpi"><small>${label}</small><b class="${cls}">${value}</b><small>${hint}</small></div>`;
+  const group = (title, items) => `<h4 class="kpi-h">${title}</h4><div class="kpis">${items.join('')}</div>`;
+  return `<details class="card" id="r-kpi" ${view.open.has('r-kpi') || !view.open.size ? 'open' : ''}><summary><span>Indicateurs clés (investisseurs)<br><span class="sum-sub">ARR ${short(mrr * 12)} · marge brute ${f(gm * 100)} % · LTV / CAC ${ratio === null ? '—' : f(ratio, 1)} · besoin de financement ${short(need)}</span></span></summary>
+    ${group('Revenus récurrents', [
+      kpi('MRR', short(mrr), `revenu mensuel récurrent HT, ${monthName(last.month)}`),
+      kpi('ARR', short(mrr * 12), 'MRR × 12'),
+      kpi('Croissance du MRR', cmgr === null ? '—' : (cmgr >= 0 ? '+' : '') + f(cmgr, 1) + ' %', 'par mois en moyenne sur la période', cmgr > 0 ? 'good' : ''),
+      kpi('Abonnées', num(last.direct + last.post), `fin de période · ${num(r.sum('admissions'))} inscriptions aux programmes`)])}
+    ${group('Économie unitaire', [
+      kpi('ARPU', price(Math.round(arpu * 100) / 100), 'revenu moyen par abonnée et par mois, HT'),
+      kpi('Churn mensuel', f(churn * 100, 1) + ' %', 'abonnées perdues chaque mois'),
+      kpi('LTV', ltv === null ? '—' : short(ltv), 'marge brute laissée par une abonnée sur sa durée de vie'),
+      kpi('CAC', cac === null ? '—' : price(Math.round(cac * 100) / 100), cac === null ? 'aucune dépense d\'acquisition saisie' : 'publicité et acquisition / nouvelle cliente'),
+      kpi('LTV / CAC', ratio === null ? '—' : f(ratio, 1), 'cible des investisseurs : 3 ou plus', ratio === null ? '' : ratio >= 3 ? 'good' : 'bad'),
+      kpi('Retour sur CAC', payback === null ? '—' : f(payback, 1) + ' mois', 'mois de marge pour rembourser une acquisition')])}
+    ${progKpis(r, s)}
+    ${group('Rentabilité', [
+      kpi('Chiffre d\'affaires HT', short(t.ca), periodName()),
+      kpi('Marge brute', f(gm * 100) + ' %', 'après charges variables (marge sur coûts variables)'),
+      kpi('EBITDA', short(ebitda), `${pctOf(ebitda, t.ca)} du CA · résultat d'exploitation, sans amortissements`, ebitda < 0 ? 'bad' : 'good'),
+      kpi('Point mort', tr.breakEven ? monthName(tr.breakEven) : 'non atteint', `résultat mensuel positif ensuite${view.app === 'all' ? ', toute la société' : ''}`)])}
+    ${group(view.app === 'all' ? 'Financement (toute la société)' : `Financement de ${esc(r.scope[0].a.name)}, comme une société à part`, [
+      kpi('Besoin de financement', short(need), need ? `point bas en ${monthName(tr.low.month)}${view.app === 'all' ? ', apport de départ compris' : ', à lever ou à apporter'}` : 'la trésorerie ne passe pas sous zéro', need ? 'bad' : 'good'),
+      kpi('Burn rate', burn > 0 ? short(burn) + ' / mois' : 'aucun', burn > 0 ? 'trésorerie consommée par mois en moyenne' : 'la trésorerie augmente sur la période'),
+      kpi('Autonomie (runway)', runway === null ? '—' : f(runway, 0) + ' mois', runway === null ? 'pas de consommation de trésorerie' : 'au rythme de consommation actuel'),
+      kpi('Trésorerie', short(endCash), `fin ${tm.at(-1) ? monthName(tm.at(-1).month) : ''}`)])}
+    <p class="muted">${view.app === 'all' ? 'Toutes applications' : esc(r.scope[0].a.name)}, ${periodName()}, ${currentScenario() ? 'scénario ' + esc(currentScenario().name) : ''}. Prévisions, pas des résultats observés : un investisseur demandera d'où vient chaque hypothèse (Produits et prix, Charges). Le CAC ne compte que les charges classées « Publicité et communication » et le coût d'acquisition par cliente.</p></details>`;
+}
+
 function resultatPage() {
   const r = results();
   const { cols, total } = pnlColumns(r);
@@ -1242,6 +1322,7 @@ function resultatPage() {
         { label: view.app === 'all' ? 'Meilleure application' : 'Meilleur produit', mini: false, value: top ? esc(top.name) : '—', cls: 'txt', hint: top ? money(top.v[key] || 0) + (view.app === 'all' ? ' de résultat' : ' de contribution') : '' }
       ] })}
     ${implantBar(r)}
+    ${kpiCard(r)}
     ${scenarioCard()}
     <details class="card" id="r-bars" open><summary>${view.app === 'all' ? 'Résultat par application' : 'Contribution par produit'}</summary>
         <div class="legend"><span><i style="background:var(--sage-soft)"></i>Chiffre d'affaires</span><span><i style="background:var(--good)"></i>${view.app === 'all' ? 'Résultat' : 'Contribution'}</span></div>
@@ -1264,9 +1345,8 @@ function renderToolbar() {
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
   $('app').value = view.app;
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
-  // La trésorerie est celle de toute la société : pas de choix d'application.
-  document.querySelector('.appsel').hidden = view.page === 'tresorerie';
   $('step').parentElement.hidden = view.page !== 'tresorerie';
+  document.querySelector('.toolbar').classList.toggle('four', view.page === 'tresorerie');
   $('step').value = view.cashStep;
   const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
   if (!years.includes(view.year)) view.year = years[0];

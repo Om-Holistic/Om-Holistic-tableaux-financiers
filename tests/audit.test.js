@@ -195,3 +195,18 @@ test('scénarios : le central ne change rien, le prudent baisse, l\'ambitieux mo
   // Le scénario ne modifie pas l'état d'origine.
   assert.equal(s.apps[0].volume, undefined);
 });
+
+test('trésorerie d\'une application seule : sans apport ni rémunération, quote-part de structure comprise', () => {
+  const s = fresh(); s.cash.start = 50000; s.cash.payFrom = '2027-01'; s.cash.payGoal = 3000;
+  const all = s.apps.map(a => ({ a, ...E.simulate(a) })); const pnl = P.buildPnl(s, all); all.forEach((x, i) => { x.pnl = pnl[i]; });
+  const solo = P.treasury(s, [all[0]], true);
+  assert.strictEqual(solo.start, 0);
+  assert.ok(solo.months.every(m => m.pay === 0));
+  // Chaque mois, les charges sont celles du compte d'exploitation de l'application, structure comprise.
+  for (const m of solo.months) {
+    const k = all[0].months.findIndex(x => x.month === m.month);
+    assert.ok(near(m.charges, P.sumPnl([all[0].pnl[k]]).total.charges));
+  }
+  // Le solde suit encaissements − charges − impôts.
+  let bal = 0; for (const m of solo.months) { bal += m.inflow - m.charges - m.taxes; assert.ok(near(m.balance, bal, 1e-9)); }
+});

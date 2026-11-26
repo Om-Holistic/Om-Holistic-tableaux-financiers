@@ -141,8 +141,10 @@ function afterTax(sc, caHT, result, months) {
 // Encaissements : chiffre d'affaires HT, les programmes payés en plusieurs fois étant étalés sur leurs mensualités.
 // Décaissements : toutes les charges, puis frais de structure, cotisations et impôts de l'implantation (calculés mois par mois,
 // approximation : l'impôt réel se paie souvent l'année suivante), puis ta rémunération à partir du mois choisi.
-function treasury(state, all) {
-  const cash = state.cash || {}, sc = (state.implantation.scenarios.find(x => x.id === state.implantation.current) || state.implantation.scenarios[0]) || {};
+// solo : une application seule, comme une société à part (sans apport de départ ni ta rémunération,
+// avec sa quote-part de structure et ses propres impôts) : c'est ce que regarde un investisseur de cette application.
+function treasury(state, all, solo = false) {
+  const cash = solo ? {} : state.cash || {}, sc = (state.implantation.scenarios.find(x => x.id === state.implantation.current) || state.implantation.scenarios[0]) || {};
   const ht = x => state.vat?.ttc ? x / (1 + pnlPos(state.vat.rate) / 100) : x;
   const months = [...new Set(all.flatMap(x => x.months.map(m => m.month)))].sort();
   let balance = pnlPos(cash.start), low = { month: months[0], balance }, cumResult = 0;
