@@ -72,7 +72,7 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'utilisatrices', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
 const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
@@ -734,6 +734,57 @@ function cashChart(bs) {
     + bs.map((b, i) => i % every === 0 || step === 'm' ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b)}</text>` : '').join('')
     + '</svg>';
 }
+// ---------- Utilisatrices : combien de femmes dans chaque produit, mois par mois ----------
+// Abonnement : abonnées en cours (directes et après un programme). Programme : clientes en cours de programme.
+const USER_COLORS = ['var(--clay)', 'var(--sage)', '#e8a33d', '#2fa89a', '#d2649a', '#4a90d9', '#8a6d3b', '#7fb03a'];
+function userSeries(r) {
+  const out = [];
+  for (const x of r.scope) {
+    const a = x.a, ms = x.months;
+    out.push({ name: soloName(a), short: r.scope.length > 1 ? a.name : 'Abonnement', kind: 'abonnées', at: k => (ms[k]?.direct || 0) + (ms[k]?.post || 0) });
+    a.programs.forEach((p, j) => { if (p.enabled !== false) out.push({ name: progName(a, p), short: p.name, kind: 'en programme', at: k => ms[k]?.products[j]?.active || 0 }); });
+  }
+  return out.map((s, i) => ({ ...s, color: USER_COLORS[i % USER_COLORS.length] }));
+}
+function usersChart(bs, series) {
+  const avail = Math.max(300, ($('page')?.clientWidth || 360) - 34);
+  const W = Math.max(avail, bs.length * 34), H = 220, left = 46, bottom = 24, top = 10, right = 10;
+  const hi = Math.max(1, ...series.flatMap(s => bs.map(b => s.v[b.i])));
+  const y = v => top + (H - top - bottom) * (1 - v / hi);
+  const slot = (W - left - right) / Math.max(1, bs.length), cx = i => left + slot * (i + 0.5);
+  const every = Math.max(1, Math.ceil(bs.length / Math.max(4, Math.floor((W - left) / 46)))), step = view.cashStep;
+  const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MSHORT[+b.key.slice(5) - 1].replace('.', '') + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Utilisatrices par produit">`
+    + [0, hi / 2, hi].map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${num(Math.round(v))}</text>`).join('')
+    + series.map(s => `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(s.v[b.i]).toFixed(1)}`).join(' ')}" fill="none" stroke="${s.color}" stroke-width="2.5" stroke-linejoin="round"><title>${esc(s.name)}</title></polyline>`
+      + (bs.length <= 24 ? bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(s.v[b.i])}" r="2.5" fill="${s.color}"><title>${esc(s.name)} · ${bucketName(b.key, step)} : ${num(Math.round(s.v[b.i]))}</title></circle>`).join('') : '')).join('')
+    + bs.map((b, i) => i % every === 0 ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b) || MSHORT[+b.key.slice(5) - 1]?.replace('.', '') || ''}</text>` : '').join('')
+    + '</svg>';
+}
+function usersPage() {
+  const r = results(), x0 = r.scope[0], months = x0 ? x0.months.map(m => m.month) : [];
+  const series = userSeries(r);
+  // Valeur de fin de période de chaque produit (les utilisatrices se comptent à un moment donné, elles ne s'additionnent pas sur les mois).
+  const bs = [];
+  months.forEach((m, k) => { if (!inPeriod(m)) return; const key = bucketOf(m, view.cashStep); const b = bs.at(-1); if (b && b.key === key) b.i = k; else bs.push({ key, i: k }); });
+  series.forEach(s => { s.v = {}; bs.forEach(b => { s.v[b.i] = s.at(b.i); }); });
+  const last = bs.at(-1), first = bs[0];
+  const end = s => last ? Math.round(s.v[last.i]) : 0;
+  const total = series.reduce((t, s) => t + end(s), 0);
+  const peak = s => Math.max(0, ...bs.map(b => s.v[b.i]));
+  const legend = `<div class="legend">${series.map(s => `<span><i style="background:${s.color}"></i>${esc(s.short)}</span>`).join('')}</div>`;
+  const heads = ['Période', ...series.map(s => `<span class="dotk" style="background:${s.color}"></span>${esc(s.short)}`)];
+  const rows = bs.map(b => [bucketName(b.key, view.cashStep), ...series.map(s => num(Math.round(s.v[b.i])))]);
+  const tile = s => ({ label: esc(s.short), value: num(end(s)), hint: `${s.kind} fin ${last ? monthName(months[last.i]) : ''} · au plus haut ${num(Math.round(peak(s)))}` });
+  return `${banner({ label: 'Utilisatrices', chip: periodChip(), big: num(total),
+      note: last ? `Fin ${monthName(months[last.i])} : ${series.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
+      tiles: series.slice(0, 4).map(tile) })}
+    ${bs.length ? `<details class="card" id="us-chart" open><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
+      ${legend}<div class="scroll chart-scroll">${usersChart(bs, series)}</div></details>
+    <details class="card" id="us-table" ${view.open.has('us-table') || !view.open.has('us-table-closed') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
+      <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
+}
+
 // Encaissements et charges de chaque application sur la plage (les impôts et ta rémunération sont ceux de la société).
 function cashByApp(r, from, to) {
   return r.all.map(x => {
@@ -1730,8 +1781,8 @@ function renderToolbar() {
   if (view.plan === 'avec' && (view.app === 'all' || !state.apps[+view.app]?.raisePlan?.on || (settings && view.page !== 'charges'))) view.plan = 'sans';
   $('app').value = view.app + (view.plan === 'avec' ? '+' : '');
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
-  $('step').parentElement.hidden = view.page !== 'tresorerie';
-  document.querySelector('.toolbar').classList.toggle('four', view.page === 'tresorerie');
+  $('step').parentElement.hidden = !['tresorerie', 'utilisatrices'].includes(view.page);
+  document.querySelector('.toolbar').classList.toggle('four', ['tresorerie', 'utilisatrices'].includes(view.page));
   $('step').value = view.cashStep;
   const y0 = Math.min(...state.apps.map(a => +appStart(a).slice(0, 4))), y1 = Math.max(HORIZON_END, ...state.apps.map(a => +appStart(a).slice(0, 4) + 5));
   const years = []; for (let y = y0; y <= y1; y++) years.push(y);
@@ -1748,7 +1799,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { synthese: synthesePage, utilisatrices: usersPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
