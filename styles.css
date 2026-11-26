@@ -184,3 +184,22 @@ tr.sub td { font-weight: 600; background: var(--sage-tint); }
 tr.sub td:first-child { background: var(--sage-tint); }
 tr.total td { font-size: 14px; border-top: 2px solid var(--ink); }
 @media (max-width: 767px) { table.pnl td:first-child { min-width: 118px; max-width: 130px; font-size: 12px; } }
+
+/* Choix du mois : deux listes côte à côte */
+.monthpick { display: grid; grid-template-columns: 1.4fr 1fr; gap: 6px; }
+.monthpick select { padding-left: 10px; }
+
+/* Calendrier de l'application */
+.timeline { list-style: none; margin: 0; padding: 0 0 0 4px; display: flex; flex-direction: column; }
+.timeline li { display: grid; grid-template-columns: 104px 1fr; gap: 12px; padding: 8px 0 8px 16px; position: relative; border-left: 2px solid var(--line); }
+.timeline li::before { content: ""; position: absolute; left: -6px; top: 13px; width: 10px; height: 10px; border-radius: 50%; background: var(--surface); border: 2px solid var(--ink-soft); }
+.timeline li.test::before { border-color: var(--clay); background: var(--clay); }
+.timeline li.launch::before { border-color: var(--sage); background: var(--sage); }
+.timeline li.cap::before { border-color: var(--sage); }
+.timeline .when { font-variant-numeric: tabular-nums; color: var(--ink-soft); font-size: 13px; }
+.where { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+a { color: var(--sage); }
+.grid > .wide { grid-column: 1 / -1; }
+@media (min-width: 768px) { .grid > .wide { grid-column: span 2; } .grid:has(> .wide) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+.monthpick { max-width: 360px; }
+.timeline li.price { opacity: .8; }

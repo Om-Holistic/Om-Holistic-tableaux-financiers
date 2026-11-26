@@ -33,8 +33,18 @@ function check(label, path, value) {
 function select(label, path, value, options) {
   return `<label>${esc(label)}<select data-path="${esc(path)}">${options.map(([v, l]) => `<option value="${esc(v)}" ${v === value ? 'selected' : ''}>${esc(l)}</option>`).join('')}</select></label>`;
 }
+const MONTHS = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre'];
+const monthName = k => k ? MONTHS[+k.slice(5) - 1] + ' ' + k.slice(0, 4) : '';
+// Choix d'un mois en deux listes (mois, année) plutôt que le calendrier du navigateur.
+function monthField(label, path, value) {
+  const [y, m] = value ? value.split('-') : ['', ''];
+  const years = []; for (let k = 2025; k <= 2034; k++) years.push(String(k));
+  return `<label class="wide">${esc(label)}<span class="monthpick" data-mpath="${esc(path)}">
+    <select aria-label="${esc(label)} : mois"><option value="">—</option>${MONTHS.map((n, i) => { const v = String(i + 1).padStart(2, '0'); return `<option value="${v}" ${v === m ? 'selected' : ''}>${n}</option>`; }).join('')}</select>
+    <select aria-label="${esc(label)} : année"><option value="">—</option>${years.map(v => `<option ${v === y ? 'selected' : ''}>${v}</option>`).join('')}</select></span></label>`;
+}
 function fields(obj, prefix, defs) {
-  return '<div class="grid">' + defs.map(([k, l, t]) => field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
+  return '<div class="grid">' + defs.map(([k, l, t]) => t === 'month' ? monthField(l, prefix + '.' + k, obj[k]) : field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
 }
 function resolve(path) {
   const keys = path.split('.'), last = keys.pop();
@@ -44,7 +54,7 @@ function resolve(path) {
 // Grille de prix en trois phases.
 function pricingEditor(grid, path, title) {
   const now = phaseAt(grid, thisMonth);
-  const rows = grid.map((ph, k) => `<div class="phase">${fields(ph, path + '.' + k, [['label', 'Nom', 'text'], ['start', 'À partir de', 'month'], ['price', 'Prix (€)']])}</div>`).join('');
+  const rows = grid.map((ph, k) => `<div class="phase">${fields(ph, path + '.' + k, [['label', 'Nom', 'text'], ['price', 'Prix (€)'], ['start', 'À partir de', 'month']])}</div>`).join('');
   return `<fieldset><legend>${esc(title)}</legend>${rows}
     <p class="muted">Une phase sans date est ignorée. Avant la première date, le prix de la première phase s'applique.
     Ce mois-ci : <b>${esc(now.label)}</b> à ${price(now.price)}.</p></fieldset>`;
@@ -54,64 +64,98 @@ const growth = [['initial', 'Départ / semaine'], ['target', 'Objectif / semaine
 
 // ---------- Pages de paramètres ----------
 
+function programCard(a, q, j, p) {
+  const t = p + '.programs.' + j;
+  const open = view.open.has('p' + j) ? 'open' : '';
+  const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
+  const cohorts = q.cohorts.map((c, k) => `<div class="phase">${fields(c, `${t}.cohorts.${k}`, [['name', 'Nom', 'text'], ['date', 'Démarrage', 'month'], ['size', 'Nombre de clientes']])}
+      <div class="row"><button class="danger" data-remove="${t}.cohorts.${k}">Retirer cette cohorte</button></div></div>`).join('');
+  return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${q.cohorts.length} cohorte(s) de test · ${launch}</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
+      ${check('Programme actif', t + '.enabled', q.enabled)}
+      ${fields(q, t, [['name', 'Nom', 'text'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes de coaching / cliente / semaine']])}
+      <fieldset><legend>Calendrier</legend>
+        <p class="muted">Les cohortes de test démarrent ensemble le premier lundi de leur mois. Ajoute-en autant que tu veux (alpha, deuxième, troisième…).</p>
+        ${cohorts || '<p class="muted">Aucune cohorte de test.</p>'}
+        <div class="row"><button data-add="${t}.cohorts">Ajouter une cohorte de test</button></div>
+        ${fields(q, t, [['start', 'Lancement commercial', 'month']])}
+        <p class="muted">À partir du lancement, les inscriptions arrivent en continu selon le rythme ci-dessous. Laisse vide si le lancement n'est pas encore fixé.</p>
+      </fieldset>
+      ${pricingEditor(q.pricing, t + '.pricing', 'Prix du programme (prix total payé à l\'inscription)')}
+      <fieldset><legend>Inscriptions après le lancement · premières semaines</legend>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
+        ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}</fieldset>
+      <fieldset><legend>Inscriptions ensuite · montée en puissance</legend>${fields(q, t, growth)}
+        ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
+        ${q.palierMode ? q.paliers.map((r, k) => fields(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']]) + `<div class="row"><button class="danger" data-remove="${t}.paliers.${k}">Supprimer le palier</button></div>`).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}</fieldset>
+      <fieldset><legend>Promotions ponctuelles</legend>
+        ${q.promos.map((r, k) => fields(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']]) + `<div class="row"><button class="danger" data-remove="${t}.promos.${k}">Supprimer</button></div>`).join('')}
+        <div class="row"><button data-add="${t}.promos">Ajouter une promotion</button></div>
+        <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p></fieldset>
+      <div class="row"><button class="danger" data-remove="${t}">Supprimer le programme</button></div>
+    </details>`;
+}
+
 function productsPage(a, i) {
   const p = 'apps.' + i;
-  const programs = a.programs.map((q, j) => {
-    const t = p + '.programs.' + j;
-    const open = view.open?.has('p' + j) ? 'open' : '';
-    const current = phaseAt(q.pricing, thisMonth);
-    return `<details class="card" id="p${j}" ${open}><summary><span>${esc(q.name)}<br><span class="sum-sub">${num(q.duration)} semaines · ${price(current.price)} ce mois-ci</span></span><span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span></summary>
-      ${check('Programme actif', t + '.enabled', q.enabled)}
-      ${fields(q, t, [['name', 'Nom', 'text'], ['start', 'Début commercial', 'month'], ['duration', 'Durée (semaines)'], ['coach', 'Minutes coach / cliente / semaine']])}
-      ${pricingEditor(q.pricing, t + '.pricing', 'Prix du programme (prix total payé à l\'inscription)')}
-      <fieldset><legend>Rythme d'inscriptions · 1. Bêta</legend>${check('Activer', t + '.beta', q.beta)}
-        ${fields(q, t, [['betaStart', 'Début', 'month'], ['betaCount', 'Cohortes'], ['betaSize', 'Clientes / cohorte'], ['betaInterval', 'Intervalle (mois)']])}</fieldset>
-      <fieldset><legend>2. Lancement</legend>${check('Activer', t + '.launch', q.launch)}
-        ${fields(q, t, [['launchWeeks', 'Durée (semaines)'], ['launchRate', 'Clientes / semaine']])}</fieldset>
-      <fieldset><legend>3. Développement puis croisière</legend>${fields(q, t, growth)}
-        ${check('Paliers personnalisés', t + '.palierMode', q.palierMode)}
-        ${q.paliers.map((r, k) => fields(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Semaines']]) + `<button data-remove="${t}.paliers.${k}">Supprimer le palier</button>`).join('')}
-        <button data-add="${t}.paliers">Ajouter un palier</button></fieldset>
-      <fieldset><legend>Promotions ponctuelles</legend>
-        ${q.promos.map((r, k) => fields(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']]) + `<button data-remove="${t}.promos.${k}">Supprimer</button>`).join('')}
-        <button data-add="${t}.promos">Ajouter une promotion</button>
-        <p class="muted">Une promotion remplace le prix de la phase pendant ses mois.</p></fieldset>
-      <button class="danger" data-remove="${t}">Supprimer le programme</button>
-    </details>`;
-  }).join('');
+  const programs = a.programs.map((q, j) => programCard(a, q, j, p)).join('');
+  const post = a.programs.length ? `<details class="card" id="sp" ${view.open.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
+      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel')}
+      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>` : '';
   return `<h2>Programmes de ${esc(a.name)}</h2>${programs || '<p class="muted">Aucun programme.</p>'}
     <div class="row"><button data-add="${p}.programs">Ajouter un programme</button></div>
     <h2>Abonnements ${esc(a.name)}</h2>
     <div class="card">${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}</div>
-    <details class="card" id="sd" ${view.open?.has('sd') ? 'open' : ''}><summary>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}</summary>
+    <details class="card" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary>Abonnement ${esc(a.name)}${a.programs.length ? ' (sans programme)' : ''}</summary>
       ${pricingEditor(a.sub.directPricing, p + '.sub.directPricing', 'Prix mensuel')}
-      <fieldset><legend>Rythme d'abonnements</legend>${fields(a.sub, p + '.sub', [['start', 'Début', 'month'], ...growth, ['duration', 'Durée moyenne (mois)']])}
+      <fieldset><legend>Ouverture et rythme d'abonnements</legend>${fields(a.sub, p + '.sub', [['start', 'Ouverture des abonnements', 'month'], ...growth, ['duration', 'Durée moyenne d\'abonnement (mois)']])}
       <p class="muted">0 mois = aucune résiliation. Sinon résiliation mensuelle = 1 / durée.</p></fieldset></details>
-    ${a.programs.length ? '' : '<!--'}<details class="card" id="sp" ${view.open?.has('sp') ? 'open' : ''}><summary>Abonnement après un programme</summary>
-      ${pricingEditor(a.sub.postPricing, p + '.sub.postPricing', 'Prix mensuel')}
-      <fieldset><legend>Conversion</legend>${fields(a.sub, p + '.sub', [['conversion', 'Clientes qui s\'abonnent en fin de programme (%)'], ['postDuration', 'Durée moyenne (mois)']])}</fieldset></details>${a.programs.length ? '' : '-->'}`;
+    ${post}`;
+}
+
+// Tous les jalons d'une application, dans l'ordre chronologique.
+function timeline(a) {
+  const items = [];
+  for (const q of a.programs) {
+    if (!q.enabled) continue;
+    q.cohorts.forEach(c => c.date && items.push({ date: c.date, kind: 'test', text: `${esc(c.name)} · ${esc(q.name)}`, sub: `${num(c.size)} clientes` }));
+    if (q.start) items.push({ date: q.start, kind: 'launch', text: `Lancement commercial · ${esc(q.name)}`, sub: '' });
+    phasesOf(q.pricing).forEach(ph => items.push({ date: ph.start, kind: 'price', text: `${esc(ph.label)} de prix · ${esc(q.name)}`, sub: price(ph.price) }));
+  }
+  if (a.sub.start) items.push({ date: a.sub.start, kind: 'launch', text: `Ouverture de l'abonnement ${esc(a.name)}`, sub: '' });
+  (a.capacitySteps || []).forEach(c => c.date && items.push({ date: c.date, kind: 'cap', text: 'Capacité de coaching', sub: `${num(c.capacity)} clientes · ${num(c.hours)} h / semaine` }));
+  items.sort((x, y) => x.date.localeCompare(y.date));
+  return `<ol class="timeline">${items.map(it => `<li class="${it.kind}"><span class="when">${monthName(it.date)}</span><span>${it.text}${it.sub ? `<br><span class="muted">${it.sub}</span>` : ''}</span></li>`).join('')}</ol>`;
 }
 
 function settingsPage(a, i) {
   const p = 'apps.' + i;
-  return `<h2>Réglages de ${esc(a.name)}</h2>
-    <div class="card">${fields(a, p, [['name', 'Nom', 'text'], ['start', 'Début des prévisions', 'month']])}
-      <p class="muted">Les charges se saisissent dans l'onglet Charges.</p></div>
-    <div class="card">
-    ${a.programs.length ? '' : '<!--'}<fieldset><legend>Capacité de coaching</legend>
-      ${fields(a, p, [['capacity', 'Clientes coachées en même temps'], ['hours', 'Heures coach / semaine']])}
-      ${check('Limiter les inscriptions à la capacité', p + '.restrict', a.restrict)}
-      ${check('Liste d\'attente pour les inscriptions refusées', p + '.waitlist', a.waitlist)}
-      ${a.capacityChanges.map((c, j) => fields(c, p + '.capacityChanges.' + j, [['date', 'À partir de', 'month'], ['capacity', 'Capacité']]) + `<button data-remove="${p}.capacityChanges.${j}">Supprimer</button>`).join('')}
-      <button data-add="${p}.capacityChanges">Ajouter une évolution de capacité</button></fieldset>${a.programs.length ? '' : '-->'}
-    ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}</div>
+  const steps = (a.capacitySteps || []).map((c, j) => `<div class="phase">${fields(c, `${p}.capacitySteps.${j}`, [['date', 'À partir de', 'month'], ['capacity', 'Clientes en même temps'], ['hours', 'Heures de coaching / semaine']])}
+      <div class="row"><button class="danger" data-remove="${p}.capacitySteps.${j}">Retirer ce palier</button></div></div>`).join('');
+  return `<h2>${esc(a.name)}</h2>
+    <div class="card">${fields(a, p, [['name', 'Nom de l\'application', 'text']])}</div>
+    <details class="card" id="st-cal" ${view.open.has('st-cal') || !view.open.size ? 'open' : ''}><summary>Calendrier de ${esc(a.name)}</summary>
+      <p class="muted">Les prévisions commencent automatiquement à la première date de ce calendrier. Chaque date se règle dans <a href="#produits">Produits et prix</a> (cohortes, lancement, phases de prix) ou ci-dessous (capacité).</p>
+      ${timeline(a)}</details>
+    ${a.programs.length ? `<details class="card" id="st-cap" ${view.open.has('st-cap') ? 'open' : ''}><summary>Capacité de coaching</summary>
+      <p class="muted">Ajoute un palier à chaque fois que tu peux accompagner plus de clientes : par exemple 10 pendant la cohorte alpha, 25 au lancement, 40 un an plus tard.</p>
+      ${steps || '<p class="muted">Aucun palier : capacité illimitée.</p>'}
+      <div class="row"><button data-add="${p}.capacitySteps">Ajouter un palier de capacité</button></div>
+      ${check('Refuser les inscriptions au-delà de la capacité', p + '.restrict', a.restrict)}
+      ${a.restrict ? check('Mettre les inscriptions refusées en liste d\'attente', p + '.waitlist', a.waitlist) : ''}</details>` : ''}
+    <details class="card" id="st-where"><summary>Où régler le reste</summary>
+      <ul class="where">
+        <li><a href="#produits">Produits et prix</a> : cohortes de test, date de lancement, durée, prix en 3 phases, rythme d'inscriptions, promotions, abonnements et conversion après programme.</li>
+        <li><a href="#charges">Charges</a> : charges de l'application, coût du coaching, charges de structure Om Holistic.</li>
+        <li>Ci-dessous : TVA, ajout d'une application, export et import.</li>
+      </ul></details>
+    ${state.apps.length > 1 ? `<div class="row"><button class="danger" data-remove-app="${i}">Supprimer l'application ${esc(a.name)}</button></div>` : ''}
     <h2>Toutes les applications</h2>
     <div class="card">
     ${check('Mes prix sont saisis TTC (le compte d\'exploitation les convertit en HT)', 'vat.ttc', state.vat.ttc)}
     ${state.vat.ttc ? fields(state.vat, 'vat', [['rate', 'Taux de TVA (%)']]) : ''}
     <div class="row"><button id="addApp">Ajouter une application</button><button id="export">Exporter les paramètres</button>
     <label class="file">Importer des paramètres<input id="import" type="file" accept=".json"></label></div>
-    <p id="importMsg" class="warn"></p></div>`;
+    <p id="importMsg" class="warn"></p>
+    <div class="row">${view.confirmReset ? '<button class="danger" id="resetYes">Oui, tout remplacer par les exemples</button><button id="resetNo">Annuler</button>' : '<button class="danger" id="reset">Revenir aux valeurs d\'exemple</button>'}</div></div>`;
 }
 
 // ---------- Pages de résultats ----------
@@ -235,7 +279,7 @@ function previsionnelPage() {
 }
 
 function capacityBlock(r) {
-  const wr = r.scope.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name, limit: x.a.hours })));
+  const wr = r.scope.flatMap(x => x.weekly.filter(w => inPeriod(w.date.slice(0, 7))).map(w => ({ ...w, name: x.a.name })));
   const over = wr.filter(w => w.people > w.cap || w.hours > w.limit).length;
   return `<h2>Capacité de coaching</h2><div class="kpis">
       <div class="kpi"><small>Pic de clientes en même temps</small><b>${num(Math.max(0, ...wr.map(w => w.people)))}</b></div>
@@ -245,7 +289,7 @@ function capacityBlock(r) {
     </div>
     <details class="card" id="c-weeks"><summary>Capacité semaine par semaine</summary>
       <div class="scroll"><table>${table(['Semaine', 'Application', 'Demande', 'Inscriptions', 'En cours', 'Capacité', 'Heures', 'En attente'],
-        wr.map(w => [w.date, esc(w.name), w.demand, w.admitted, w.people, w.cap, w.hours.toFixed(1), w.waiting]))}</table></div></details>`;
+        wr.map(w => [w.date, esc(w.name), w.demand, w.admitted, w.people, w.cap === Infinity ? '—' : w.cap, w.hours.toFixed(1) + (w.limit === Infinity ? '' : ' / ' + w.limit), w.waiting]))}</table></div></details>`;
 }
 
 // ---------- Charges ----------
@@ -353,7 +397,7 @@ function renderToolbar() {
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
   $('app').value = view.app;
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings; });
-  const years = [...new Set(state.apps.flatMap(a => { const y = +a.start.slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
+  const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
   if (!years.includes(view.year)) view.year = years[0];
   $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
   $('year').value = view.year;
@@ -382,7 +426,15 @@ window.addEventListener('hashchange', route);
 
 document.addEventListener('change', async e => {
   const t = e.target;
-  if (t.dataset.path) {
+  const pick = t.closest?.('.monthpick');
+  if (pick) {
+    const [m, y] = [...pick.querySelectorAll('select')].map(x => x.value);
+    if ((m && y) || (!m && !y)) {
+      const [o, k] = resolve(pick.dataset.mpath);
+      o[k] = m && y ? `${y}-${m}` : '';
+      save(); render();
+    }
+  } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? Math.max(0, +t.value || 0) : t.value;
     save();
@@ -407,7 +459,8 @@ document.addEventListener('click', e => {
       programs: () => program('Nouveau programme', thisMonth, [100, 150, 200], 8),
       paliers: () => ({ rate: 2, weeks: 8 }),
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
-      capacityChanges: () => ({ date: thisMonth, capacity: 60 }),
+      capacitySteps: () => ({ date: thisMonth, capacity: 20, hours: 15 }),
+      cohorts: () => ({ name: ['Cohorte alpha', 'Deuxième cohorte', 'Troisième cohorte'][o[k].length] || `Cohorte ${o[k].length + 1}`, date: thisMonth, size: 10 }),
       charges: () => charge('Nouvelle charge', 'fixe', 0)
     }[k];
     o[k].push(fresh()); save(); render();
@@ -416,6 +469,9 @@ document.addEventListener('click', e => {
     o.splice(+k, 1); save(); render();
   } else if (t.dataset.removeApp) {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
+  } else if (t.id === 'reset') { view.confirmReset = true; render();
+  } else if (t.id === 'resetNo') { view.confirmReset = false; render();
+  } else if (t.id === 'resetYes') { view.confirmReset = false; state = defaultState(); view.app = '0'; save(); render(true);
   } else if (t.id === 'addApp') {
     state.apps.push(application('Nouvelle application')); view.app = String(state.apps.length - 1); save(); render();
   } else if (t.id === 'export') {

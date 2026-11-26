@@ -37,7 +37,8 @@ function program(name, start, prices, duration) {
   return {
     id: newId(), name, start, enabled: true, duration, coach: 20,
     pricing: pricing(start, prices),
-    beta: false, betaStart: start, betaCount: 1, betaSize: 10, betaInterval: 1,
+    // Cohortes de test avant le lancement commercial (start) : nom, mois, nombre de clientes.
+    cohorts: [],
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
     palierMode: false, paliers: [], promos: []
@@ -46,8 +47,9 @@ function program(name, start, prices, duration) {
 
 function application(name) {
   return {
-    name, start: '2026-11', capacity: 40, hours: 35, restrict: false, waitlist: false,
-    capacityChanges: [], coachRate: 0, charges: [],
+    name, restrict: false, waitlist: false,
+    // Montée en puissance du coaching : à partir de tel mois, tant de clientes en même temps et tant d'heures par semaine.
+    capacitySteps: [], coachRate: 0, charges: [],
     sub: {
       lockPrice: true,
       postPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
@@ -65,13 +67,17 @@ function charge(name, type, amount, scope = 'app', start = '', end = '') {
   return { id: newId(), name, type, amount, scope, start, end };
 }
 
+// Calendrier d'exemple : cohorte alpha, deuxième cohorte, puis lancement commercial.
 function chrysalisApp() {
   const a = application('Chrysalis');
-  a.programs = [
-    program('Refit', '2026-11', [60, 150, 250], 12),
-    program('Better Sleep', '2027-05', [60, 100, 150], 8),
-    program('Calm Inside', '2027-08', [60, 100, 150], 8)
-  ];
+  const refit = program('Refit', '2027-07', [60, 150, 250], 12);
+  refit.cohorts = [{ name: 'Cohorte alpha', date: '2027-01', size: 8 }, { name: 'Deuxième cohorte', date: '2027-04', size: 15 }];
+  refit.pricing = [{ label: 'Phase 1', start: '2027-01', price: 60 }, { label: 'Phase 2', start: '2027-07', price: 150 }, { label: 'Phase 3', start: '2027-10', price: 250 }];
+  a.programs = [refit, program('Better Sleep', '2027-10', [60, 100, 150], 8), program('Calm Inside', '2028-01', [60, 100, 150], 8)];
+  a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }, { date: '2027-07', capacity: 25, hours: 20 }, { date: '2028-01', capacity: 40, hours: 35 }];
+  a.sub.start = '2027-07';
+  a.sub.directPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
+  a.sub.postPricing = pricing('2027-07', [9.9, 9.9, 9.9]);
   a.charges = exampleCharges(a);
   return a;
 }
@@ -89,7 +95,6 @@ function exampleCharges(a) {
 // Applications en cours de développement : abonnement seul, valeurs d'exemple à ajuster.
 function smallApp(name, start, prices) {
   const a = application(name);
-  a.start = start; a.capacity = 0; a.hours = 0;
   a.sub.start = start;
   a.sub.directPricing = pricing(start, prices);
   a.sub.directPricing[0].label = 'Lancement';
@@ -104,18 +109,32 @@ function defaultShared() {
 
 function defaultState() {
   return {
-    version: 4,
+    version: 5,
     vat: { ttc: false, rate: 20 },
     shared: defaultShared(),
     apps: [chrysalisApp(), smallApp('Bujo', '2027-06', [9.9, 9.9, 9.9]), smallApp('Doodle Studio', '2027-09', [9.9, 9.9, 9.9])]
   };
 }
 
+// Premier mois simulé : la plus ancienne date de cohorte, de lancement ou d'abonnement.
+function appStart(a) {
+  const dates = [a.sub?.start, ...a.programs.flatMap(p => [p.start, ...(p.cohorts || []).map(c => c.date)])].filter(Boolean).sort();
+  return dates[0] || new Date().toISOString().slice(0, 7);
+}
+
+// Palier de capacité en vigueur pour un mois (le premier palier s'applique avant sa date). null si aucun palier.
+function capacityAt(a, month) {
+  const steps = (a.capacitySteps || []).filter(c => c.date).sort((x, y) => x.date.localeCompare(y.date));
+  if (!steps.length) return null;
+  let cur = steps[0];
+  for (const c of steps) if (c.date <= month) cur = c;
+  return cur;
+}
+
 // Convertit une sauvegarde v1 (betaPrice / launchPrice / price) en grilles de prix.
 // La phase 1 reprend le tarif bêta, la phase 2 le tarif de lancement, la phase 3 le tarif standard.
 function migrate(state) {
   for (const a of state.apps) {
-    a.capacityChanges = a.capacityChanges || [];
     const s = a.sub = a.sub || {};
     if (!s.postPricing) s.postPricing = pricing(s.start || a.start, [s.price, s.price, s.price].map(x => x ?? 9.99));
     if (!s.directPricing) s.directPricing = pricing(s.start || a.start, [s.directPrice, s.directPrice, s.directPrice].map(x => x ?? 9.99));
@@ -133,12 +152,28 @@ function migrate(state) {
       }
       delete p.betaPrice; delete p.launchPrice; delete p.price;
       if (!p.id) p.id = newId();
+      // Version 5 : les cohortes bêta régulières deviennent une liste de cohortes nommées.
+      if (!Array.isArray(p.cohorts)) {
+        p.cohorts = [];
+        if (p.beta && p.betaStart) {
+          const n = Math.min(12, Math.floor(+p.betaCount || 0)), every = Math.max(1, Math.floor(+p.betaInterval || 1));
+          for (let i = 0; i < n; i++) p.cohorts.push({ name: i === 0 ? 'Cohorte alpha' : 'Cohorte ' + (i + 1), date: addMonths(p.betaStart, i * every), size: +p.betaSize || 0 });
+        }
+      }
+      ['beta', 'betaStart', 'betaCount', 'betaSize', 'betaInterval'].forEach(k => delete p[k]);
     }
     // Version 3 : charges détaillées. L'ancien montant mensuel unique devient une charge fixe commune.
     if (!Array.isArray(a.charges)) {
       a.charges = +a.cost > 0 ? [charge('Charges mensuelles', 'fixe', +a.cost)] : exampleCharges(a);
     }
     delete a.cost;
+    // Version 5 : capacité unique + évolutions → paliers de montée en puissance.
+    if (!Array.isArray(a.capacitySteps)) {
+      a.capacitySteps = a.programs.length && a.capacity !== undefined
+        ? [{ date: a.start || appStart(a), capacity: +a.capacity || 0, hours: +a.hours || 0 }, ...(a.capacityChanges || []).map(c => ({ date: c.date, capacity: +c.capacity || 0, hours: +a.hours || 0 }))]
+        : [];
+    }
+    ['start', 'capacity', 'hours', 'capacityChanges'].forEach(k => delete a[k]);
     if (a.coachRate === undefined) a.coachRate = 0;
   }
   if (!state.shared) state.shared = defaultShared();
@@ -157,7 +192,7 @@ function migrate(state) {
       }
     }
   }
-  state.version = 4;
+  state.version = 5;
   return state;
 }
 
@@ -165,4 +200,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { appStart, capacityAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };

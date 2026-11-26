@@ -26,6 +26,7 @@ test('CA des programmes = inscriptions × prix de phase', () => {
   const a = state.apps[0];
   a.programs = [a.programs[0]];
   a.programs[0].launch = false;
+  a.programs[0].cohorts = [];
   a.programs[0].initial = a.programs[0].target = 2;
   a.programs[0].pricing = [{ label: 'P1', start: '2026-11', price: 100 }, { label: 'P2', start: '', price: 0 }, { label: 'P3', start: '', price: 0 }];
   a.sub.initial = a.sub.target = 0;
@@ -65,6 +66,10 @@ test('une sauvegarde v1 est convertie en grilles de prix', () => {
   assert.doesNotThrow(() => simulate(s.apps[0]));
   assert.ok(Array.isArray(s.apps[0].charges) && s.apps[0].cost === undefined);
   assert.deepStrictEqual(s.apps.map(a => a.name), ['Chrysalis', 'Bujo', 'Doodle Studio']);
+  // Ancienne bêta (1 cohorte de 10) → cohorte nommée ; capacité unique → palier.
+  assert.deepStrictEqual(p.cohorts, [{ name: 'Cohorte alpha', date: '2026-11', size: 10 }]);
+  assert.deepStrictEqual(s.apps[0].capacitySteps, [{ date: '2026-11', capacity: 40, hours: 35 }]);
+  assert.strictEqual(s.apps[0].start, undefined);
 });
 
 const { buildPnl, sumPnl } = require('../js/pnl.js');
@@ -113,4 +118,28 @@ test('Bujo et Doodle Studio : abonnement à 9,90 €, anciens prix d\'exemple mi
   const old = model.defaultState(); old.version = 3;
   old.apps[1].sub.directPricing.forEach((x, i) => { x.price = [2.99, 3.99, 4.99][i]; });
   assert.strictEqual(model.migrate(old).apps[1].sub.directPricing[2].price, 9.9);
+});
+
+test('cohortes de test puis lancement, capacité par paliers', () => {
+  const a = model.defaultState().apps[0];
+  const refit = a.programs[0];
+  a.programs = [refit];
+  refit.cohorts = [{ name: 'Alpha', date: '2027-01', size: 8 }, { name: 'Deuxième', date: '2027-04', size: 15 }];
+  refit.start = '2027-07'; refit.launch = false; refit.initial = refit.target = 1;
+  a.sub.start = '';
+  a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }, { date: '2027-07', capacity: 25, hours: 20 }];
+  assert.strictEqual(model.appStart(a), '2027-01');
+  const { months, weekly } = simulate(a);
+  assert.strictEqual(months[0].month, '2027-01');
+  const adm = k => months.find(m => m.month === k).admissions;
+  assert.ok(Math.abs(adm('2027-01') + adm('2027-02') + adm('2027-03') - 8) < 1e-9);
+  assert.ok(Math.abs(adm('2027-04') + adm('2027-05') + adm('2027-06') - 15) < 1e-9);
+  assert.ok(adm('2027-08') > 0);
+  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-02')).cap, 10);
+  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-08')).limit, 20);
+  // Avec refus au-delà de la capacité, la deuxième cohorte (15) est plafonnée à 10 places moins les alphas encore en cours.
+  a.restrict = true; a.capacitySteps = [{ date: '2027-01', capacity: 10, hours: 8 }];
+  const capped = simulate(a).months;
+  const sumAdm = capped.filter(m => m.month < '2027-07').reduce((s, m) => s + m.admissions, 0);
+  assert.ok(sumAdm < 23);
 });

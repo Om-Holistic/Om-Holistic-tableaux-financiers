@@ -14,9 +14,17 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 - **Prévisionnel** : un bloc dépliable par trimestre, mois par mois, avec charges et résultat, puis la capacité de coaching.
 - **Charges** : charges de chaque application et charges de structure Om Holistic.
 - **Produits et prix** : programmes (durée, rythme d'inscriptions, promotions) et abonnements.
-- **Réglages** : application, capacité, TVA, import / export.
+- **Réglages** : calendrier de l'application (cohortes, lancements, phases de prix, capacité), paliers de capacité de coaching, TVA, import / export.
 
 Applications par défaut : Chrysalis, Bujo et Doodle Studio (abonnement mensuel à 9,90 €, avec une phase « Lancement » à ajuster).
+
+## Calendrier
+
+Chaque programme a ses **cohortes de test** (alpha, deuxième, troisième…, autant que voulu : nom, mois, nombre de clientes),
+puis une date de **lancement commercial** à partir de laquelle les inscriptions arrivent en continu.
+Les prévisions commencent automatiquement à la première date (cohorte, lancement ou ouverture de l'abonnement).
+La **capacité de coaching** monte en puissance par paliers : à partir de tel mois, tant de clientes en même temps
+et tant d'heures par semaine.
 
 ## Prix en trois phases
 

@@ -3,7 +3,7 @@
 // la capacité de coaching et les abonnements, puis agrège le tout par mois.
 // Aucune dépendance au navigateur : ce fichier est aussi testé avec Node.
 
-if (typeof module !== 'undefined') var { phaseAt } = require('./model.js');
+if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt } = require('./model.js');
 
 const DAY = 86400000, WEEK = 7 * DAY;
 const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
@@ -51,7 +51,7 @@ function emptyMonth(month, a) {
 }
 
 function simulate(a) {
-  const start = monthDate(a.start);
+  const start = monthDate(appStart(a));
   const end = new Date(Date.UTC(start.getUTCFullYear() + 5, 11, 31));
   const months = new Map();
   for (let d = start; d <= end; d = shiftMonth(d, 1)) months.set(monthKey(d), emptyMonth(monthKey(d), a));
@@ -59,44 +59,34 @@ function simulate(a) {
   const credit = (d, fn) => { for (const [k, share] of weekShares(d)) { const m = months.get(k); if (m) fn(m, share); } };
 
   const events = [], weekly = [], pending = a.programs.map(() => 0);
-  const capacityChanges = [...(a.capacityChanges || [])].sort((x, y) => x.date.localeCompare(y.date));
+  const coaching = a.programs.length > 0;
 
-  // Calendrier de chaque programme : cohortes bêta puis début commercial
-  // (repoussé après la fin de la dernière cohorte bêta si besoin).
-  const configs = a.programs.map(p => {
-    const beta = [];
-    if (p.beta) {
-      const every = Math.max(1, Math.floor(pos(p.betaInterval)));
-      for (let i = 0; i < Math.min(100, Math.floor(pos(p.betaCount))); i++) beta.push(firstMonday(shiftMonth(monthDate(p.betaStart), i * every)));
-    }
-    let commercial = firstMonday(monthDate(p.start));
-    if (beta.length) {
-      const finish = addWeeks(beta.at(-1), Math.max(1, pos(p.duration)));
-      if (finish > commercial) commercial = finish;
-    }
-    return { p, beta, commercial };
-  });
+  // Calendrier de chaque programme : cohortes de test (premier lundi de leur mois), puis lancement commercial.
+  const configs = a.programs.map(p => ({
+    p,
+    cohorts: (p.cohorts || []).filter(c => c.date).map(c => ({ week: +firstMonday(monthDate(c.date)), size: Math.floor(pos(c.size)) })),
+    commercial: p.start ? firstMonday(monthDate(p.start)) : null
+  }));
 
-  const subStart = firstMonday(monthDate(a.sub.start));
+  const subStart = a.sub.start ? firstMonday(monthDate(a.sub.start)) : null;
 
   for (let d = firstMonday(start); d <= end; d = addWeeks(d, 1)) {
     const m = months.get(monthKey(d));
     if (!m) continue;
     const active = events.filter(e => e.end > d);
-    let cap = pos(a.capacity);
-    for (const c of capacityChanges) if (monthKey(d) >= c.date) cap = pos(c.capacity);
+    const step = capacityAt(a, monthKey(d));
+    const cap = step ? pos(step.capacity) : Infinity, limit = step ? pos(step.hours) : Infinity;
     let available = Math.max(0, Math.floor(cap - active.reduce((s, e) => s + e.count, 0)));
     let demand = 0, admitted = 0;
 
-    configs.forEach(({ p, beta, commercial }, i) => {
+    configs.forEach(({ p, cohorts, commercial }, i) => {
       if (!p.enabled) return;
-      const isBeta = beta.some(b => +b === +d);
-      const w = Math.floor((d - commercial) / WEEK);
-      const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
-      let want = isBeta ? Math.floor(pos(p.betaSize))
-        : w < 0 ? 0
-        : inLaunch ? Math.floor(pos(p.launchRate))
-        : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
+      let want = cohorts.filter(c => c.week === +d).reduce((s, c) => s + c.size, 0);
+      if (commercial) {
+        const w = Math.floor((d - commercial) / WEEK);
+        const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
+        want += w < 0 ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
+      }
       if (a.waitlist) want += pending[i];
       demand += want;
       const count = a.restrict ? Math.min(want, available) : want;
@@ -129,9 +119,9 @@ function simulate(a) {
         mm.products[e.i].coachHours += e.count * pos(a.programs[e.i].coach) / 60 * share;
       }
     });
-    weekly.push({ date: d.toISOString().slice(0, 10), people, hours, cap, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
+    if (coaching) weekly.push({ date: d.toISOString().slice(0, 10), people, hours, cap, limit, demand, admitted, waiting: pending.reduce((s, x) => s + x, 0) });
 
-    if (d >= subStart) {
+    if (subStart && d >= subStart) {
       const count = weeklyRate(a.sub, Math.floor((d - subStart) / WEEK));
       const phase = phaseAt(a.sub.directPricing, monthKey(d)).index;
       credit(d, (mm, share) => { mm.newDirect[phase] += count * share; });
