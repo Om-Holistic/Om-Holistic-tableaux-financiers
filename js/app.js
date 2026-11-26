@@ -2,7 +2,7 @@
 // Interface : navigation entre pages, formulaires de paramètres et tableaux de résultats.
 
 const $ = id => document.getElementById(id);
-const money = x => Math.round(x).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
+const money = x => (Math.round(x) || 0).toLocaleString('fr-FR').replace(/\s/g, '\u00a0') + '\u00a0€';
 const price = x => { const v = +x || 0; return v.toLocaleString('fr-FR', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 }) + '\u00a0€'; };
 // Montants compacts pour les bandeaux et les cartes : 18,4 k€ au-delà de 100 000 €, 2,8 M€ au-delà du million.
 const short = x => { const a = Math.abs(x), f = (v, d) => v.toLocaleString('fr-FR', { maximumFractionDigits: d }).replace(/\s/g, '\u00a0');
@@ -32,8 +32,10 @@ function backupDue() {
   return null;
 }
 
-const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0 };
-const PAGES = ['synthese', 'resultat', 'previsionnel', 'charges', 'produits', 'reglages'];
+const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, period: 0, cashFrom: '', cashTo: '' };
+// Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
+view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
+const PAGES = ['synthese', 'previsionnel', 'resultat', 'tresorerie', 'charges', 'produits', 'reglages'];
 const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
@@ -489,7 +491,7 @@ const table = (heads, rows, cls = []) => '<thead><tr>' + heads.map(h => `<th>${h
   + rows.map((r, i) => `<tr class="${cls[i] || ''}">` + r.map(v => `<td>${v}</td>`).join('') + '</tr>').join('') + '</tbody>';
 const signed = x => `<span class="${x < 0 ? 'neg' : ''}">${money(x)}</span>`;
 
-// Scénario affiché partout (Résultat, Prévisionnel, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
+// Scénario affiché partout (Résultat, Chiffre d'affaires, Trésorerie, Vue d'ensemble) ; les pages de réglages gardent le plan saisi.
 const currentScenario = () => (state.scenarios?.list || []).find(x => x.id === state.scenarios.current);
 function results(sc = currentScenario()) {
   const st = sc && sc.id !== 'central' ? withScenario(state, sc) : state;
@@ -560,7 +562,7 @@ function chart(byMonth) {
 function alertsCard(r) {
   const items = [];
   const t = cashData();
-  if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'tresorerie' }]);
   for (const x of r.all) {
     const sf = capacityShortfall(x.a, x.weekly);
     if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'produits', open: 'pr-cap', app: x.i }]);
@@ -575,7 +577,7 @@ function alertsCard(r) {
   if (shTodo) items.push(['mid', `Structure Om Holistic : ${shTodo} charge${shTodo > 1 ? 's' : ''} à compléter (loyer, salaires…).`, { page: 'charges' }]);
   const b = backupDue();
   if (b) items.push(['mid', `${b} : exporte-les pour ne pas les perdre.`, { page: 'reglages', open: 'st-save' }]);
-  if (t.breakEven) items.push(['ok', `Point mort en ${monthName(t.breakEven)} ; ton revenu de ${money(t.goal)} par mois ${t.payReached ? 'est atteint en ' + monthName(t.payReached) : 'n\'est pas encore atteint'}.`, { page: 'previsionnel', open: 'pv-cash' }]);
+  if (t.breakEven) items.push(['ok', `Point mort en ${monthName(t.breakEven)} ; ton revenu de ${money(t.goal)} par mois ${t.payReached ? 'est atteint en ' + monthName(t.payReached) : 'n\'est pas encore atteint'}.`, { page: 'tresorerie' }]);
   const go = g => `href="#${g.page}" data-goto="${g.page}" data-open="${g.open || ''}" data-anchor="${g.open || ''}"${g.app !== undefined ? ` data-app="${g.app}"` : ''}`;
   return `<details class="card" id="s-alerts" ${view.open.has('s-alerts') || !view.open.size ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">${items.filter(x => x[0] !== 'ok').length} point${items.filter(x => x[0] !== 'ok').length > 1 ? 's' : ''} d'attention · toutes applications</span></span></summary>
     <ul class="alerts">${items.map(([k, text, g]) => `<li class="${k}"><a ${go(g)}>${text}<span class="from">›</span></a></li>`).join('') || '<li class="ok">Rien à signaler.</li>'}</ul></details>`;
@@ -600,38 +602,123 @@ function actualsCard(r) {
 const printButton = () => `<div class="row print-row"><button class="print-btn" id="printPdf">Exporter en PDF</button></div>`;
 
 // ---------- Trésorerie ----------
-// Solde de trésorerie mois par mois (toutes les applications), avec le point bas et la ligne zéro.
-function cashChart(t) {
-  const ms = t.months, W = Math.max(320, ms.length * 12), H = 180, left = 52, bottom = 22, top = 10;
-  const vals = ms.map(m => m.balance), lo = Math.min(0, ...vals), hi = Math.max(1, ...vals);
-  const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1)), x = i => left + (W - left - 8) * i / Math.max(1, ms.length - 1);
-  const pts = ms.map((m, i) => `${x(i).toFixed(1)},${y(m.balance).toFixed(1)}`).join(' ');
-  const ticks = [lo, lo + (hi - lo) / 2, hi];
-  const li = ms.findIndex(m => m.month === t.low.month);
-  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie mois par mois">`
-    + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
-    + (lo < 0 ? `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--bad)" stroke-dasharray="4 3"/>` : '')
-    + `<polyline points="${pts}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
-    + ms.map((m, i) => m.month.endsWith('-01') ? `<text x="${x(i)}" y="${H - 6}" text-anchor="middle">${m.month.slice(0, 4)}</text>` : '').join('')
-    + (li >= 0 ? `<circle cx="${x(li)}" cy="${y(t.low.balance)}" r="4.5" fill="${t.low.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"><title>Point bas ${t.low.month} : ${money(t.low.balance)}</title></circle>` : '')
-    + '</svg>';
-}
+// Toute la société, toutes applications : ce qui rentre, ce qui sort, et le solde en banque.
 function cashData(sc) {
   const r = results(sc);
   return treasury(r.st, r.all);
 }
-function cashCard() {
-  const t = cashData(), c = state.cash || {};
-  const end = t.months.at(-1) || { balance: 0 }, need = t.low.balance < 0 ? -t.low.balance : 0;
-  return `<details class="card" id="pv-cash" ${view.open.has('pv-cash') || !view.open.size ? 'open' : ''}><summary><span>Trésorerie et revenu<br><span class="sum-sub">${need ? `<b class="neg">besoin de ${money(need)}</b> en ${monthName(t.low.month)}` : `point bas ${short(t.low.balance)} en ${monthName(t.low.month)}`} · point mort ${t.breakEven ? monthName(t.breakEven) : 'non atteint'}</span></span></summary>
-    <div class="kpis">
-      <div class="kpi"><small>Point bas</small><b class="${t.low.balance < 0 ? 'bad' : ''}">${short(t.low.balance)}</b><small>${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}</small></div>
-      <div class="kpi"><small>Point mort</small><b>${t.breakEven ? monthName(t.breakEven) : '—'}</b><small>résultat positif chaque mois ensuite</small></div>
-      <div class="kpi"><small>Ton revenu (${short(t.goal)} / mois)</small><b class="${t.payReached ? 'good' : ''}">${t.payReached ? monthName(t.payReached) : 'non atteint'}</b><small>net après impôts, toutes applis</small></div>
-      <div class="kpi"><small>Trésorerie fin ${end.month ? end.month.slice(0, 4) : ''}</small><b class="${end.balance < 0 ? 'bad' : 'good'}">${short(end.balance)}</b><small>${c.payFrom ? `après ta rémunération dès ${monthName(c.payFrom)}` : 'avant ta rémunération'}</small></div>
+const MSHORT = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const monthShort = k => k ? MSHORT[+k.slice(5) - 1] + ' ' + k.slice(2, 4) : '—';
+// Plage courte pour le bandeau : « 2027 », « T3 2027 » ou « janv. 27 – déc. 32 ».
+function rangeChip(from, to) {
+  if (!from) return '—';
+  const y = from.slice(0, 4), m1 = +from.slice(5), m2 = +to.slice(5);
+  if (y === to.slice(0, 4)) {
+    if (m1 === 1 && m2 === 12) return y;
+    if (m2 - m1 === 2 && m1 % 3 === 1) return `T${Math.ceil(m1 / 3)} ${y}`;
+    if (m2 - m1 === 5 && m1 % 6 === 1) return `S${Math.ceil(m1 / 6)} ${y}`;
+    if (m1 === m2) return monthShort(from);
+  }
+  return `${monthShort(from)} – ${monthShort(to)}`;
+}
+const STEPS = [['m', 'Mois'], ['q', 'Trimestre'], ['s', 'Semestre'], ['y', 'Année']];
+const bucketOf = (month, step) => {
+  const y = month.slice(0, 4), mo = +month.slice(5);
+  return step === 'y' ? y : step === 's' ? `${y}-S${Math.ceil(mo / 6)}` : step === 'q' ? `${y}-T${Math.ceil(mo / 3)}` : month;
+};
+const bucketName = (k, step) => step === 'm' ? monthName(k) : step === 'y' ? k : `${step === 'q' ? 'T' : 'S'}${k.slice(-1)} ${k.slice(0, 4)}`;
+// Regroupe les mois choisis par période : sommes des flux, solde de début et de fin.
+function cashBuckets(months, step) {
+  const out = [];
+  for (const m of months) {
+    const k = bucketOf(m.month, step);
+    let b = out.at(-1);
+    if (!b || b.key !== k) out.push(b = { key: k, from: m.month, to: m.month, open: m.balance - (m.inflow - m.charges - m.taxes - m.pay), inflow: 0, charges: 0, taxes: 0, pay: 0, low: m.balance });
+    b.to = m.month; b.inflow += m.inflow; b.charges += m.charges; b.taxes += m.taxes; b.pay += m.pay;
+    b.balance = m.balance; b.low = Math.min(b.low, m.balance);
+  }
+  out.forEach(b => { b.flow = b.balance - b.open; });
+  return out;
+}
+// Mois affichés : ceux de la période choisie en haut, ou la plage « du … au … » de la page.
+function cashRange(all) {
+  const ms = all.map(m => m.month);
+  const from = view.cashFrom && ms.includes(view.cashFrom) ? view.cashFrom : ms.find(inPeriod);
+  const to = view.cashTo && ms.includes(view.cashTo) ? view.cashTo : [...ms].reverse().find(inPeriod);
+  if (!from || !to) return { from, to, months: [] };
+  const [a, b] = from <= to ? [from, to] : [to, from];
+  return { from: a, to: b, months: all.filter(m => m.month >= a && m.month <= b) };
+}
+// Barres : entrées vers le haut, sorties vers le bas ; courbe : solde en fin de période.
+function cashChart(bs) {
+  const W = Math.max(320, bs.length * 34), H = 210, left = 52, bottom = 24, top = 10, right = 8;
+  const hi = Math.max(1, ...bs.map(b => Math.max(b.inflow, b.balance))), lo = Math.min(0, ...bs.map(b => Math.min(-(b.charges + b.taxes + b.pay), b.balance)));
+  const y = v => top + (H - top - bottom) * (1 - (v - lo) / (hi - lo || 1));
+  const slot = (W - left - right) / Math.max(1, bs.length), bw = Math.max(3, Math.min(22, slot * 0.6)), cx = i => left + slot * (i + 0.5);
+  const ticks = [lo, 0, hi].filter((v, i, a) => a.indexOf(v) === i);
+  const every = Math.ceil(bs.length / 12);
+  const step = view.cashStep;
+  const lab = b => step === 'm' ? (b.key.endsWith('-01') || bs.length <= 12 ? MONTHS[+b.key.slice(5) - 1].slice(0, 3) + (b.key.endsWith('-01') ? ' ' + b.key.slice(2, 4) : '') : '') : bucketName(b.key, step).replace(/ (\d\d)(\d\d)$/, ' $2');
+  return `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Trésorerie par période">`
+    + ticks.map(v => `<line class="grid-line" x1="${left}" x2="${W}" y1="${y(v)}" y2="${y(v)}"/><text x="${left - 6}" y="${y(v) + 3}" text-anchor="end">${short(v).replace(/ €$/, '')}</text>`).join('')
+    + bs.map((b, i) => { const out = b.charges + b.taxes + b.pay;
+      return `<g><title>${bucketName(b.key, step)} : entrées ${money(b.inflow)}, sorties ${money(out)}, solde ${money(b.balance)}</title>`
+        + `<rect x="${cx(i) - bw / 2}" y="${y(b.inflow)}" width="${bw}" height="${Math.max(0, y(0) - y(b.inflow))}" rx="2" fill="var(--good)" opacity=".75"/>`
+        + `<rect x="${cx(i) - bw / 2}" y="${y(0)}" width="${bw}" height="${Math.max(0, y(-out) - y(0))}" rx="2" fill="var(--sage)" opacity=".6"/></g>`; }).join('')
+    + `<line x1="${left}" x2="${W}" y1="${y(0)}" y2="${y(0)}" stroke="var(--ink-soft)" stroke-width="1"/>`
+    + `<polyline points="${bs.map((b, i) => `${cx(i).toFixed(1)},${y(b.balance).toFixed(1)}`).join(' ')}" fill="none" stroke="var(--clay)" stroke-width="2.5" stroke-linejoin="round"/>`
+    + bs.map((b, i) => `<circle cx="${cx(i)}" cy="${y(b.balance)}" r="${bs.length > 24 ? 0 : 3}" fill="${b.balance < 0 ? 'var(--bad)' : 'var(--clay)'}"/>`).join('')
+    + bs.map((b, i) => i % every === 0 || step === 'm' ? `<text x="${cx(i)}" y="${H - 6}" text-anchor="middle">${lab(b)}</text>` : '').join('')
+    + '</svg>';
+}
+// Encaissements et charges de chaque application sur la plage (les impôts et ta rémunération sont ceux de la société).
+function cashByApp(r, from, to) {
+  return r.all.map(x => {
+    const ks = x.months.map((m, k) => [m, k]).filter(([m]) => m.month >= from && m.month <= to);
+    const t = sumPnl(ks.map(([, k]) => x.pnl[k])).total;
+    return { name: x.a.name, ca: t.ca, charges: t.charges, result: t.ca - t.charges };
+  });
+}
+function tresoreriePage() {
+  const r = results(), t = treasury(r.st, r.all), c = state.cash || {};
+  const { from, to, months } = cashRange(t.months);
+  const bs = cashBuckets(months, view.cashStep);
+  const end = months.at(-1), first = months[0];
+  const need = t.low.balance < 0 ? -t.low.balance : 0;
+  const tot = f => bs.reduce((s, b) => s + b[f], 0);
+  const opts = sel => t.months.map(m => `<option value="${m.month}" ${m.month === sel ? 'selected' : ''}>${monthName(m.month)}</option>`).join('');
+  const rangeName = from && to ? (from === to ? monthName(from) : `${monthName(from)} – ${monthName(to)}`) : '—';
+  const flow = end ? end.balance - (bs[0]?.open || 0) : 0;
+  const lowIn = months.reduce((l, m) => !l || m.balance < l.balance ? m : l, null);
+  const heads = ['Période', 'Solde début', 'Encaissements', 'Charges', 'Impôts et cotisations', 'Ta rémunération', 'Variation', 'Solde fin'];
+  const row = b => [bucketName(b.key, view.cashStep), money(b.open), money(b.inflow), money(-b.charges), money(-b.taxes), b.pay ? money(-b.pay) : '—', signed(b.flow), `<b class="${b.balance < 0 ? 'neg' : ''}">${money(b.balance)}</b>`];
+  const total = bs.length ? ['Total', money(bs[0].open), money(tot('inflow')), money(-tot('charges')), money(-tot('taxes')), tot('pay') ? money(-tot('pay')) : '—', signed(tot('flow')), `<b class="${end.balance < 0 ? 'neg' : ''}">${money(end.balance)}</b>`] : null;
+  const apps = from ? cashByApp(r, from, to) : [];
+  return `${banner({ label: 'Trésorerie', chip: rangeChip(from, to) + (currentScenario() && currentScenario().id !== 'central' ? ' · ' + esc(currentScenario().name) : ''), big: end ? money(end.balance) : '—', bigCls: end && end.balance < 0 ? 'neg-hero' : '',
+      note: `Solde en banque fin ${end ? monthName(end.month) : ''} · ${flow >= 0 ? '+' : ''}${money(flow)} sur la période<br>Toute la société, toutes applications. Apport de départ ${money(t.start)}${c.payFrom ? ` · ta rémunération de ${money(+c.payGoal || 0)} dès ${monthName(c.payFrom)}` : ' · avant ta rémunération'}.`,
+      tiles: [
+        { label: 'Point bas', mini: 'Point bas', value: short(t.low.balance), cls: t.low.balance < 0 ? 'neg-hero' : '', hint: `${monthName(t.low.month)}${need ? ' · apport ou prêt nécessaire' : ''}` },
+        { label: 'Point mort', mini: false, value: t.breakEven ? monthName(t.breakEven) : 'non atteint', cls: 'txt', hint: 'résultat positif chaque mois ensuite', go: { page: 'resultat' } },
+        { label: `Ton revenu (${short(t.goal)} / mois)`, mini: false, value: t.payReached ? monthName(t.payReached) : 'non atteint', cls: t.payReached ? 'txt pos-hero' : 'txt', hint: 'net après impôts, toutes applis', go: { page: 'reglages', open: 'st-cash' } },
+        { label: 'Variation', mini: 'Variation', value: (flow >= 0 ? '+' : '') + money(flow), cls: flow < 0 ? 'neg-hero' : 'pos-hero', hint: 'sur la période affichée' }
+      ] })}
+    <div class="card cash-ctl">
+      <div class="seg" role="group" aria-label="Découpage">${STEPS.map(([k, l]) => `<button class="${view.cashStep === k ? 'on' : ''}" data-step="${k}">${l}</button>`).join('')}</div>
+      <div class="cash-range"><label><span>Du</span><select id="cashFrom">${opts(from)}</select></label><label><span>au</span><select id="cashTo">${opts(to)}</select></label>
+        ${view.cashFrom || view.cashTo ? '<button class="link" id="cashReset">Suivre la période du haut</button>' : ''}</div>
     </div>
-    <div class="chart">${cashChart(t)}</div>
-    <p class="muted">Toute la société, toutes applications. Apport de départ ${money(t.start)}. Les impôts et cotisations de l'implantation choisie sont déduits chaque mois (en réalité, une partie se paie l'année suivante). <a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport et ton revenu</a></p></details>`;
+    ${need ? `<p class="cash-alert">Ta trésorerie passe sous zéro : il manque <b>${money(need)}</b> en ${monthName(t.low.month)}. Prévois un apport ou un prêt, ou décale des charges. <a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport</a></p>` : ''}
+    ${bs.length ? `<details class="card" id="tr-chart" open><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
+      <div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
+      <div class="chart">${cashChart(bs)}</div></details>
+    <details class="card" id="tr-table" open><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${bs.length} ligne${bs.length > 1 ? 's' : ''} · ${rangeName}</span></span></summary>
+      <div class="scroll"><table class="cash-t">${table(heads, [...bs.map(row), total], [...bs.map(b => b.balance < 0 ? 'low' : ''), 'total'])}</table></div>
+      <p class="muted">Encaissements : l'argent reçu (les ventes payées en plusieurs fois arrivent sur plusieurs mois), hors TVA. Impôts et cotisations selon l'implantation choisie, comptés chaque mois (en réalité, une partie se paie l'année suivante).</p></details>
+    <details class="card" id="tr-apps" ${view.open.has('tr-apps') ? 'open' : ''}><summary><span>Par application<br><span class="sum-sub">${apps.map(x => `${esc(x.name)} ${short(x.result)}`).join(' · ')}</span></span></summary>
+      <div class="scroll"><table>${table(['Application', 'Chiffre d\'affaires HT', 'Charges', 'Apport à la trésorerie'], apps.map(x => [esc(x.name), money(x.ca), money(-x.charges), signed(x.result)]), [])}</table></div>
+      <p class="muted">${rangeName}. Avant impôts, cotisations et ta rémunération, qui se calculent pour toute la société.</p></details>` : '<p class="muted">Aucun mois dans cette période.</p>'}
+    <p class="muted"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Régler l'apport de départ et ton revenu</a></p>
+    ${printButton()}`;
 }
 
 // ---------- Bandeaux en tête de page ----------
@@ -656,6 +743,14 @@ function banner({ label, chip, big, bigCls = '', note = '', bar = '', tiles }) {
 const shareBar = (sales, subs) => { const t = sales + subs || 1; return `<div class="share"><i style="width:${(sales / t * 100).toFixed(1)}%;background:var(--sage)"></i><i style="width:${(subs / t * 100).toFixed(1)}%;background:var(--clay)"></i></div>`; };
 const pctOf = (x, t) => t ? Math.round(x / t * 100) + ' %' : '—';
 
+// Raccourci vers la page Trésorerie : solde de fin de période et point bas.
+function cashLink(r) {
+  const t = treasury(r.st, r.all), end = [...t.months].reverse().find(m => inPeriod(m.month));
+  if (!end) return '';
+  return `<a class="card cash-link" href="#tresorerie"><span><small>Trésorerie</small><b class="${end.balance < 0 ? 'neg' : ''}">${short(end.balance)}</b> fin ${monthName(end.month)}</span>
+    <span class="muted">point bas ${short(t.low.balance)} en ${monthName(t.low.month)} ›</span></a>`;
+}
+
 function synthesePage() {
   const r = results();
   const total = r.sum('total'), sales = r.sum('sales'), subs = r.sum('directCA') + r.sum('postCA'), net = r.sum('net'), cost = r.sum('cost');
@@ -674,6 +769,7 @@ function synthesePage() {
         { label: 'Abonnées', value: num(subsEnd), hint: `en fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}`, go: { page: 'previsionnel' } }
       ] })}
     ${alertsCard(r)}
+    ${cashLink(r)}
     <div class="two">
       <details class="card" id="s-chart" open><summary>Évolution mensuelle</summary>
         <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
@@ -712,15 +808,16 @@ function previsionnelPage() {
   const first = ms[0] || {}, subsEnd = (last.direct || 0) + (last.post || 0), subsGain = subsEnd - ((first.direct || 0) + (first.post || 0));
   const posMonths = ms.filter(m => m.net >= 0).length, caHT = sum('caHT');
   const progSales = sum('sales'), subSales = sum('directCA') + sum('postCA');
-  return `${banner({ label: 'Résultat', chip: periodChip(), big: money(net), bigCls: net < 0 ? 'neg-hero' : '',
-      note: `${pctOf(net, caHT)} du CA HT · ${posMonths} mois positif${posMonths > 1 ? 's' : ''} sur ${ms.length}`,
+  const best = ms.reduce((b, m) => !b || m.total > b.total ? m : b, null);
+  return `${banner({ label: 'Chiffre d\'affaires', chip: periodChip(), big: money(total),
+      note: `${best ? `Meilleur mois : ${monthName(best.month)} (${money(best.total)})` : ''}${ms.length ? ` · moyenne ${money(total / ms.length)} par mois` : ''}<br>Programmes ${money(progSales)} · abonnements ${money(subSales)}`,
+      bar: shareBar(progSales, subSales),
       tiles: [
-        { label: 'Chiffre d\'affaires', mini: 'CA', value: money(total), hint: shareBar(progSales, subSales) + `<span>${pctOf(progSales, total)} programmes</span>` },
-        { label: 'Charges', value: money(cost), hint: `${pctOf(cost, caHT)} du CA HT`, go: { page: 'charges' } },
+        { label: 'Programmes', value: money(progSales), hint: `${pctOf(progSales, total)} du CA · ${num(sum('admissions'))} inscriptions` },
+        { label: 'Résultat', value: money(net), cls: net < 0 ? 'neg-hero' : 'pos-hero', hint: `${pctOf(net, caHT)} du CA HT · ${posMonths} mois positif${posMonths > 1 ? 's' : ''} sur ${ms.length}`, go: { page: 'resultat' } },
         { label: 'Abonnées', value: num(subsEnd), hint: `fin de période · ${subsGain >= 0 ? '+' : ''}${num(subsGain)}` },
         { label: 'En programme', value: num(last.active || 0), hint: `fin de période · ${num(sum('admissions'))} inscriptions` }
       ] })}
-    ${cashCard()}
     ${actualsCard(r)}
     <div class="legend"><span><i style="background:var(--sage)"></i>Programmes</span><span><i style="background:var(--clay)"></i>Abonnements</span></div>
     ${blocks || '<p class="muted">Aucun mois dans cette période.</p>'}
@@ -995,7 +1092,7 @@ function scenarioCard() {
     .map(([k, d, label]) => ({ label, delta: scenarioTotals({ ...cur, id: 'sens', [k]: (+cur[k] || 0) + d }).result - base.result }));
   const max = Math.max(1, ...tests.map(x => Math.abs(x.delta)));
   return `<details class="card" id="r-scen" ${view.open.has('r-scen') || !view.open.size ? 'open' : ''}><summary><span>Scénarios et sensibilité<br><span class="sum-sub">affiché partout : ${esc(cur.name)} · ${list.map(x => `${esc(x.name)} ${short(cols.find(c => c.sc.id === x.id).result)}`).join(' · ')}</span></span></summary>
-    <div class="grid">${select('Scénario affiché dans Résultat, Prévisionnel et Vue d\'ensemble', 'scenarios.current', state.scenarios.current, list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
+    <div class="grid">${select('Scénario affiché dans tous les tableaux', 'scenarios.current', state.scenarios.current, list.map(x => [x.id, x.name])).replace('<label>', '<label class="wide">')}</div>
     <div class="scroll"><table class="scen"><thead><tr><th></th>${cols.map(x => `<th class="${x.sc.id === cur.id ? 'cur' : ''}">${esc(x.sc.name)}</th>`).join('')}</tr></thead><tbody>
       ${row('Chiffre d\'affaires', x => x.ca)}${row('Charges', x => x.charges)}${row('<b>Résultat d\'exploitation</b>', x => x.result, true)}${row('Net pour toi', x => x.net, true)}
       <tr><td>Point bas de trésorerie</td>${cols.map(x => cell(x, `${short(x.low.balance)}<br><small class="muted">${monthName(x.low.month)}</small>`, x.low.balance < 0 ? 'neg' : '')).join('')}</tr></tbody></table></div>
@@ -1109,6 +1206,8 @@ function renderToolbar() {
     + state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
   $('app').value = view.app;
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings; });
+  // La trésorerie est celle de toute la société : pas de choix d'application.
+  document.querySelector('.appsel').hidden = view.page === 'tresorerie';
   const years = [...new Set(state.apps.flatMap(a => { const y = +appStart(a).slice(0, 4); return [0, 1, 2, 3, 4, 5].map(k => y + k); }))].sort();
   if (!years.includes(view.year)) view.year = years[0];
   $('year').innerHTML = years.map(y => `<option>${y}</option>`).join('');
@@ -1122,7 +1221,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { synthese: synthesePage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -1175,8 +1274,13 @@ document.addEventListener('change', async e => {
       if (next) document.querySelector(`[data-path="${CSS.escape(next)}"]`)?.focus({ preventScroll: true });
     }, 0);
   } else if (t.id === 'app') { view.app = t.value; render(true); }
-  else if (t.id === 'year') { view.year = +t.value; render(); }
-  else if (t.id === 'period') { view.period = +t.value; render(); }
+  else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
+  else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
+  else if (t.id === 'cashFrom' || t.id === 'cashTo') {
+    view.cashFrom = $('cashFrom').value; view.cashTo = $('cashTo').value;
+    if (view.cashFrom > view.cashTo) [view.cashFrom, view.cashTo] = [view.cashTo, view.cashFrom];
+    render();
+  }
   else if (t.id === 'import') {
     try {
       const x = JSON.parse(await t.files[0].text());
@@ -1262,6 +1366,11 @@ document.addEventListener('click', e => {
     const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
     if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
     save(); render();
+  } else if (t.dataset.step) {
+    view.cashStep = t.dataset.step;
+    try { localStorage.setItem('om-cash-step', view.cashStep); } catch { /* stockage indisponible */ }
+    render();
+  } else if (t.id === 'cashReset') { view.cashFrom = view.cashTo = ''; render();
   } else if (t.dataset.sync) { Sync.keep(t.dataset.sync);
   } else if (t.id === 'syncNow') { Sync.now();
   } else if (t.id === 'syncOff') { Sync.disable(); render();

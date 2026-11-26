@@ -11,7 +11,7 @@ navigateur : exporter régulièrement le fichier JSON depuis la page Réglages.
 
 - **Vue d'ensemble** : CA de la période, part programmes / abonnements, résultat, graphique mensuel, revenus par produit.
 - **Résultat** : compte d'exploitation par produit (abonnement, chaque programme, commun) ou par application en vue consolidée.
-- **Prévisionnel** : résultat de la période, un bloc par trimestre avec une carte par mois (CA programmes / abonnements, charges, résultat, clientes), tableau détaillé, revenus par produit (liens vers les fiches), puis la capacité de coaching en graphique (pic de clientes en même temps face à la capacité prévue, mois dépassés en rouge).
+- **Chiffre d'affaires** (ancien Prévisionnel) : CA de la période, un bloc par trimestre avec une carte par mois (CA programmes / abonnements, charges, résultat, clientes), tableau détaillé, revenus par produit (liens vers les fiches), puis la capacité de coaching en graphique (pic de clientes en même temps face à la capacité prévue, mois dépassés en rouge).
 - **Charges** : charges de chaque application et charges de structure Om Holistic.
 - **Produits et prix** : calendrier de l'application (lecture seule, chaque date mène à son réglage), abonnement seul (prix, essai, objectif d'abonnées, passerelles), programmes (cohortes, lancement, durée, prix, rythme d'inscriptions, promotions) et capacité de coaching.
 - **Réglages** : nom de l'application, TVA, sauvegarde (export / import), ajout d'une application, retour aux exemples.
@@ -119,11 +119,11 @@ Tes paramètres restent enregistrés sur l'appareil. Pour les passer d'un appare
 ## Pilotage (audit, novembre 2026)
 
 - **Canaux et acquisition** (Charges › Canaux de vente et acquisition) : part des ventes passée par l'App Store / Google Play et leur commission ; coût d'acquisition par nouvelle cliente ; valeur d'une cliente sur sa durée de vie.
-- **Trésorerie et revenu** (Prévisionnel, réglages dans Réglages › Trésorerie et revenu) : solde mois par mois de la société, point bas, point mort, mois où ton revenu visé est atteint, paiement des programmes en plusieurs fois.
-- **Scénarios** (Résultat › Scénarios et sensibilité, réglages dans Réglages › Scénarios) : prudent, central, ambitieux côte à côte ; le scénario choisi s'applique à Résultat, Prévisionnel et Vue d'ensemble ; sensibilité du résultat à 10 % d'écart sur chaque hypothèse.
-- **Réel face au prévu** (Prévisionnel) : saisie mensuelle du CA et des charges réels, écart au prévu.
+- **Trésorerie** (onglet à part, réglages dans Réglages › Trésorerie et revenu) : solde de la société par mois, trimestre, semestre ou année, sur la période du haut ou une plage « du … au … », encaissements, charges, impôts, ta rémunération, détail par application, point bas, point mort, mois où ton revenu visé est atteint, paiement des programmes en plusieurs fois.
+- **Scénarios** (Résultat › Scénarios et sensibilité, réglages dans Réglages › Scénarios) : prudent, central, ambitieux côte à côte ; le scénario choisi s'applique à tous les tableaux ; sensibilité du résultat à 10 % d'écart sur chaque hypothèse.
+- **Réel face au prévu** (Chiffre d'affaires) : saisie mensuelle du CA et des charges réels, écart au prévu.
 - **À surveiller** (Vue d'ensemble) : trésorerie, capacité, objectifs non appliqués, charges à compléter, sauvegarde.
-- **Export PDF** : bouton en bas de Résultat et de Prévisionnel (sur iPad : Partager › Enregistrer en PDF).
+- **Export PDF** : bouton en bas de Résultat, Chiffre d'affaires et Trésorerie (sur iPad : Partager › Enregistrer en PDF).
 
 ## Synchronisation entre appareils
 
