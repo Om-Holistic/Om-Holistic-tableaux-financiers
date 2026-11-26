@@ -25,7 +25,10 @@ const SETTINGS_PAGES = ['charges', 'produits', 'reglages'];
 
 function field(label, path, value, type = 'number') {
   const extra = type === 'number' ? ' min="0" step="any"' : '';
-  return `<label>${esc(label)}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
+  // Un libellé « titre\nexplication » s'affiche sur deux lignes.
+  const [head, more] = String(label).split('\n');
+  const text = more ? `<span class="lh">${esc(head)}</span><span class="lx">${esc(more)}</span>` : esc(label);
+  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
 }
 function check(label, path, value) {
   return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
@@ -52,6 +55,13 @@ function periodEditor(c, t) {
 }
 function fields(obj, prefix, defs) {
   return '<div class="grid">' + defs.map(([k, l, t]) => t === 'month' ? monthField(l, prefix + '.' + k, obj[k]) : field(l, prefix + '.' + k, obj[k], t)).join('') + '</div>';
+}
+// Les deux passerelles entre un programme et l'abonnement seul, chacune sur toute la largeur.
+function linkFields(a, q, path) {
+  return '<div class="grid one">' +
+    field(`Achat du programme depuis l'abonnement (% par mois)\nPart des abonnées ${soloName(a)} qui achètent ${q.name} chaque mois`, path + '.fromSolo', q.fromSolo) +
+    field(`Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
+    '</div>';
 }
 function resolve(path) {
   const keys = path.split('.'), last = keys.pop();
@@ -110,7 +120,7 @@ function programCard(a, q, j, p) {
         ${q.palierMode ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', 'Clientes / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div>` : ''}`)}
       ${section('link-p' + j, 'sub', `Passerelles avec ${soloName(a)}`, `${num(q.toSolo)} % gardent ${esc(soloName(a))} · ${num(q.fromSolo)} % des abonnées l'achètent / mois`, `
         <p class="muted">Aussi réglable dans la carte ${esc(soloName(a))}, bloc « Passerelles avec les programmes ».</p>
-        ${fields(q, t, [['toSolo', `Clientes qui gardent ${soloName(a)} à la fin du programme (%)`], ['fromSolo', `Abonnées ${soloName(a)} qui achètent ce programme, par mois (%)`]])}
+        ${linkFields(a, q, t)}
         <p class="muted">Les abonnées qui achètent le programme gardent leur abonnement. Elles occupent une place de coaching et ne sont pas recomptées à la fin du programme.</p>`)}
       ${section('promo-p' + j, 'promo', 'Promotions ponctuelles', q.promos.length ? `${q.promos.length} promotion${q.promos.length > 1 ? 's' : ''}` : 'aucune', `
         ${q.promos.map((r, k) => lineEditor(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']], 'Supprimer la promotion')).join('')}
@@ -134,7 +144,7 @@ function productsPage(a, i) {
         <p class="muted">Le rythme d'abonnements ci-dessus compte alors les essais. Seule la part indiquée devient payante, à la fin de l'essai. 0 jour = pas d'essai.</p>`)}
       ${a.programs.length ? section('conv-sp', 'sub', 'Passerelles avec les programmes', a.programs.map(q => `${esc(q.name)} : ${num(q.fromSolo)} % y vont / mois · ${num(q.toSolo)} % restent`).join(' · '), `
         <p class="muted">Mêmes réglages que le bloc « Passerelles » de chaque programme : une modification ici se retrouve là-bas.</p>
-        ${a.programs.map((q, j) => `<h4>${esc(progName(a, q))}${q.enabled ? '' : ' (désactivé)'}</h4>${lineEditor(q, p + '.programs.' + j, [['fromSolo', 'Abonnées qui l\'achètent, par mois (%)'], ['toSolo', 'Clientes qui gardent l\'abonnement à la fin (%)']])}`).join('')}
+        ${a.programs.map((q, j) => `<h4>${esc(progName(a, q))}${q.enabled ? '' : ' (désactivé)'}</h4>${linkFields(a, q, p + '.programs.' + j)}`).join('')}
         <h4>Abonnement après un programme</h4>
         ${fields(a.sub, p + '.sub', [['postDuration', 'Durée moyenne d\'abonnement après un programme (mois)']])}
         <h4>Prix mensuel après un programme</h4>

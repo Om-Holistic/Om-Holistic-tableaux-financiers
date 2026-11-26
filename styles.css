@@ -211,6 +211,9 @@ tr.total td { font-size: 14px; border-top: 2px solid var(--ink); }
 .where { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
 a { color: var(--sage); }
 .grid > .wide { grid-column: 1 / -1; }
+.grid.one { grid-template-columns: 1fr; }
+label.two .lh { display: block; font-weight: 600; color: var(--ink); }
+label.two .lx { display: block; font-weight: 400; font-size: .85em; margin-top: 2px; }
 @media (min-width: 768px) { .grid > .wide { grid-column: span 2; } .grid:has(> .wide) { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
 .monthpick { max-width: 360px; }
 .timeline li.price { opacity: .8; }
