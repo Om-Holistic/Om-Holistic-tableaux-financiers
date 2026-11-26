@@ -271,8 +271,8 @@ function defaultRaise() {
 // Plan ambitieux : ce qui change par rapport au plan avec levée (valeurs sourcées dans l'onglet Levée).
 function defaultAmbition(very = false) {
   return very
-    ? { target: 4000, growth: 50, organic: 50, fromSolo: 8, toSolo: 70, cac: 45, enDate: '2028-07', enTarget: 4000, enCost: 5000, amount: 500000 }
-    : { target: 2000, growth: 30, organic: 35, fromSolo: 5, toSolo: 50, cac: 50, enDate: '2029-07', enTarget: 1500, enCost: 3000, amount: 400000 };
+    ? { target: 4000, growth: 50, organic: 50, fromSolo: 8, toSolo: 70, cac: 45, enDate: '2028-07', enTarget: 4000, enCost: 5000, amount: 200000 }
+    : { target: 2000, growth: 30, organic: 35, fromSolo: 5, toSolo: 50, cac: 50, enDate: '2029-07', enTarget: 1500, enCost: 3000, amount: 200000 };
 }
 
 // Plan « avec levée » d'une application : ce que la levée finance (dès la date de levée de l'appli).
@@ -309,7 +309,7 @@ function defaultRaisePlan(on = false) {
 
 function defaultState() {
   return {
-    version: 20,
+    version: 21,
     bench: defaultBench(),
     raise: defaultRaise(),
     vat: { ttc: true, rate: 20 },
@@ -533,7 +533,13 @@ function migrate(state) {
       if (P && +P.amount === 250000) P.amount = 200000;
     }
   }
-  state.version = 20;
+  // Version 21 : les plans ambitieux partent du même premier tour de 200 k€ (levée en deux fois).
+  if ((state.version || 1) < 21) for (const a of state.apps) {
+    const P = a.raisePlan;
+    if (P?.ambi && +P.ambi.amount === 400000) P.ambi.amount = 200000;
+    if (P?.tres && +P.tres.amount === 500000) P.tres.amount = 200000;
+  }
+  state.version = 21;
   return state;
 }
 
