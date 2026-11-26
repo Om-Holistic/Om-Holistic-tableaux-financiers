@@ -95,9 +95,9 @@ test('compte d\'exploitation : charges rattachées aux produits et structure ré
   assert.ok(Math.abs(r.fees - m.products[0].sales * 0.02) < 1e-6);
   assert.strictEqual(r.fixed, 29);
   assert.ok(Math.abs(r.variable - m.products[0].admissions * 5) < 1e-6);
-  // Coaching : seules les heures de coachs embauchées coûtent, réparties selon les heures des programmes.
+  // Coaching : les heures qui manquent sont payées aux coachs, réparties selon les heures des programmes.
   const totalH = m.products.reduce((t, q) => t + q.coachHours, 0);
-  assert.ok(Math.abs(r.coaching - m.hiredHours * 30 * m.products[0].coachHours / totalH) < 1e-6);
+  assert.ok(Math.abs(r.coaching - m.extraHours * 30 * (totalH ? m.products[0].coachHours / totalH : 0)) < 1e-6);
   assert.strictEqual(s.commonFixed, 30);
   // 3 applications présentes en octobre 2027 : 90 € répartis à parts égales.
   assert.ok(Math.abs(s.structure - 30) < 1e-6);
@@ -138,7 +138,7 @@ test('cohortes de test puis lancement, capacité par paliers', () => {
   assert.ok(Math.abs(adm('2027-04') + adm('2027-05') + adm('2027-06') - 15) < 1e-9);
   assert.ok(adm('2027-08') > 0);
   assert.strictEqual(weekly.find(w => w.date.startsWith('2027-02')).limit, 8);
-  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-08')).limit, 20);
+  assert.strictEqual(weekly.find(w => w.date.startsWith('2027-08')).limit, 15);
   // Avec refus quand les heures manquent : 3 h à 20 min par cliente = 9 clientes au plus en même temps.
   a.restrict = true; a.capacitySteps = [{ date: '2027-01', hours: 3, hired: 0 }];
   const capped = simulate(a).months;
@@ -287,7 +287,7 @@ test('passerelle en % par an : 12 % par an ≈ 1 % des abonnées par mois', () =
   assert.ok(ratio > 0.008 && ratio < 0.012, String(ratio));
 });
 
-test('capacité en heures : coût des coachs embauchées et refus quand les heures manquent', () => {
+test('capacité en heures : les heures de coachs ne se saisissent pas, seules les heures qui manquent coûtent', () => {
   const state = model.defaultState();
   const a = state.apps[0];
   a.coachRate = 40; a.payMissing = false;
@@ -296,9 +296,9 @@ test('capacité en heures : coût des coachs embauchées et refus quand les heur
   const pnl = buildPnl(state, sims);
   const k = sims[0].months.findIndex(m => m.month === '2028-03');
   const m = sims[0].months[k], s = sumPnl([pnl[0][k]]);
-  // 6 h / semaine sur les 31 jours de mars, à 40 € de l'heure, payées même si elles ne servent pas toutes.
-  assert.ok(Math.abs(m.hiredHours - 6 * 31 / 7) < 1e-6, String(m.hiredHours));
-  assert.ok(Math.abs(s.total.coaching - m.hiredHours * 40) < 1e-6);
+  // Un ancien réglage « coachs engagées » est ignoré : seules les heures qui manquent sont payées, à 40 € de l'heure.
+  assert.strictEqual(m.hiredHours, 0);
+  assert.ok(Math.abs(s.total.coaching - m.extraHours * 40) < 1e-6);
   // Refus : jamais plus d'heures de coaching que les heures disponibles.
   a.restrict = true;
   const { weekly } = simulate(a);

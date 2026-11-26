@@ -89,14 +89,13 @@ test('TVA : saisie TTC, le compte d\'exploitation est HT', () => {
   assert.ok(near(P.sumPnl([e]).total.ca, m.total / 1.2));
 });
 
-test('coaching : coût = heures embauchées × coût horaire (heures manquantes non payées)', () => {
+test('coaching : coût = heures qui manquent × coût horaire', () => {
   const s = fresh(), a = s.apps[0];
-  a.payMissing = false;
   const sims = s.apps.map(x => E.simulate(x));
   const list = P.buildPnl(s, sims)[0];
-  const hired = sims[0].months.reduce((t, m) => t + m.hiredHours, 0);
+  const extra = sims[0].months.reduce((t, m) => t + m.extraHours, 0);
   const cost = P.sumPnl(list).total.coaching;
-  assert.ok(near(cost, hired * a.coachRate), `${cost} vs ${hired * a.coachRate}`);
+  assert.ok(near(cost, extra * a.coachRate), `${cost} vs ${extra * a.coachRate}`);
 });
 
 test('implantation : le net ne dépasse jamais le résultat (taux positifs)', () => {
@@ -124,12 +123,13 @@ test('heures manquantes : payées au coût des coachs quand les inscriptions ne 
   const sims = s.apps.map(x => E.simulate(x));
   const extra = sims[0].months.reduce((t, m) => t + m.extraHours, 0), hired = sims[0].months.reduce((t, m) => t + m.hiredHours, 0);
   assert.ok(extra > 0, 'des heures manquent');
-  a.payMissing = true;
-  const paid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
-  assert.ok(Math.abs(paid - (hired + extra) * a.coachRate) < 1e-6 * paid);
-  a.payMissing = false;
-  const unpaid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
-  assert.ok(Math.abs(unpaid - hired * a.coachRate) < 1e-6 * Math.max(1, unpaid));
+  assert.strictEqual(hired, 0);
+  // Toujours payées : le résultat du calcul, pas un réglage.
+  for (const pm of [true, false]) {
+    a.payMissing = pm;
+    const paid = P.sumPnl(P.buildPnl(s, sims)[0]).total.coaching;
+    assert.ok(Math.abs(paid - extra * a.coachRate) < 1e-6 * paid);
+  }
 });
 
 test('canaux : la part vendue par les stores paie leur commission, pas les frais du site', () => {
