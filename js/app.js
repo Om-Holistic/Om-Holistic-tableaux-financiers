@@ -129,9 +129,12 @@ function linkCount(a, q) {
   const buys = ms.reduce((t, m) => t + m.products[j].fromSolo, 0), subs = ms[0].direct + ms[0].post;
   return `<p class="muted">Soit environ <b>${num(Math.round(buys))} achats de ${esc(q.name)}</b> entre ${monthName(from)} et ${monthName(to)}, pour environ ${num(Math.round(subs))} abonnées ${esc(soloName(a))} au début de cette période.</p>`;
 }
+// Les chemins « draft. » visent le brouillon de la fenêtre de charge, pas l'état enregistré.
+const isDraft = path => String(path).startsWith('draft.');
 function resolve(path) {
   const keys = path.split('.'), last = keys.pop();
-  return [keys.reduce((o, k) => o[k], state), last];
+  const root = keys[0] === 'draft' ? (keys.shift(), view.chEdit.c) : state;
+  return [keys.reduce((o, k) => o[k], root), last];
 }
 
 // Une ligne compacte : champs côte à côte, bouton de suppression au bout de la ligne.
@@ -1182,24 +1185,53 @@ function chargeSummary(c, a, dates) {
 }
 const badge = c => !(+c.amount) && !(c.steps || []).some(st => +st.amount) ? '<span class="tag todo">À compléter</span>' : c.estimate ? '<span class="tag est">Estimation</span>' : '<span class="tag on">Confirmé</span>';
 
-function chargeEditor(c, t, a, dates, scopes) {
+// Carte d'une charge : repliée, elle donne le montant de la période ; dépliée, un récapitulatif
+// et deux boutons. La modification se fait dans une fenêtre, pour que la charge ne change pas de bloc pendant la saisie.
+function chargeCard(c, t, a, dates, scopes) {
   const id = 'ch' + c.id;
-  const anchors = CHARGE_ANCHORS.filter(([k]) => k !== 'product' || (a && c.scope && c.scope !== 'app'));
+  const scope = scopes && (scopes.find(([k]) => k === (c.scope || 'app')) || [])[1];
+  const steps = (c.steps || []).length ? [...c.steps].sort((x, y) => x.after - y.after).map(st => `${amountText(c, st.amount)} au bout de ${num(st.after)} mois`).join(', puis ') : '';
+  const line = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
   return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)} ${badge(c)}<br><span class="sum-sub">${chargeSummary(c, a, dates)}</span></span></summary>
-    ${fields(c, t, [['name', 'Nom', 'text']])}
-    <div class="grid">${select('Catégorie', t + '.category', c.category, CHARGE_CATEGORIES).replace('<label>', '<label class="wide">')}${select('Type', t + '.type', c.type, a ? CHARGE_TYPES : CHARGE_TYPES.filter(([k]) => k === 'fixe' || k === 'unique'))}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
-    ${scopes ? '<div class="grid">' + select('Rattachée à', t + '.scope', c.scope || 'app', scopes).replace('<label>', '<label class="wide">') + '</div>' : ''}
-    <h4>${c.type === 'unique' ? 'Quand' : 'Démarrage et fin'}</h4>
-    <div class="grid">${select(c.type === 'unique' ? 'Payée au' : 'Commence au', t + '.anchor', c.anchor || 'date', anchors).replace('<label>', '<label class="wide">')}
-      ${c.anchor === 'date' ? monthField('Mois', t + '.start', c.start, 'dès le début') : field('Décalage (mois après)', t + '.offset', c.offset || 0)}
+    <dl class="ch-recap">${line('Type', esc((CHARGE_TYPES.find(([k]) => k === c.type) || [])[1] || ''))}${line('Montée en charge', steps)}${line('Rattachée à', scope && esc(scope))}${line('Remarque', esc(c.note || ''))}</dl>
+    <div class="ch-acts"><button data-chedit="${esc(t)}">Modifier</button><button class="danger" data-remove="${esc(t)}">Supprimer</button></div></details>`;
+}
+
+// Contexte d'une liste de charges : application, dates repères et rattachements possibles.
+function chargeCtx(path) {
+  if (path.startsWith('shared.')) return { a: null, dates: appDates(state.apps), scopes: null };
+  const a = state.apps[+path.split('.')[1]];
+  return { a, dates: appDates([a]), scopes: [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])] };
+}
+const CH_KIND = { var: 'Charges variables', fix: 'Charges fixes', str: 'Charges de structure Om Holistic' };
+// Fenêtre centrée d'ajout ou de modification d'une charge. Les champs agissent sur un brouillon (chemins « draft. »),
+// la liste n'est modifiée qu'au bouton Ajouter / Enregistrer.
+function chargeModal() {
+  const e = view.chEdit;
+  if (!e) return '';
+  const c = e.c, t = 'draft', { a, dates, scopes } = chargeCtx(e.list);
+  const anchors = CHARGE_ANCHORS.filter(([k]) => k !== 'product' || (a && c.scope && c.scope !== 'app'));
+  const types = a ? CHARGE_TYPES : CHARGE_TYPES.filter(([k]) => k === 'fixe' || k === 'unique');
+  const where = e.j === null ? `${CH_KIND[e.kind]}${a && e.kind !== 'str' ? ' de ' + esc(a.name) : ''}` : esc(c.name);
+  return `<div class="modal" data-chclose role="dialog" aria-modal="true" aria-labelledby="chm-t"><div class="modal-box ch-box">
+    <h3 class="modal-t" id="chm-t">${e.j === null ? 'Nouvelle charge' : 'Modifier la charge'}<small>${where}</small></h3>
+    <div class="grid one">${field('Nom', t + '.name', c.name, 'text').replace('<input', '<input placeholder="ex. Hébergement du site" autocomplete="off"')}
+      ${select('Catégorie', t + '.category', c.category || '', [['', 'Choisis une catégorie'], ...CHARGE_CATEGORIES])}
+      ${select('Type', t + '.type', c.type, types)}</div>
+    <div class="grid two">${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}${select('Ce montant est', t + '.estimate_ok', c.estimate ? 'est' : 'ok', [['est', 'une estimation'], ['ok', 'confirmé']])}</div>
+    ${scopes ? `<div class="grid one">${select('Rattachée à', t + '.scope', c.scope || 'app', scopes)}</div>` : ''}
+    <h4>${c.type === 'unique' ? 'Quand' : 'Dates'}</h4>
+    <div class="grid one">${select(c.type === 'unique' ? 'Payée au' : 'Commence au', t + '.anchor', c.anchor || 'date', anchors)}
+      ${c.anchor === 'date' ? monthField('Mois', t + '.start', c.start, 'dès le début') : field('Décalage (mois après ce repère)', t + '.offset', c.offset || 0)}
       ${c.type === 'unique' ? '' : monthField('Fin', t + '.end', c.end, 'sans fin')}</div>
-    <p class="muted">Calculé : ${whenText(c, dates)}. Si la date repère change dans ton calendrier, la charge suit.</p>
+    <p class="muted">Soit ${esc(whenText(c, dates))}. Si la date repère change dans ton calendrier, la charge suit.</p>
     ${c.type === 'unique' ? '' : `<h4>Montée en charge</h4>
-    ${(c.steps || []).map((st, k) => lineEditor(st, `${t}.steps.${k}`, [['after', 'Au bout de (mois)'], ['amount', c.type === 'ca' ? 'Nouveau %' : 'Nouveau montant (€)']], 'Supprimer ce palier')).join('')}
-    <div class="row"><button data-add="${t}.steps">Ajouter un palier</button></div>`}
-    ${check('Montant confirmé (sinon, c\'est une estimation)', t + '.estimate_ok', !c.estimate)}
-    ${fields(c, t, [['note', 'Hypothèse, source ou remarque', 'text']])}
-    <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
+    ${(c.steps || []).map((st, k) => lineEditor(st, `${t}.steps.${k}`, [['after', 'Au bout de (mois)'], ['amount', c.type === 'ca' ? 'Nouveau %' : 'Nouveau montant (€)']], 'Supprimer ce palier')).join('') || '<p class="muted">Aucune : le montant reste le même.</p>'}
+    <div class="row"><button class="ghost" data-add="${t}.steps">Ajouter un palier</button></div>`}
+    <div class="grid one">${field('Remarque (hypothèse, source, devis…)', t + '.note', c.note || '', 'text')}</div>
+    ${e.err ? `<p class="warn">${esc(e.err)}</p>` : ''}
+    <div class="modal-acts"><button class="ghost" data-chclose>Annuler</button><button class="primary" data-chsave>${e.j === null ? 'Ajouter la charge' : 'Enregistrer'}</button></div>
+  </div></div>`;
 }
 
 // Charges mensuelles fixes à quelques dates clés : on voit la montée en charge d'un coup d'œil.
@@ -1224,7 +1256,7 @@ function chargeGroups(list, path, a, dates, scopes, keep = () => true) {
     const todo = items.filter(x => badge(x.c).includes('todo')).length;
     const v = chAmt ? items.reduce((t, x) => t + chargeAmount(x.c, a), 0) : null;
     return section(id, CAT_KIND[k], n, `${v === null ? '' : periodAmount(v) + ' · '}${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
-      items.map(({ c, j }) => chargeEditor(c, `${path}.${j}`, a, dates, scopes)).join(''));
+      items.map(({ c, j }) => chargeCard(c, `${path}.${j}`, a, dates, scopes)).join(''));
   }).join('');
 }
 
@@ -1568,15 +1600,16 @@ function chargesPage(a, i) {
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${tot ? periodAmount(tot.v) + ' · ' : ''}${nV} charge${nV > 1 ? 's' : ''}${a.programs.length ? ' + coaching' : ''}`,
       `${computed}${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || (computed ? '' : '<p class="muted">Aucune pour l\'instant.</p>')}
-      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+      <div class="add-row"><button class="add" data-chadd="${p}.charges|var">Ajouter une charge variable</button></div>`)}
     ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${tot ? periodAmount(tot.f) + ' · ' : ''}${nF} charge${nF > 1 ? 's' : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
-      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+      <div class="add-row"><button class="add" data-chadd="${p}.charges|fix">Ajouter une charge fixe</button></div>`)}
     ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${tot ? 'quote-part ' + periodAmount(tot.s) + ' · ' : ''}${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}`,
       `<div class="grid">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']]).replace('<label>', '<label class="wide">')}</div>
       <details class="fold" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
       ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
-      <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`)}`;
+      <div class="add-row"><button class="add" data-chadd="shared.charges|str">Ajouter une charge de structure</button></div>`)}
+    ${chargeModal()}`;
   }
 }
 
@@ -2178,7 +2211,8 @@ function renderToolbar() {
 }
 
 function render(fresh = false) {
-  if (fresh) pickOpen = null;
+  if (fresh) { pickOpen = null; view.chEdit = null; }
+  const boxTop = document.querySelector('.modal-box')?.scrollTop || 0;
   // Garde ouvertes les zones dépliées, sauf en arrivant sur une nouvelle page.
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
@@ -2186,6 +2220,19 @@ function render(fresh = false) {
   const pages = { notoriete: () => notorietePage(a, i), acquisition: () => acquisitionPage(a, i), calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
+  // Fenêtre ouverte : la page derrière ne défile pas, et la fenêtre garde sa position après chaque saisie.
+  const box = document.querySelector('.modal-box');
+  document.body.classList.toggle('modal-open', !!box);
+  if (box) box.scrollTop = boxTop;
+}
+
+// Après un ajout ou une modification : on ouvre les blocs qui contiennent la charge (elle reste repliée) et on la montre.
+function revealCharge(id) {
+  const el = document.getElementById('ch' + id);
+  if (!el) return;
+  for (let d = el.parentElement && el.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
 }
 
 // ---------- Événements ----------
@@ -2203,6 +2250,8 @@ function route() {
   else window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+// Échap ferme la fenêtre de charge sans rien changer.
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && view.chEdit) { view.chEdit = null; render(); } });
 // Bandeau replié / déplié : mémorisé pour toutes les pages.
 
 document.addEventListener('change', async e => {
@@ -2232,7 +2281,8 @@ document.addEventListener('change', async e => {
     if ((m && y) || (!m && !y)) {
       const [o, k] = resolve(pick.dataset.mpath);
       o[k] = m && y ? `${y}-${m}` : '';
-      save(); render();
+      if (!isDraft(pick.dataset.mpath)) save();
+      render();
     }
   } else if (t.dataset.actual) {
     const [ai, month, f] = t.dataset.actual.split('|'), a = state.apps[+ai];
@@ -2263,10 +2313,10 @@ document.addEventListener('change', async e => {
     saveCalHidden(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
-    if (k === 'estimate_ok') o.estimate = !t.checked;
+    if (k === 'estimate_ok') o.estimate = t.type === 'checkbox' ? !t.checked : t.value !== 'ok';
     else if (t.dataset.path.includes('.actuals.') && t.value === '') delete o[k];
     else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.dataset.path.startsWith('scenarios.') ? Math.max(-100, +t.value || 0) : Math.max(0, +t.value || 0)) : t.value;
-    save();
+    if (isDraft(t.dataset.path)) { if (view.chEdit) view.chEdit.err = ''; } else save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
     // pour que les résumés se mettent à jour sans fermer le clavier.
     setTimeout(() => {
@@ -2333,10 +2383,32 @@ document.addEventListener('click', e => {
       scenarios: () => ({ id: newId(), name: 'Nouveau scénario', fixedYear: 0, socialRate: 0, socialBase: 'result', taxRate: 0, taxBase: 'result', distRate: 0, note: '' }),
       charges: () => charge('Nouvelle charge', 'fixe', 0, 'app', '', '', { anchor: 'first' })
     }[k];
-    o[k].push(fresh()); save(); render();
+    o[k].push(fresh()); if (!isDraft(t.dataset.add)) save(); render();
   } else if (t.dataset.remove) {
     const [o, k] = resolve(t.dataset.remove);
-    o.splice(+k, 1); save(); render();
+    o.splice(+k, 1); if (!isDraft(t.dataset.remove)) save(); render();
+  } else if (t.dataset.chadd) {
+    // Nouvelle charge : un brouillon dans une fenêtre, type proposé selon le bloc (variable, fixe, structure).
+    const [list, kind] = t.dataset.chadd.split('|');
+    view.chEdit = { list, j: null, kind, err: '', c: charge('', kind === 'var' ? 'cliente' : 'fixe', '', 'app', '', '', { anchor: 'first', category: '' }) };
+    render();
+  } else if (t.dataset.chedit) {
+    const keys = t.dataset.chedit.split('.'), j = +keys.pop(), list = keys.join('.');
+    view.chEdit = { list, j, kind: list.startsWith('shared.') ? 'str' : '', err: '', c: JSON.parse(JSON.stringify(resolve(t.dataset.chedit)[0][j])) };
+    render();
+  } else if (t.dataset.chclose !== undefined && (e.target === t || t.tagName === 'BUTTON')) {
+    view.chEdit = null; render();
+  } else if (t.dataset.chsave !== undefined) {
+    const ed = view.chEdit, c = ed.c;
+    c.name = String(c.name || '').trim();
+    ed.err = !c.name ? 'Donne un nom à la charge.' : !c.category ? 'Choisis une catégorie.' : '';
+    if (ed.err) { render(); return; }
+    if (c.type === 'unique') { c.end = ''; c.steps = []; }
+    c.amount = +c.amount || 0;
+    const [o, k] = resolve(ed.list + '.x'), list = o;
+    if (ed.j === null) list.push(c); else list[ed.j] = c;
+    view.chEdit = null; save(); render();
+    revealCharge(c.id);
   } else if (t.dataset.removeApp) {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
