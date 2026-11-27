@@ -117,7 +117,7 @@ function fields(obj, prefix, defs) {
 function linkFields(a, q, path) {
   return '<div class="grid one">' +
     field(`Achat du programme depuis l'abonnement (% par an)\nPart des abonnées ${soloName(a)} qui achètent ${q.name} dans l'année`, path + '.fromSolo', q.fromSolo) +
-    field(`Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
+    field(+q.giftMonths > 0 ? `Deviennent abonnées payantes après l'offre (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} en payant après ${num(+q.giftMonths)} mois offerts` : `Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
     '</div>' + linkCount(a, q);
 }
 // Ce que la passerelle représente concrètement : achats par an et abonnées concernées, un an après le lancement du programme.
@@ -174,6 +174,16 @@ function firstYear(from, f) {
 }
 const priceRange = grid => { const xs = phasesOf(grid).map(ph => +ph.price || 0); return xs.length ? (Math.min(...xs) === Math.max(...xs) ? price(xs[0]) : `${price(Math.min(...xs)).replace(/\s?€$/, '')} → ${price(Math.max(...xs))}`) : '—'; };
 
+// CHRYSALISS offert pendant X mois après la fin du programme, puis une part passe au payant.
+function giftSection(a, q, j, t) {
+  const g = +q.giftMonths || 0, solo = esc(soloName(a)), total = Math.round((+q.duration || 0) * 12 / 52 + g);
+  const ms = prodSim ? prodSim.months : [], peak = Math.max(0, ...ms.map(m => m.products[j]?.gifted || 0));
+  return section('gift-p' + j, 'sub', `${solo} offert après le programme`, g > 0 ? `${num(g)} mois offerts · ${num(+q.toSolo || 0)} % payantes ensuite` : `pas d'offre · ${num(+q.toSolo || 0)} % s'abonnent à la fin`, `
+    <div class="grid">${field(`Mois offerts\naprès la fin du programme (0 = aucun)`, t + '.giftMonths', q.giftMonths)}${field(`Deviennent payantes\naprès l'offre (%)`, t + '.toSolo', q.toSolo)}</div>
+    <p class="muted">${g > 0
+      ? `Les clientes de ${esc(q.name)} gardent ${solo} gratuitement ${num(g)} mois après le programme, soit environ ${num(total)} mois depuis leur début. Pendant l'offre, elles comptent dans Utilisatrices et dans les charges par cliente, sans chiffre d'affaires${peak >= 1 ? ` (jusqu'à ${num(Math.round(peak))} en même temps)` : ''}. À la fin de l'offre, ${num(+q.toSolo || 0)} % s'abonnent en payant et les autres partent.`
+      : `Sans offre, ${num(+q.toSolo || 0)} % des clientes s'abonnent en payant dès la fin du programme.`} Les clientes déjà abonnées à ${solo} continuent de payer.</p>`);
+}
 function programCard(a, q, j, p) {
   const t = p + '.programs.' + j;
   const open = view.open.has('p' + j) ? 'open' : '';
@@ -191,6 +201,7 @@ function programCard(a, q, j, p) {
       <p class="muted"><a href="#calendrier" data-goto="calendrier" data-open="calp-${j}" data-anchor="calp-${j}">Cohortes de test et lancement : Calendrier ›</a></p>
       ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
         <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
+      ${giftSection(a, q, j, t)}
       <p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="acq-p${j}" data-anchor="acq-p${j}">Rythme d'inscriptions, pub et passerelles avec ${esc(soloName(a))} : Acquisition ›</a></p>
       ${section('promo-p' + j, 'promo', 'Promotions ponctuelles', q.promos.length ? `${q.promos.length} promotion${q.promos.length > 1 ? 's' : ''}` : 'aucune', `
         ${q.promos.map((r, k) => lineEditor(r, t + '.promos.' + k, [['start', 'Début', 'month'], ['end', 'Fin', 'month'], ['price', 'Prix (€)']], 'Supprimer la promotion')).join('')}
@@ -852,6 +863,7 @@ function userSeries(r) {
     const a = x.a, ms = x.months;
     out.push({ name: soloName(a), short: r.scope.length > 1 ? a.name : 'Abonnement', kind: 'abonnées', at: k => (ms[k]?.direct || 0) + (ms[k]?.post || 0) });
     a.programs.forEach((p, j) => { if (p.enabled !== false) out.push({ name: progName(a, p), short: p.name, kind: 'en programme', at: k => ms[k]?.products[j]?.active || 0 }); });
+    if (ms.some(m => m.gifted >= 0.5)) out.push({ name: soloName(a) + ' offert', short: r.scope.length > 1 ? a.name + ' offert' : 'Offert', kind: 'offertes', at: k => ms[k]?.gifted || 0 });
   }
   const colored = out.map((s, i) => ({ ...s, key: s.name, color: USER_COLORS[i % USER_COLORS.length] }));
   const progs = colored.filter(s => s.kind === 'en programme');
@@ -897,11 +909,11 @@ function usersPage() {
   const rows = bs.map(b => [bucketName(b.key, view.cashStep), ...shown.map(s => num(Math.round(s.v[b.i])))]);
   const tile = s => ({ label: esc(s.short), value: num(end(s)), hint: `${s.kind} fin ${last ? monthName(months[last.i]) : ''} · au plus haut ${num(Math.round(peak(s)))}` });
   return `${banner({ label: 'Utilisatrices', chip: periodChip(), big: num(total),
-      note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
+      note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : s.kind === 'offertes' ? 'avec ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
       tiles: base.slice(0, 4).map(tile) })}
     ${bs.length ? `<details class="card" id="us-chart" ${view.open.has('us-chart') ? 'open' : ''}><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
       ${legendPop}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
-    <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
+    <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours, offertes et clientes en cours de programme</span></span></summary>
       <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>
     ${inscriptionsCard(r)}` : ''}`;
 }
@@ -1899,7 +1911,7 @@ const implantPath = () => planApp() ? `apps.${view.app}.raisePlan.implant` : 'im
 // le statut de société choisi, et le montant à lever pour couvrir l'autonomie visée.
 const raiseDefaultDate = a => a.raiseDate || appDates([a]).launch || appStart(a);
 // Nouvelles abonnées d'un mois : directes et clientes d'un programme qui s'abonnent ensuite.
-const newSubs = (a, m) => m.newDirect.reduce((t, v) => t + v, 0) + m.products.reduce((t, q, j) => t + q.finishedNew * Math.min(100, +a.programs[j]?.toSolo || 0) / 100, 0);
+const newSubs = (a, m) => m.newDirect.reduce((t, v) => t + v, 0) + m.products.reduce((t, q, j) => t + q.convertNew * Math.min(100, +a.programs[j]?.toSolo || 0) / 100, 0);
 function applyRaisePlan(st, i, over = {}) {
   const s = st === state || Object.keys(over).length ? JSON.parse(JSON.stringify(st)) : st, a = s.apps[i];
   if (!a || (!a.raisePlan?.on && !over.force)) return s;
