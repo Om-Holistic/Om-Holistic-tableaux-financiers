@@ -629,9 +629,18 @@ table.cmp tr.c-a td, table.cmp tr.c-a th { border-bottom: 1px solid var(--line);
 table.traj small.stg { display: block; font-size: 10.5px; color: var(--ink-soft); font-weight: 500; }
 @media (max-width: 420px) { #tabs a { font-size: 9.5px; padding-inline: 0; } #tabs svg { width: 20px; height: 20px; } }
 /* Levée : sensibilité et leviers */
-table.sens td.cur, table.sens th.cur { background: var(--sage-tint); }
+table.cmpx td.cur, table.cmpx th.cur { background: var(--sage-tint); }
 .lvt { display: inline-block; padding: 1px 7px; border-radius: 6px; font-weight: 600; }
 .lvt.good { background: #dff4ea; color: #1d7a4f; } .lvt.ok { background: #fdf0d3; color: #8a5800; } .lvt.low { background: #fbe1dc; color: #b2392a; }
+/* Choix du plan dans l'onglet Levée */
+.seg { display: flex; gap: 4px; padding: 4px; margin: 0 0 12px; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.seg button { flex: 1; border: 0; padding: 10px 8px; border-radius: 10px; background: none; color: var(--ink-soft); font-weight: 600; font-size: 14px; }
+.seg button.on { background: var(--forest, #1f1636); color: #fff; }
+ul.refs { margin: 0 0 8px; padding-left: 18px; font-size: 14px; line-height: 1.45; }
+ul.refs li { margin-bottom: 6px; }
+table.cmpx td.cur, table.cmpx th.cur { background: var(--ground); }
+table.cmpx thead th { text-align: right; }
+@media (max-width: 767px) { #lv-tiers table.traj th, #lv-tiers table.traj td { padding: 6px 5px; } #lv-tiers table.traj tbody th { min-width: 92px; font-size: 11.5px; } }
 
 ul.hist { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 ul.hist li { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }

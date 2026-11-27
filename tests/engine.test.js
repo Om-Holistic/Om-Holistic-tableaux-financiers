@@ -60,7 +60,7 @@ test('une sauvegarde v1 est convertie en grilles de prix', () => {
       launch: true, launchWeeks: 12, launchRate: 2, launchPrice: 150, initial: 2, target: 5, months: 24, step: 1, palierMode: false, paliers: [], promos: [] }] }] };
   const s = model.migrate(old);
   const p = s.apps[0].programs[0];
-  assert.deepStrictEqual(p.pricing.map(x => x.price), [60, 150, 250]);
+  assert.deepStrictEqual(p.pricing.map(x => x.price), [60, 150, 240]);
   assert.strictEqual(s.apps[0].sub.directPricing[0].price, 12);
   assert.strictEqual(p.price, undefined);
   assert.doesNotThrow(() => simulate(s.apps[0]));
@@ -326,9 +326,14 @@ test('le temps de coaching par cliente peut baisser à une date', () => {
 test('les prévisions vont jusqu\'à fin 2034', () => {
   const s = model.defaultState();
   for (const a of s.apps) assert.equal(simulate(a).months.at(-1).month, '2034-12');
-  assert.equal(s.raise.runway, 18);
+  assert.equal(s.raise.runway, 12);
+  assert.equal(s.apps[0].raiseDate, '2027-05');
   const old = model.defaultState(); delete old.raise; old.version = 16;
   assert.equal(model.migrate(old).raise.dilMax, 20);
+  const v18 = model.defaultState(); v18.version = 18; v18.raise.runway = 18; v18.apps[0].raiseDate = '';
+  const m = model.migrate(v18);
+  assert.equal(m.raise.runway, 12, 'ancienne autonomie par défaut alignée sur le dossier');
+  assert.equal(m.apps[0].raiseDate, '2027-05');
 });
 
 test('plan avec levée : abonnées apportées par la publicité, montée en charge', () => {
@@ -350,6 +355,19 @@ test('impôt sur les sociétés à deux taux', () => {
   const sas = model.defaultImplantation().scenarios.find(x => x.id === 'fr-sas');
   assert.equal(afterTax(sas, 0, 100000, 12).tax, 42500 * 0.15 + 57500 * 0.25);
   assert.equal(afterTax(sas, 0, 10000, 12).tax, 1500);
+});
+
+test('premier tour : 200 k€, 4 000 € net la 1re année, prix TTC et Refit à 240 €', () => {
+  const s = model.defaultState(), P = s.apps[0].raisePlan;
+  assert.equal(P.amount, 200000); assert.equal(P.salary, 4000); assert.equal(P.salary2, 6000);
+  assert.equal(P.tech, 2000); assert.equal(P.tools, 400); assert.equal(P.equipment, 3000);
+  assert.equal(s.vat.ttc, true);
+  assert.equal(s.apps[0].programs[0].pricing.at(-1).price, 240);
+  const old = model.defaultState(); old.version = 19; old.vat.ttc = false; old.apps[0].raisePlan.salary = 6000; old.apps[0].raisePlan.amount = 250000;
+  delete old.apps[0].raisePlan.tech; old.apps[0].programs[0].pricing.at(-1).price = 250;
+  const m = model.migrate(old);
+  assert.equal(m.vat.ttc, true); assert.equal(m.apps[0].raisePlan.salary, 4000); assert.equal(m.apps[0].raisePlan.amount, 200000);
+  assert.equal(m.apps[0].raisePlan.tech, 2000); assert.equal(m.apps[0].programs[0].pricing.at(-1).price, 240);
 });
 
 test('CHRYSALISS offert après un programme : utilisatrices offertes sans CA, conversion à la fin de l\'offre', () => {

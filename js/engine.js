@@ -150,6 +150,7 @@ function simulate(a, soloStock) {
   const credit = (d, fn) => { for (const [k, share] of weekShares(d)) { const m = months.get(k); if (m) fn(m, share); } };
 
   const events = [], weekly = [], pending = a.programs.map(() => 0);
+  let live = []; // programmes en cours : on ne reparcourt pas tout l'historique chaque semaine
   const coaching = a.programs.length > 0;
 
   // Calendrier de chaque programme : cohortes de test (premier lundi de leur mois), puis lancement commercial.
@@ -165,7 +166,7 @@ function simulate(a, soloStock) {
   for (let d = firstMonday(start); d <= end; d = addWeeks(d, 1)) {
     const m = months.get(monthKey(d));
     if (!m) continue;
-    const active = events.filter(e => e.end > d);
+    const active = live = live.filter(e => e.end > d);
     const step = capacityAt(a, monthKey(d));
     // Heures par cliente ce mois-ci : le temps de coaching peut baisser avec le temps (paliers du programme).
     const perH = i => coachAt(a.programs[i], monthKey(d)) / 60;
@@ -249,9 +250,11 @@ function simulate(a, soloStock) {
     }
     // Plan avec levée : abonnées payantes apportées par la publicité, montée en charge sur quelques mois.
     const paid = a.paid;
-    if (subStart && d >= subStart && paid && pos(paid.perMonth) > 0 && paid.from && d >= firstMonday(monthDate(paid.from))) {
+    if (subStart && d >= subStart && paid && (pos(paid.perMonth) > 0 || paid.schedule) && paid.from && d >= firstMonday(monthDate(paid.from))) {
       const since = monthsBetween(paid.from, monthKey(d)), ramp = Math.max(1, pos(paid.ramp, 1));
-      const count = pos(paid.perMonth) * 12 / 52 * Math.min(1, (since + 1) / ramp);
+      // Calendrier mois par mois (objectif qui grandit, nouveau marché), sinon un rythme fixe avec montée en charge.
+      const count = paid.schedule ? pos(paid.schedule[Math.min(since, paid.schedule.length - 1)]) * 12 / 52
+        : pos(paid.perMonth) * 12 / 52 * Math.min(1, (since + 1) / ramp);
       const phase = phaseAt(a.sub.directPricing, monthKey(d)).index;
       credit(d, (mm, share) => { mm.newDirect[phase] += count * share; mm.paidNew += count * share; });
     }
