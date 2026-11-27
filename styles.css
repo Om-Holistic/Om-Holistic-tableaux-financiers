@@ -921,3 +921,17 @@ details.palier[open] > summary::after { transform: rotate(225deg); }
 .pal-b { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
 .pal-b .lrow { background: var(--ground); }
 .pal-b .synth { margin: 0; }
+
+/* Acquisition à plat : un seul niveau de carte. Les étapes sont des sections séparées par un trait de couleur,
+   les paliers des lignes séparées par de fins traits, les calculs des lignes « libellé … valeur ». */
+.card.product .step { background: none; border-left: 0; border-radius: 0; border-top: 3px solid var(--k); padding: 12px 0 4px; margin-top: 14px; }
+.card.product .step .lrow, .card.product .pal-b .lrow { background: none; padding: 0; border-radius: 0; }
+.card.product .step .notice { border-width: 1.5px; }
+.card.product details.palier { background: none; border-radius: 0; border-bottom: 1px solid var(--line); }
+.card.product details.palier:first-of-type { border-top: 1px solid var(--line); }
+.card.product details.palier > summary { padding: 10px 0; }
+.card.product .pal-b { padding: 0 0 12px; }
+.card.product .pal-b .synth { background: none; padding: 0; border-radius: 0; gap: 0; }
+.card.product .pal-b .sy-row { padding: 7px 0; border-top: 1px solid var(--line); }
+.card.product .pal-b .sy-row:first-child { border-top: 0; }
+.card.product .pal-b .sy-n { margin: 0 0 4px; }
