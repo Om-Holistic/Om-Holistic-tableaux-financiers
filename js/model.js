@@ -66,7 +66,7 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, adMode: false, adSteps: []
     },
     programs: []
   };
@@ -438,7 +438,7 @@ function migrate(state) {
     if (a.coachRate === undefined) a.coachRate = 0;
   }
   if (!state.shared) state.shared = defaultShared();
-  for (const a of state.apps) for (const q of a.programs || []) { if (q.adMode === undefined) q.adMode = false; if (!Array.isArray(q.adSteps)) q.adSteps = []; }
+  for (const a of state.apps) for (const q of [a.sub, ...(a.programs || [])]) { if (q.adMode === undefined) q.adMode = false; if (!Array.isArray(q.adSteps)) q.adSteps = []; }
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
   for (const a of state.apps) if (!a.zones) a.zones = defaultZones();

@@ -87,3 +87,12 @@ test('budget pub : inscriptions = budget ÷ coût par cliente, et le coût d\'ac
   const acq = pnl[0].filter(e => e.month.startsWith('2029')).reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
   assert.ok(Math.abs(acq - 3000 * 12) < 150, String(acq));
 });
+
+test('budget pub sur l\'abonnement : nouvelles abonnées payantes = budget ÷ coût par abonnée', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  a.programs.forEach(p => { p.enabled = false; });
+  a.sub.adMode = true; a.sub.acq = 20; a.sub.adSteps = [{ start: '2028-01', budget: 2000 }];
+  const sim = E.simulate(a);
+  const paid = sim.months.filter(m => m.month.startsWith('2029')).reduce((t, m) => t + m.newDirect.reduce((u, v) => u + v, 0), 0);
+  assert.ok(Math.abs(paid - 2000 / 20 * 12) < 8, String(paid));
+});

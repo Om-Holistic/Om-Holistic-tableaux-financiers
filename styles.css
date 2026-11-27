@@ -438,12 +438,8 @@ details.card.product[open] .pstats { display: none; }
 /* Grands nombres : valeur mise en forme sous le champ */
 .echo { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 /* Acquisition : une ligne par produit */
-.acq-row { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: end; }
-.acq-row:last-of-type { border-bottom: 0; }
-.acq-name { display: flex; flex-direction: column; gap: 2px; }
-.acq-ratio { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--ground); justify-self: start; }
-.acq-ratio.ok { color: var(--good); } .acq-ratio.mid { color: #b7791f; } .acq-ratio.bad { color: var(--bad); }
-@media (min-width: 768px) { .acq-row { grid-template-columns: 1.4fr 1fr auto; } .acq-ratio { justify-self: end; margin-bottom: 4px; } }
+.pal-sum dd.ok { color: var(--good); } .pal-sum dd.mid { color: #b7791f; } .pal-sum dd.bad { color: var(--bad); }
+.acq-res { margin: 4px 0 16px; }
 
 /* Scénarios côte à côte et sensibilité */
 table.scen td.cur, table.scen th.cur { background: var(--sage-tint); font-weight: 600; }
