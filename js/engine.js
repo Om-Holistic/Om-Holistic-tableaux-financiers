@@ -122,11 +122,14 @@ const monthsBetween = (from, to) => { const [y1, m1] = from.split('-').map(Numbe
 // Dernière année des prévisions (au moins 5 ans après le lancement de l'appli).
 const HORIZON_END = 2034;
 
+// Mois d'abonnement offerts après la fin d'un programme, convertis en semaines (0 = pas d'offre).
+const giftWeeks = p => Math.round(pos(p.giftMonths) * 52 / 12);
+
 function emptyMonth(month, a) {
   return {
     month, sales: 0, admissions: 0, finished: 0, active: 0,
-    newDirect: [0, 0, 0], direct: 0, post: 0, directCA: 0, postCA: 0, total: 0,
-    paidNew: 0, products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0, extraHours: 0
+    newDirect: [0, 0, 0], direct: 0, post: 0, gifted: 0, directCA: 0, postCA: 0, total: 0,
+    paidNew: 0, products: a.programs.map(() => ({ sales: 0, admissions: 0, fromSolo: 0, finished: 0, finishedNew: 0, convertNew: 0, giftIn: 0, giftOut: 0, gifted: 0, active: 0, post: 0, clients: 0, coachHours: 0 })), trials: 0, hiredHours: 0, extraHours: 0
   };
 }
 
@@ -202,6 +205,8 @@ function simulate(a, soloStock) {
       if (promo) price = pos(promo.price);
 
       const e = { i, count, solo: want > 0 ? count * fromSolo / want : 0, end: addWeeks(d, Math.max(1, Math.floor(pos(p.duration)))) };
+      // CHRYSALISS offert après le programme : la conversion en abonnée payante a lieu à la fin de l'offre.
+      e.convert = addWeeks(e.end, giftWeeks(p));
       events.push(e); active.push(e);
       credit(d, (mm, share) => {
         mm.sales += count * price * share; mm.admissions += count * share;
@@ -252,9 +257,18 @@ function simulate(a, soloStock) {
   }
 
   // Fins de programme. Les clientes venues de CHRYSALISS seul y sont déjà abonnées : elles ne comptent pas dans la conversion.
-  for (const e of events) credit(e.end, (m, share) => {
-    m.finished += e.count * share; m.products[e.i].finished += e.count * share; m.products[e.i].finishedNew += (e.count - e.solo) * share;
-  });
+  // Avec CHRYSALISS offert, les autres le gardent gratuitement jusqu'à la fin de l'offre, puis une part s'abonne en payant.
+  for (const e of events) {
+    const fresh = e.count - e.solo;
+    credit(e.end, (m, share) => {
+      m.finished += e.count * share; m.products[e.i].finished += e.count * share; m.products[e.i].finishedNew += fresh * share;
+    });
+    credit(e.convert, (m, share) => { m.products[e.i].convertNew += fresh * share; });
+    if (e.convert > e.end) {
+      credit(e.end, (m, share) => { m.products[e.i].giftIn += fresh * share; });
+      credit(e.convert, (m, share) => { m.products[e.i].giftOut += fresh * share; });
+    }
+  }
 
   // Stocks d'abonnées, par phase de prix d'entrée (pour garder le prix d'entrée si demandé).
   const directGrid = a.sub.directPricing, postGrid = a.sub.postPricing;
@@ -263,12 +277,15 @@ function simulate(a, soloStock) {
     ? stock.reduce((s, v, k) => s + v * pos(grid[k]?.price), 0)
     : stock.reduce((s, v) => s + v, 0) * pos(phaseAt(grid, month).price);
 
+  const gifted = a.programs.map(() => 0);
   for (const m of months.values()) {
+    m.products.forEach((q, i) => { gifted[i] = Math.max(0, gifted[i] + q.giftIn - q.giftOut); q.gifted = gifted[i]; });
+    m.gifted = gifted.reduce((t, v) => t + v, 0);
     direct = direct.map((v, k) => v * survival(a.sub.duration) + m.newDirect[k]);
     const postPhase = phaseAt(postGrid, m.month).index;
     // Après un programme, même durée d'abonnement que les abonnées de l'application.
     post = post.map((stock, i) => stock.map((v, k) => v * survival(a.sub.duration)
-      + (k === postPhase ? m.products[i].finishedNew * Math.min(100, pos(a.programs[i].toSolo)) / 100 : 0)));
+      + (k === postPhase ? m.products[i].convertNew * Math.min(100, pos(a.programs[i].toSolo)) / 100 : 0)));
     m.direct = direct.reduce((s, v) => s + v, 0);
     m.post = post.reduce((s, stock) => s + stock.reduce((t, v) => t + v, 0), 0);
     m.directCA = revenue(direct, directGrid, m.month);

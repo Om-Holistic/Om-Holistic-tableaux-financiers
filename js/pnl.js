@@ -79,7 +79,8 @@ function monthPnl(a, m, vat, ctx = { mode: 'fr', ex: {} }) {
   // TVA récupérable : en société française, et en micro-entreprise une fois la franchise perdue.
   const fr = vat?.zones?.length ? pnlPos(vat.rate, 20) / 100 : 0;
   const deduct = ctx.mode === 'fr' || (ctx.mode === 'franchise' && !ctx.ex.fr) ? Math.min(100, pnlPos(vat?.recover)) / 100 * fr / (1 + fr) : 0;
-  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: campaignBudget(a.sub, m.month) } };
+  // Les clientes à qui CHRYSALISS est offert après un programme coûtent comme des abonnées (charges par cliente), sans CA.
+  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post + (m.gifted || 0), inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: campaignBudget(a.sub, m.month) } };
   a.programs.forEach((p, i) => {
     const q = m.products[i];
     // Nouvelles clientes à acquérir : les inscriptions, sauf celles venues de l'abonnement (déjà clientes).

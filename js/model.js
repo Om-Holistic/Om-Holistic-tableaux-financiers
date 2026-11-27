@@ -39,6 +39,9 @@ function phaseAt(grid, month) {
   return current;
 }
 
+// Mois offerts pour arriver à environ 12 mois depuis le début d'un programme de `weeks` semaines.
+const defaultGiftMonths = weeks => Math.max(0, Math.round(12 - (+weeks || 0) * 12 / 52));
+
 const newId = () => Math.random().toString(36).slice(2, 9);
 
 function program(name, start, prices, duration) {
@@ -50,6 +53,8 @@ function program(name, start, prices, duration) {
     // Passerelles avec l'abonnement seul : % des clientes qui le gardent en fin de programme,
     // % des abonnées qui achètent ce programme chaque mois.
     toSolo: 40, fromSolo: 0,
+    // Mois de CHRYSALISS offerts après la fin du programme (0 = pas d'offre) : par défaut, jusqu'à 12 mois depuis le début.
+    giftMonths: defaultGiftMonths(duration),
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
@@ -570,6 +575,8 @@ function migrate(state) {
       if (a.sub.trialDays === undefined) { a.sub.trialDays = 0; a.sub.trialConversion = 100; }
     }
   }
+  // CHRYSALISS offert après un programme (ajouté sans changer de version : environ 12 mois depuis le début).
+  for (const a of state.apps) for (const p of a.programs) if (p.giftMonths === undefined) p.giftMonths = defaultGiftMonths(p.duration);
   // Objectif d'abonnées (ajouté sans changer de version : simple valeur par défaut).
   for (const a of state.apps) {
     const g = a.sub.goal;
