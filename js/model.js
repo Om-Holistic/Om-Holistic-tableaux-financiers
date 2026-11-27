@@ -55,8 +55,42 @@ function program(name, start, prices, duration) {
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
     // organic : le rythme saisi ici compte (clientes venues sans pub). campaigns : campagnes pub, réglées dans Acquisition.
     // shape : forme de la croissance sans pub, 's' (en S, notoriété) ou 'lin' (paliers réguliers).
-    organic: true, campaigns: [], shape: 's', viral: 20
+    organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0
   };
+}
+
+// Notoriété : l'audience de la marque, canal par canal (Instagram, relais, newsletter…).
+// Chaque canal part d'un chiffre à une date, vise un objectif à une échéance, et grandit en S entre les deux.
+// reach : part de cette audience vraiment touchée chaque mois (portée des publications, ouverture des e-mails).
+// source : 'manuel' pour l'instant ; plus tard 'instagram', 'newsletter'… pour lire les vrais chiffres.
+// actuals : vrais chiffres relevés, { 'AAAA-MM': nombre }.
+const audienceChannel = (name, count, target, from, by, reach) => ({ id: 'au-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, count, from, target, by, reach, source: 'manuel', actuals: {} });
+function defaultAudience(from = '2026-11') {
+  const by = addMonths(from, 36);
+  return { channels: [
+    audienceChannel('Mon Instagram', 1000, 20000, from, by, 30),
+    audienceChannel('Relais de ma sœur', 30000, 30000, from, by, 5),
+    audienceChannel('Newsletter', 40, 5000, from, by, 50)
+  ] };
+}
+// Part de l'audience touchée qui achète chaque mois, par produit, et coup de pouce des premières semaines (annonce du lancement).
+// Un programme à 240 € convertit moins qu'un abonnement à 9,90 € : son taux est plus faible.
+function audiencePlan(name, isSub) {
+  if (isSub) return { rate: 0.4, launch: null };
+  if (/refit/i.test(name)) return { rate: 0.25, launch: [4, 10] };
+  if (/sleep/i.test(name)) return { rate: 0.1, launch: [4, 4] };
+  if (/calm/i.test(name)) return { rate: 0.07, launch: [4, 3] };
+  return { rate: 0.1, launch: null };
+}
+// Pré-remplit le « sans pub » de tous les produits d'une appli : une part de l'audience, chaque mois, dès le lancement.
+function prefillAudience(a) {
+  if (!a.audience) a.audience = defaultAudience();
+  for (const q of [a.sub, ...a.programs]) {
+    const plan = audiencePlan(q.name || '', q === a.sub);
+    Object.assign(q, { organic: true, palierMode: false, shape: 'brand', audienceRate: plan.rate, viral: 15 });
+    if (q !== a.sub) Object.assign(q, plan.launch ? { launch: true, launchWeeks: plan.launch[0], launchRate: plan.launch[1] } : { launch: false });
+  }
+  return a;
 }
 
 function application(name) {
@@ -75,8 +109,10 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's', viral: 20
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0
     },
+    // Notoriété : audience par canal ; le sans pub d'un produit peut en être une part.
+    audience: defaultAudience(),
     programs: []
   };
 }
@@ -458,8 +494,10 @@ function migrate(state) {
     // Les rythmes déjà saisis gardent leur forme : paliers réguliers.
     if (!q.shape) q.shape = 'lin';
     if (q.viral === undefined) q.viral = 20;
+    if (q.audienceRate === undefined) q.audienceRate = 0;
     delete q.adMode; delete q.adSteps;
   }
+  for (const a of state.apps) if (!a.audience) a.audience = defaultAudience();
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
   for (const a of state.apps) if (!a.zones) a.zones = defaultZones();
@@ -551,4 +589,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, campaignsAt, campaignBudget, campaignClients, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultAudience, audienceChannel, audiencePlan, prefillAudience, VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, campaignsAt, campaignBudget, campaignClients, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
