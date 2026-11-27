@@ -152,7 +152,7 @@ test('passerelles : programme → abonnement seul, abonnement seul → programme
     const a = model.defaultState().apps[0];
     a.programs = [a.programs[0]];
     const p = a.programs[0];
-    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.shape = 'lin'; p.toSolo = 50; p.fromSolo = 0; p.giftMonths = 0;
+    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.shape = 'lin'; p.toSolo = 50; p.fromSolo = 0; p.gift = false;
     a.sub.start = '2027-01'; a.sub.initial = a.sub.target = 5; a.sub.shape = 'lin'; a.sub.duration = 0; a.sub.postDuration = 0; a.capacitySteps = [];
     return a;
   };
@@ -357,13 +357,15 @@ test('CHRYSALISS offert après un programme : utilisatrices offertes sans CA, co
     const a = model.defaultState().apps[0];
     a.programs = [a.programs[0]];
     const p = a.programs[0];
-    p.cohorts = [{ date: '2027-01', size: 10 }]; p.start = null; p.duration = 12; p.toSolo = 50; p.fromSolo = 0; p.giftMonths = gift;
+    p.cohorts = [{ date: '2027-01', size: 10 }]; p.start = null; p.duration = 12; p.toSolo = 50; p.fromSolo = 0; p.gift = gift;
     a.sub.start = '2027-01'; a.sub.organic = false; a.sub.campaigns = []; a.sub.duration = 0; a.capacitySteps = [];
     return simulate(a).months;
   };
-  // Valeur par défaut : environ 12 mois depuis le début (programme de 12 semaines → 9 mois offerts).
-  assert.equal(model.defaultState().apps[0].programs.find(p => +p.duration === 12)?.giftMonths ?? 9, 9);
-  const off = make(0), on = make(9);
+  // Offert par défaut ; l'ancien nombre de mois devient oui / non.
+  assert.ok(model.defaultState().apps[0].programs.every(p => p.gift === true));
+  const old = model.defaultState(); old.apps[0].programs.forEach(p => { delete p.gift; p.giftMonths = 0; });
+  assert.ok(model.migrate(old).apps[0].programs.every(p => p.gift === false && p.giftMonths === undefined));
+  const off = make(false), on = make(true);
   const at = (ms, k) => ms.find(m => m.month === k);
   // Sans offre : 5 abonnées payantes dès la fin du programme (avril 2027).
   assert.ok(Math.abs(at(off, '2027-05').post - 5) < 1e-6);
@@ -371,7 +373,7 @@ test('CHRYSALISS offert après un programme : utilisatrices offertes sans CA, co
   assert.ok(Math.abs(at(on, '2027-06').gifted - 10) < 1e-6);
   assert.equal(at(on, '2027-06').post, 0);
   assert.equal(at(on, '2027-06').postCA, 0);
-  // Après l'offre (début 2028) : la moitié reste en payant, l'offre est terminée.
+  // 1 an après le début (janvier 2028) : la moitié reste en payant, l'offre est terminée.
   assert.ok(Math.abs(at(on, '2028-03').post - 5) < 1e-6);
   assert.ok(at(on, '2028-03').gifted < 1e-6);
 });
