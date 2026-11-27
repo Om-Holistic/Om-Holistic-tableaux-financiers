@@ -966,7 +966,27 @@ function usersPage() {
     ${bs.length ? `<details class="card" id="us-chart" ${view.open.has('us-chart') ? 'open' : ''}><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
       ${legendPop}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
     <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours et clientes en cours de programme</span></span></summary>
-      <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>` : ''}`;
+      <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>
+    ${inscriptionsCard(r)}` : ''}`;
+}
+// Inscriptions aux programmes sur la période : les courbes montrent les clientes en cours, ici le nombre qui s'inscrit,
+// dont les abonnées de l'application qui achètent le programme.
+function inscriptionsCard(r) {
+  const rows = [];
+  let total = 0, solo = 0;
+  for (const x of r.scope) {
+    const ms = x.months.filter(m => inPeriod(m.month));
+    x.a.programs.forEach((q, j) => {
+      if (q.enabled === false) return;
+      const ins = ms.reduce((t, m) => t + m.products[j].admissions, 0), fs = ms.reduce((t, m) => t + (m.products[j].fromSolo || 0), 0);
+      total += ins; solo += fs;
+      rows.push([esc(r.scope.length > 1 ? progName(x.a, q) : q.name), num(Math.round(ins)), num(Math.round(fs)), num(Math.round(ms.at(-1)?.products[j].active || 0))]);
+    });
+  }
+  if (!rows.length) return '';
+  return `<details class="card" id="us-ins" ${view.open.has('us-ins') ? 'open' : ''}><summary><span>Inscriptions aux programmes<br><span class="sum-sub">${periodName()} · ${num(Math.round(total))} inscriptions, dont ${num(Math.round(solo))} abonnées</span></span></summary>
+    <div class="scroll"><table class="users">${table(['', 'Inscrites', 'Dont abonnées', 'En cours'], rows)}</table></div>
+    <p class="muted">Les courbes comptent les clientes en cours de programme à un moment donné. Un programme de 12 semaines garde ses clientes environ un quart de l'année : 480 inscriptions par an font à peu près 110 clientes en cours.</p></details>`;
 }
 
 // Encaissements et charges de chaque application sur la plage (les impôts et ta rémunération sont ceux de la société).
