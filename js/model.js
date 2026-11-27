@@ -111,7 +111,8 @@ function audiencePlan(name, isSub) {
   if (isSub) return { fresh: 2, rate: 0.3, launch: null };
   if (/refit/i.test(name)) return { fresh: 1, rate: 0.15, launch: [4, 10] };
   if (/sleep/i.test(name)) return { fresh: 0.4, rate: 0.06, launch: [4, 4] };
-  if (/calm/i.test(name)) return { fresh: 0.3, rate: 0.04, launch: [4, 3] };
+  // Calm Inside : autant d'attrait que Refit (lancé plus tard, avec plus de notoriété), selon K.
+  if (/calm/i.test(name)) return { fresh: 1, rate: 0.15, launch: [4, 3] };
   return { fresh: 0.4, rate: 0.06, launch: null };
 }
 // Pré-remplit le « sans pub » de tous les produits d'une appli : une part de l'audience, chaque mois, dès le lancement.
