@@ -438,12 +438,8 @@ details.card.product[open] .pstats { display: none; }
 /* Grands nombres : valeur mise en forme sous le champ */
 .echo { font-size: 11px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
 /* Acquisition : une ligne par produit */
-.acq-row { display: grid; grid-template-columns: 1fr; gap: 6px; padding: 10px 0; border-bottom: 1px solid var(--line); align-items: end; }
-.acq-row:last-of-type { border-bottom: 0; }
-.acq-name { display: flex; flex-direction: column; gap: 2px; }
-.acq-ratio { font-size: 13px; font-weight: 600; padding: 6px 10px; border-radius: 10px; background: var(--ground); justify-self: start; }
-.acq-ratio.ok { color: var(--good); } .acq-ratio.mid { color: #b7791f; } .acq-ratio.bad { color: var(--bad); }
-@media (min-width: 768px) { .acq-row { grid-template-columns: 1.4fr 1fr auto; } .acq-ratio { justify-self: end; margin-bottom: 4px; } }
+.pal-sum dd.ok { color: var(--good); } .pal-sum dd.mid { color: #b7791f; } .pal-sum dd.bad { color: var(--bad); }
+.acq-res { margin: 4px 0 16px; }
 
 /* Scénarios côte à côte et sensibilité */
 table.scen td.cur, table.scen th.cur { background: var(--sage-tint); font-weight: 600; }
@@ -755,7 +751,7 @@ main, #page, .card { min-width: 0; max-width: 100%; }
 }
 .g-t { flex-wrap: wrap; } .g-t .gap { white-space: normal; }
 
-/* Choix de ce qui s'affiche : cases sur ordinateur, fenêtre de choix sur téléphone. */
+/* Choix de ce qui s'affiche : cases sur ordinateur, fenêtre de choix centrée sur téléphone. */
 .pick-btn, .pick-t, .pick-ok { display: none; }
 .pick-sheet { display: contents; }
 @media (max-width: 767px) {
@@ -765,11 +761,20 @@ main, #page, .card { min-width: 0; max-width: 100%; }
   .pick-btn span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
   .pick-btn svg { flex: none; width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; }
   .pick-sheet { display: none; }
-  .picker.open .pick-sheet { display: flex; position: fixed; inset: 0; z-index: 100; background: rgba(20, 16, 40, .45); align-items: flex-end; }
-  .pick-box { width: 100%; max-height: 80vh; overflow: auto; background: var(--surface); border-radius: 20px 20px 0 0; padding: 18px 16px calc(16px + env(safe-area-inset-bottom)); box-shadow: 0 -8px 30px rgba(0, 0, 0, .2); }
-  .pick-t { display: block; font-size: 17px; margin-bottom: 8px; }
-  .pick-box .ucheck { flex-direction: column; flex-wrap: nowrap; gap: 0; margin: 0 0 12px; }
-  .pick-box .ucheck .uc { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 14px 4px; font-size: 16px; background: none; }
-  .pick-box .ucheck .uc input { width: 22px; height: 22px; }
-  .pick-ok { display: block; width: 100%; font-weight: 600; }
+  .picker.open .pick-sheet { display: flex; position: fixed; inset: 0; z-index: 100; align-items: center; justify-content: center; padding: 24px;
+    background: rgba(20, 16, 40, .5); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: pick-fade .18s ease-out; }
+  .pick-box { width: 100%; max-width: 340px; max-height: 76vh; overflow: auto; background: var(--surface); border-radius: 24px; padding: 22px 18px 16px;
+    box-shadow: 0 24px 60px rgba(20, 16, 40, .35); animation: pick-pop .2s ease-out; }
+  .pick-t { display: block; font-size: 18px; text-align: center; margin: 0 0 14px; }
+  .pick-box .ucheck { flex-direction: column; flex-wrap: nowrap; gap: 6px; margin: 0 0 16px; }
+  .pick-box .ucheck .uc { justify-content: flex-start; border: 1.5px solid transparent; border-radius: 14px; padding: 12px 14px; font-size: 16px; background: var(--ground); gap: 12px; }
+  .pick-box .ucheck .uc:has(input:checked) { border-color: var(--sage); background: var(--surface); }
+  .pick-box .ucheck .uc:first-child { background: none; border: 0; border-bottom: 1px solid var(--line); border-radius: 0; padding: 4px 6px 12px; margin-bottom: 4px; font-weight: 600; }
+  .pick-box .ucheck .uc input { -webkit-appearance: none; appearance: none; order: 3; margin-left: auto; width: 24px; height: 24px; border-radius: 50%; border: 2px solid var(--line); background: var(--surface); display: grid; place-content: center; }
+  .pick-box .ucheck .uc input:checked { border-color: var(--sage); background: var(--sage); }
+  .pick-box .ucheck .uc input:checked::after { content: ''; width: 10px; height: 6px; border: solid #fff; border-width: 0 0 2.5px 2.5px; transform: translateY(-1px) rotate(-45deg); }
+  .pick-box .ucheck .uc i { width: 12px; height: 12px; border-radius: 50%; }
+  .pick-ok { display: block; width: 100%; font-weight: 600; border-radius: 14px; padding: 12px; background: var(--sage); color: #fff; border: 0; }
 }
+@keyframes pick-fade { from { opacity: 0; } }
+@keyframes pick-pop { from { opacity: 0; transform: scale(.96); } }

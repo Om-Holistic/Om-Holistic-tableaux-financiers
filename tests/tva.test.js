@@ -74,3 +74,25 @@ test('ancien fichier : les zones et réglages de TVA sont ajoutés', () => {
   assert.strictEqual(s.vat.zones.length, 6);
   assert.ok(s.apps[0].zones && s.apps[0].zones.us > 0);
 });
+
+test('budget pub : inscriptions = budget ÷ coût par cliente, et le coût d\'acquisition vaut le budget', () => {
+  const s = M.defaultState(), a = s.apps[0], q = a.programs[0];
+  a.programs.forEach((p, i) => { if (i) p.enabled = false; p.fromSolo = 0; });
+  q.cohorts = []; q.adMode = true; q.acq = 50; q.adSteps = [{ start: q.start, budget: 1000 }, { start: '2029-01', budget: 3000 }];
+  const sim = E.simulate(a);
+  const year = y => sim.months.filter(m => m.month.startsWith(y)).reduce((t, m) => t + m.products[0].admissions, 0);
+  assert.ok(Math.abs(year('2028') - 1000 / 50 * 12) < 2, String(year('2028')));
+  assert.ok(Math.abs(year('2029') - 3000 / 50 * 12) < 3, String(year('2029')));
+  const pnl = P.buildPnl(s, s.apps.map(x => E.simulate(x)));
+  const acq = pnl[0].filter(e => e.month.startsWith('2029')).reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
+  assert.ok(Math.abs(acq - 3000 * 12) < 150, String(acq));
+});
+
+test('budget pub sur l\'abonnement : nouvelles abonnées payantes = budget ÷ coût par abonnée', () => {
+  const s = M.defaultState(), a = s.apps[0];
+  a.programs.forEach(p => { p.enabled = false; });
+  a.sub.adMode = true; a.sub.acq = 20; a.sub.adSteps = [{ start: '2028-01', budget: 2000 }];
+  const sim = E.simulate(a);
+  const paid = sim.months.filter(m => m.month.startsWith('2029')).reduce((t, m) => t + m.newDirect.reduce((u, v) => u + v, 0), 0);
+  assert.ok(Math.abs(paid - 2000 / 20 * 12) < 8, String(paid));
+});
