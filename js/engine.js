@@ -47,20 +47,64 @@ function weeklyRate(p, w) {
   return a + Math.sign(b - a) * Math.min(Math.abs(b - a), Math.floor(Math.max(0, w) * changes / duration) * step);
 }
 
-// Notoriété : audience d'un canal pour un mois, en S entre son chiffre de départ et son objectif.
-function channelAt(c, month) {
-  const n0 = pos(c.count), n1 = pos(c.target, n0);
-  if (!c.from || month <= c.from) return n0;
-  const span = c.by && c.by > c.from ? monthsBetween(c.from, c.by) : 0;
-  if (!span || month >= c.by) return n1;
-  const t = monthsBetween(c.from, month) / span, L = x => 1 / (1 + Math.exp(-10 * (x - 0.5)));
-  return n0 + (n1 - n0) * (L(t) - L(0)) / (L(1) - L(0));
+// Notoriété en entonnoir, mois par mois : nouvelles abonnées Instagram (seule et par les relais),
+// passage à la newsletter, découvertes dans les stores, et la taille du vivier qui en résulte.
+const sCurve = (initial, target, months, k) => weeklyRate({ initial, target, months, shape: 's' }, Math.max(0, k) * 52 / 12);
+let audCache = { key: '', map: null };
+function audienceSeries(a) {
+  const au = a.audience;
+  if (!au || !au.insta) return new Map();
+  const key = JSON.stringify(au);
+  if (audCache.key === key) return audCache.map;
+  const map = new Map(), from = au.from || '2026-11', last = HORIZON_END + '-12';
+  let insta = pos(au.insta.count), news = pos(au.newsletter?.count), stores = 0;
+  for (let m = from, k = 0; m <= last; m = addMonths(m, 1), k++) {
+    const own = k > 0 ? sCurve(au.insta.initial, au.insta.target, au.insta.months, k - 1) : 0;
+    const relays = k > 0 ? (au.relays || []).filter(r => (!r.start || m >= r.start) && (!r.end || m <= r.end)).reduce((t, r) => t + pos(r.audience) * pos(r.rate) / 100, 0) : 0;
+    const st = au.stores?.on && au.stores.start && m >= au.stores.start ? sCurve(au.stores.initial, au.stores.target, au.stores.months, monthsBetween(au.stores.start, m)) : 0;
+    const toNews = (own + relays) * pos(au.newsletter?.fromInsta) / 100;
+    insta += own + relays; news += toNews; stores += st;
+    map.set(m, { insta, news, stores, own, relays, toNews, st, pool: insta + news + stores });
+  }
+  audCache = { key, map };
+  return map;
 }
-// Personnes vraiment touchées ce mois-ci, tous canaux : audience × part touchée.
-const audienceAt = (a, month) => (a.audience?.channels || []).reduce((t, c) => t + channelAt(c, month) * pos(c.reach, 100) / 100, 0);
-// Rythme sans pub d'un produit pour la semaine d : une part de l'audience touchée, ou sa propre courbe.
-// Un produit lancé plus tard profite de l'audience déjà construite.
-const organicRate = (a, p, d, w) => p.shape === 'brand' && !p.palierMode ? audienceAt(a, monthKey(d)) * pos(p.audienceRate) / 100 * 12 / 52 : weeklyRate(p, w);
+// Taille du vivier un mois donné (avant le premier mois : le point de départ).
+function audienceAt(a, month) {
+  const ser = audienceSeries(a), from = a.audience?.from;
+  if (!ser.size) return 0;
+  const row = ser.get(month) || (month < from ? ser.get(from) : [...ser.values()].at(-1));
+  return row ? row.pool : 0;
+}
+// Ventes sans pub d'un produit, mois par mois, tirées du vivier :
+// - les nouvelles venues du mois achètent à leur propre taux (audienceNew %, elles découvrent ton travail) ;
+// - celles déjà là se décident plus lentement (audienceRate % par mois) ;
+// - une acheteuse sort du vivier de ce produit : on ne la compte pas deux fois.
+const prodCache = new Map();
+function audienceBuyers(a, p, month) {
+  const ser = audienceSeries(a), start = p.start || a.sub.start;
+  if (!ser.size || !start || month < start) return 0;
+  const key = JSON.stringify([a.audience, start, p.audienceRate, p.audienceNew]);
+  let map = prodCache.get(key);
+  if (!map) {
+    map = new Map();
+    const rNew = pos(p.audienceNew) / 100, rOld = pos(p.audienceRate) / 100;
+    let prev = null, left = 0;
+    for (const [m, row] of ser) {
+      if (m < start) { prev = row.pool; continue; }
+      // Au lancement, tout le vivier déjà constitué est « déjà là » ; ensuite, la croissance du mois = nouvelles venues.
+      if (!map.size) { left = row.pool; prev = row.pool; }
+      const fresh = Math.max(0, row.pool - prev), old = left * rOld, nw = fresh * rNew;
+      left = Math.max(0, left - old + fresh - nw);
+      map.set(m, old + nw);
+      prev = row.pool;
+    }
+    if (prodCache.size > 50) prodCache.clear();
+    prodCache.set(key, map);
+  }
+  return map.get(month) ?? [...map.values()].at(-1) ?? 0;
+}
+const organicRate = (a, p, d, w) => p.shape === 'brand' && !p.palierMode ? audienceBuyers(a, p, monthKey(d)) * 12 / 52 : weeklyRate(p, w);
 
 // Taux de survie mensuel d'un abonnement : résiliation mensuelle = 1 / durée moyenne.
 const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 1;
@@ -326,4 +370,4 @@ function pubGap(a, j) {
   return { kind, cac, segs, campaigns: cq.campaigns };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, channelAt, audienceAt, weekShares, goalPlan, programGoalPlan, pubGap };
+if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, audienceSeries, audienceAt, audienceBuyers, weekShares, goalPlan, programGoalPlan, pubGap };
