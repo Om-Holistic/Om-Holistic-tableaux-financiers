@@ -25,7 +25,8 @@ function weekShares(d) {
 // Rythme d'acquisition hebdomadaire après w semaines : progression linéaire
 // par paliers de l'objectif de départ à l'objectif cible, ou paliers personnalisés.
 // Clientes par semaine venues de la pub : somme, sur les campagnes du mois, de budget ÷ coût par cliente.
-const adRate = (p, month) => campaignClients(p, month) * 12 / 52;
+// Effet boule de neige : pour 100 clientes venues de la pub, viral % de plus arrivent par bouche-à-oreille et avis.
+const adRate = (p, month) => campaignClients(p, month) * 12 / 52 * (1 + pos(p.viral) / 100);
 function weeklyRate(p, w) {
   const a = Math.floor(pos(p.initial)), b = Math.floor(pos(p.target));
   const step = Math.max(1, Math.floor(pos(p.step, 1)));
@@ -275,4 +276,42 @@ function programGoalPlan(a, j, sim) {
   return { segs, steps: out };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, weekShares, goalPlan, programGoalPlan };
+// Objectif total d'un produit (j = null : l'abonnement) : ce qu'apportent déjà le sans pub et les passerelles,
+// l'écart que la pub doit combler, et les campagnes qui le comblent, palier par palier.
+// Abonnement : 'active' = abonnées en même temps, 'new' = nouvelles abonnées par an. Programme : inscriptions par an.
+function pubGap(a, j) {
+  const q = j === null ? a.sub : a.programs[j], g = q.goal || {}, start = q.start;
+  const kind = j === null ? (g.kind === 'new' ? 'new' : 'active') : 'year';
+  const steps = (g.steps || []).filter(s => +s.months > 0 && +s.count > 0).map(s => ({ at: addMonths(start, Math.round(+s.months)), count: +s.count })).sort((x, y) => x.at.localeCompare(y.at));
+  if (!start || !steps.length) return null;
+  const lastCac = (q.campaigns || []).map(c => +c.cac).filter(c => c > 0).at(-1);
+  const cac = pos(g.cac) || lastCac || 50;
+  const copy = JSON.parse(JSON.stringify(a)), cq = j === null ? copy.sub : copy.programs[j];
+  const value = (sim, at) => { const m = sim.months.find(x => x.month === at); if (!m) return 0;
+    return kind === 'active' ? m.direct + m.post : kind === 'new' ? m.newDirect.reduce((t, v) => t + v, 0) * 12 : m.products[j].admissions * 12; };
+  const span = (u, w) => monthsBetween(u, w) + 1;
+  const s = survival(a.sub.duration);
+  const toCampaign = sg => ({ start: sg.start, end: sg.end, budget: Math.round(sg.perMonth * cac), cac });
+  cq.campaigns = [];
+  const base = simulate(copy), segs = [];
+  let prev = start;
+  for (const st of steps) {
+    if (st.at < prev) continue;
+    const sg = { start: prev, end: st.at, perMonth: 0, at: st.at, count: st.count };
+    const run = () => { cq.campaigns = [...segs, sg].map(toCampaign).filter(c => c.budget > 0); return value(simulate(copy), st.at); };
+    if (kind === 'active') {
+      // Une abonnée de plus par mois pendant L mois en laisse 1 + s + s² + … à la fin, à cause des résiliations.
+      const L = span(prev, st.at), keep = s < 1 ? (1 - Math.pow(s, L)) / (1 - s) : L;
+      for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / keep / (1 + pos(q.viral) / 100));
+    } else for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / 12 / (1 + pos(q.viral) / 100));
+    sg.free = value(base, st.at);
+    segs.push(sg); prev = addMonths(st.at, 1);
+  }
+  if (segs.length) segs.at(-1).end = '';
+  cq.campaigns = segs.map(toCampaign).filter(c => c.budget > 0);
+  const planned = simulate(copy), now = simulate(a);
+  segs.forEach(sg => { sg.reached = value(planned, sg.at); sg.current = value(now, sg.at); sg.budget = Math.round(sg.perMonth * cac); });
+  return { kind, cac, segs, campaigns: cq.campaigns };
+}
+
+if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, weekShares, goalPlan, programGoalPlan, pubGap };
