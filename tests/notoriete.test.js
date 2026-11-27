@@ -4,47 +4,61 @@ const assert = require('node:assert');
 const m = require('../js/model.js');
 const e = require('../js/engine.js');
 
-test('notoriété : chaque canal grandit en S de son départ à son objectif', () => {
-  const c = m.audienceChannel('Instagram', 1000, 20000, '2026-11', '2029-11', 30);
-  assert.equal(e.channelAt(c, '2026-01'), 1000);
-  assert.equal(e.channelAt(c, '2026-11'), 1000);
-  assert.equal(e.channelAt(c, '2031-01'), 20000);
-  const mid = e.channelAt(c, '2028-05');
-  assert.ok(mid > 9000 && mid < 12000, String(mid));
+const base = () => ({ sub: { start: '2027-01' }, programs: [], audience: m.defaultAudience('2026-11') });
+
+test('vivier : les relais font grandir Instagram, une part passe à la newsletter', () => {
+  const a = base();
+  a.audience.insta = { ...a.audience.insta, initial: 0, target: 0 };
+  a.audience.relays = [m.relay('Sœur', 30000, 0.2, '2026-12')];
+  a.audience.stores.on = false;
+  const s = e.audienceSeries(a);
+  assert.equal(s.get('2026-11').pool, 1040);
+  const r = s.get('2027-02');
+  assert.equal(Math.round(r.insta), 1000 + 3 * 60);
+  assert.equal(Math.round(r.news), 40 + 3 * 6);
 });
 
-test('notoriété : personnes touchées = audience × part touchée, tous canaux', () => {
-  const a = { audience: { channels: [m.audienceChannel('A', 1000, 1000, '2026-11', '2029-11', 30), m.audienceChannel('B', 30000, 30000, '2026-11', '2029-11', 5)] } };
-  assert.equal(e.audienceAt(a, '2027-06'), 300 + 1500);
+test('vivier : les stores ne comptent qu\'à partir de leur date', () => {
+  const a = base(); a.audience.stores = { on: true, start: '2028-01', initial: 20, target: 300, months: 24 };
+  const s = e.audienceSeries(a);
+  assert.equal(s.get('2027-12').stores, 0);
+  assert.ok(s.get('2028-01').stores >= 20);
 });
 
-test('sans pub = part de l\'audience, et un produit lancé plus tard profite de l\'audience déjà construite', () => {
-  const a = m.prefillAudience(m.defaultState().apps[0]);
-  a.programs.forEach(p => { p.launch = false; p.campaigns = []; p.cohorts = []; p.fromSolo = 0; });
-  a.capacitySteps = [];
-  const sim = e.simulate(a), at = k => sim.months.find(x => x.month === k);
-  const j = a.programs.findIndex(p => /calm/i.test(p.name)), month = m.addMonths(a.programs[j].start, 2);
-  const expected = e.audienceAt(a, month) * a.programs[j].audienceRate / 100;
-  const got = at(month).products[j].admissions;
-  assert.ok(Math.abs(got - expected) / expected < 0.15, `${got} vs ${expected}`);
-  assert.ok(e.audienceAt(a, a.programs[j].start) > e.audienceAt(a, a.programs.find(p => /refit/i.test(p.name)).start));
+test('sans pub : nouvelles venues et vivier déjà là, une acheteuse sort du vivier', () => {
+  const a = base(); a.audience.relays = []; a.audience.stores.on = false;
+  a.audience.insta = { ...a.audience.insta, initial: 0, target: 0 };
+  const p = { start: '2027-01', audienceRate: 10, audienceNew: 0 };
+  // Vivier figé à 1 040 : 10 % le premier mois, puis 10 % de ce qui reste.
+  assert.ok(Math.abs(e.audienceBuyers(a, p, '2027-01') - 104) < 0.01);
+  assert.ok(Math.abs(e.audienceBuyers(a, p, '2027-02') - 93.6) < 0.01);
 });
 
-test('pré-remplissage : taux par produit, coup de pouce de lancement, boule de neige 15 %', () => {
+test('sans pub : les nouvelles venues achètent à leur propre taux', () => {
+  const a = base(); a.audience.stores.on = false; a.audience.relays = [m.relay('R', 10000, 1, '2026-12')];
+  a.audience.insta = { ...a.audience.insta, initial: 0, target: 0 }; a.audience.newsletter.fromInsta = 0;
+  const p = { start: '2027-01', audienceRate: 0, audienceNew: 5 };
+  // 100 nouvelles abonnées par mois, 5 % achètent.
+  assert.ok(Math.abs(e.audienceBuyers(a, p, '2027-03') - 5) < 0.01);
+});
+
+test('pré-remplissage et simulation : un produit lancé plus tard profite du vivier déjà construit', () => {
   const a = m.prefillAudience(m.defaultState().apps[0]);
   const by = n => a.programs.find(p => new RegExp(n, 'i').test(p.name));
-  assert.equal(a.sub.shape, 'brand'); assert.equal(a.sub.audienceRate, 0.4);
-  assert.equal(by('refit').audienceRate, 0.25); assert.equal(by('refit').launchRate, 10);
-  assert.equal(by('sleep').audienceRate, 0.1); assert.equal(by('calm').audienceRate, 0.07);
-  assert.ok([a.sub, ...a.programs].every(q => q.viral === 15 && q.organic));
+  assert.equal(by('refit').audienceNew, 1); assert.equal(by('refit').audienceRate, 0.15); assert.equal(by('refit').launchRate, 10);
+  assert.ok([a.sub, ...a.programs].every(q => q.viral === 15 && q.shape === 'brand'));
+  assert.ok(e.audienceAt(a, by('calm').start) > e.audienceAt(a, by('refit').start));
+  const sim = e.simulate(a);
+  assert.ok(sim.months.find(x => x.month === m.addMonths(by('calm').start, 3)).products[a.programs.indexOf(by('calm'))].admissions > 0);
 });
 
-test('migration : notoriété ajoutée, rythmes existants inchangés', () => {
+test('migration : l\'ancienne page Notoriété garde Instagram, newsletter et relevés', () => {
   const s = m.defaultState();
-  delete s.apps[0].audience; delete s.apps[0].sub.audienceRate;
-  const before = s.apps[0].sub.shape;
+  s.apps[0].audience = { channels: [{ name: 'Mon Instagram', count: 1200, actuals: { '2026-11': 1150 } }, { name: 'Relais de ma sœur', count: 30000 }, { name: 'Newsletter', count: 55 }] };
+  delete s.apps[0].sub.audienceNew;
   m.migrate(s);
-  assert.equal(s.apps[0].audience.channels.length, 3);
-  assert.equal(s.apps[0].sub.audienceRate, 0);
-  assert.equal(s.apps[0].sub.shape, before);
+  const au = s.apps[0].audience;
+  assert.equal(au.insta.count, 1200); assert.equal(au.insta.actuals['2026-11'], 1150);
+  assert.equal(au.newsletter.count, 55); assert.equal(au.relays.length, 1);
+  assert.equal(s.apps[0].sub.audienceNew, 0);
 });

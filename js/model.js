@@ -55,39 +55,54 @@ function program(name, start, prices, duration) {
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
     // organic : le rythme saisi ici compte (clientes venues sans pub). campaigns : campagnes pub, réglées dans Acquisition.
     // shape : forme de la croissance sans pub, 's' (en S, notoriété) ou 'lin' (paliers réguliers).
-    organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0
+    organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0, audienceNew: 0
   };
 }
 
-// Notoriété : l'audience de la marque, canal par canal (Instagram, relais, newsletter…).
-// Chaque canal part d'un chiffre à une date, vise un objectif à une échéance, et grandit en S entre les deux.
-// reach : part de cette audience vraiment touchée chaque mois (portée des publications, ouverture des e-mails).
-// source : 'manuel' pour l'instant ; plus tard 'instagram', 'newsletter'… pour lire les vrais chiffres.
-// actuals : vrais chiffres relevés, { 'AAAA-MM': nombre }.
-const audienceChannel = (name, count, target, from, by, reach) => ({ id: 'au-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), name, count, from, target, by, reach, source: 'manuel', actuals: {} });
+// Notoriété en entonnoir : relais → Instagram → newsletter → site → produits.
+// - insta : abonnées au départ (count, au mois from), et nouvelles abonnées gagnées seule chaque mois (initial → target en months mois, en S).
+// - relays : d'autres comptes qui montrent ton travail ; chaque mois, rate % de leurs abonnées te suivent sur Instagram.
+// - newsletter : inscrites au départ, puis fromInsta % des nouvelles abonnées Instagram qui s'inscrivent.
+// - stores : à partir de start (applis natives), personnes qui te découvrent dans les stores chaque mois.
+// Le vivier = abonnées Instagram + inscrites newsletter + venues des stores : c'est la base du sans pub.
+// actuals : vrais chiffres relevés { 'AAAA-MM': nombre } ; source 'manuel' pour l'instant (branchement automatique plus tard).
+const relay = (name, audience, rate, start, end = '') => ({ id: 'rl-' + Math.random().toString(36).slice(2, 8), name, audience, rate, start, end });
 function defaultAudience(from = '2026-11') {
-  const by = addMonths(from, 36);
-  return { channels: [
-    audienceChannel('Mon Instagram', 1000, 20000, from, by, 30),
-    audienceChannel('Relais de ma sœur', 30000, 30000, from, by, 5),
-    audienceChannel('Newsletter', 40, 5000, from, by, 50)
-  ] };
+  return {
+    from,
+    insta: { count: 1000, initial: 30, target: 300, months: 36, actuals: {}, source: 'manuel' },
+    relays: [relay('Ma sœur', 30000, 0.2, addMonths(from, 2))],
+    newsletter: { count: 40, fromInsta: 10, actuals: {}, source: 'manuel' },
+    stores: { on: true, start: '2028-01', initial: 10, target: 150, months: 24 }
+  };
+}
+// Ancienne page Notoriété (canaux en parallèle) → entonnoir : on garde les chiffres de départ et les relevés.
+function migrateAudience(a) {
+  const old = a.audience;
+  if (old && !Array.isArray(old.channels)) return;
+  const fresh = defaultAudience();
+  for (const c of old?.channels || []) {
+    const into = /insta/i.test(c.name) ? fresh.insta : /news|lettre/i.test(c.name) ? fresh.newsletter : null;
+    if (into) { into.count = +c.count || into.count; into.actuals = { ...(c.actuals || {}) }; }
+  }
+  a.audience = fresh;
 }
 // Part de l'audience touchée qui achète chaque mois, par produit, et coup de pouce des premières semaines (annonce du lancement).
 // Un programme à 240 € convertit moins qu'un abonnement à 9,90 € : son taux est plus faible.
 function audiencePlan(name, isSub) {
-  if (isSub) return { rate: 0.4, launch: null };
-  if (/refit/i.test(name)) return { rate: 0.25, launch: [4, 10] };
-  if (/sleep/i.test(name)) return { rate: 0.1, launch: [4, 4] };
-  if (/calm/i.test(name)) return { rate: 0.07, launch: [4, 3] };
-  return { rate: 0.1, launch: null };
+  // fresh : % des nouvelles venues du mois qui achètent ; rate : % du vivier déjà là qui se décide chaque mois.
+  if (isSub) return { fresh: 2, rate: 0.3, launch: null };
+  if (/refit/i.test(name)) return { fresh: 1, rate: 0.15, launch: [4, 10] };
+  if (/sleep/i.test(name)) return { fresh: 0.4, rate: 0.06, launch: [4, 4] };
+  if (/calm/i.test(name)) return { fresh: 0.3, rate: 0.04, launch: [4, 3] };
+  return { fresh: 0.4, rate: 0.06, launch: null };
 }
 // Pré-remplit le « sans pub » de tous les produits d'une appli : une part de l'audience, chaque mois, dès le lancement.
 function prefillAudience(a) {
   if (!a.audience) a.audience = defaultAudience();
   for (const q of [a.sub, ...a.programs]) {
     const plan = audiencePlan(q.name || '', q === a.sub);
-    Object.assign(q, { organic: true, palierMode: false, shape: 'brand', audienceRate: plan.rate, viral: 15 });
+    Object.assign(q, { organic: true, palierMode: false, shape: 'brand', audienceRate: plan.rate, audienceNew: plan.fresh, viral: 15 });
     if (q !== a.sub) Object.assign(q, plan.launch ? { launch: true, launchWeeks: plan.launch[0], launchRate: plan.launch[1] } : { launch: false });
   }
   return a;
@@ -109,7 +124,7 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0, audienceNew: 0
     },
     // Notoriété : audience par canal ; le sans pub d'un produit peut en être une part.
     audience: defaultAudience(),
@@ -517,9 +532,10 @@ function migrate(state) {
     if (!q.shape) q.shape = 'lin';
     if (q.viral === undefined) q.viral = 20;
     if (q.audienceRate === undefined) q.audienceRate = 0;
+    if (q.audienceNew === undefined) q.audienceNew = 0;
     delete q.adMode; delete q.adSteps;
   }
-  for (const a of state.apps) if (!a.audience) a.audience = defaultAudience();
+  for (const a of state.apps) migrateAudience(a);
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
   for (const a of state.apps) if (!a.zones) a.zones = defaultZones();
@@ -635,4 +651,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { defaultAudience, audienceChannel, audiencePlan, prefillAudience, VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultAmbition, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, campaignsAt, campaignBudget, campaignClients, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { defaultAudience, relay, migrateAudience, audiencePlan, prefillAudience, VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultAmbition, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, campaignsAt, campaignBudget, campaignClients, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
