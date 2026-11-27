@@ -378,7 +378,7 @@ function programGoalPlan(a, j, sim) {
 function pubGap(a, j) {
   const q = j === null ? a.sub : a.programs[j], g = q.goal || {}, start = q.start;
   const kind = j === null ? (g.kind === 'new' ? 'new' : 'active') : 'year';
-  const steps = (g.steps || []).filter(s => +s.months > 0 && +s.count > 0).map(s => ({ at: addMonths(start, Math.round(+s.months)), count: +s.count })).sort((x, y) => x.at.localeCompare(y.at));
+  const steps = (g.steps || []).filter(s => +s.months > 0 && +s.count > 0).map(s => ({ at: addMonths(start, Math.round(+s.months)), count: +s.count, cac: pos(s.cac) })).sort((x, y) => x.at.localeCompare(y.at));
   if (!start || !steps.length) return null;
   const lastCac = (q.campaigns || []).map(c => +c.cac).filter(c => c > 0).at(-1);
   const cac = pos(g.cac) || lastCac || 50;
@@ -387,7 +387,8 @@ function pubGap(a, j) {
     return kind === 'active' ? m.direct + m.post : kind === 'new' ? m.newDirect.reduce((t, v) => t + v, 0) * 12 : m.products[j].admissions * 12; };
   const span = (u, w) => monthsBetween(u, w) + 1;
   const s = survival(a.sub.duration);
-  const toCampaign = sg => ({ start: sg.start, end: sg.end, budget: Math.round(sg.perMonth * cac), cac });
+  // Chaque palier peut avoir son propre coût par cliente ; sinon le coût général.
+  const toCampaign = sg => ({ start: sg.start, end: sg.end, budget: Math.round(sg.perMonth * sg.cac), cac: sg.cac });
   // Ajuste les clientes par mois venues de la pub ; on s'arrête dès que l'objectif est atteint à une demi-cliente près.
   const solve = (sg, run, count, per) => { for (let it = 0; it < 3; it++) { const gap = count - run(); if (Math.abs(gap) < 0.5 || (gap < 0 && sg.perMonth === 0)) break; sg.perMonth = Math.max(0, sg.perMonth + gap / per / (1 + pos(q.viral) / 100)); } };
   cq.campaigns = [];
@@ -395,7 +396,7 @@ function pubGap(a, j) {
   let prev = start;
   for (const st of steps) {
     if (st.at < prev) continue;
-    const sg = { start: prev, end: st.at, perMonth: 0, at: st.at, count: st.count };
+    const sg = { start: prev, end: st.at, perMonth: 0, at: st.at, count: st.count, cac: st.cac || cac };
     const run = () => { cq.campaigns = [...segs, sg].map(toCampaign).filter(c => c.budget > 0); return value(simulate(copy), st.at); };
     if (kind === 'active') {
       // Une abonnée de plus par mois pendant L mois en laisse 1 + s + s² + … à la fin, à cause des résiliations.
@@ -414,7 +415,7 @@ function pubGap(a, j) {
   // Campagnes déjà identiques au plan (mode automatique) : pas besoin de simuler une deuxième fois.
   const sameCamps = JSON.stringify((q.campaigns || []).map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(cq.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
   const now = sameCamps ? planned : simulate(a);
-  segs.forEach(sg => { sg.reached = value(planned, sg.at); sg.current = value(now, sg.at); sg.budget = Math.round(sg.perMonth * cac); });
+  segs.forEach(sg => { sg.reached = value(planned, sg.at); sg.current = value(now, sg.at); sg.budget = Math.round(sg.perMonth * sg.cac); });
   return { kind, cac, segs, campaigns: cq.campaigns };
 }
 

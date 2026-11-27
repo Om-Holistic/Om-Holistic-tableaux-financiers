@@ -910,3 +910,14 @@ details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"
 @media (min-width: 768px) { .hnav { margin: -10px 0 -18px -8px; } }
 
 .acq-tab tr.tot td { border-bottom: 0; font-weight: 600; }
+/* Acquisition : un palier d'objectif, replié avec sa date, son objectif et son budget pub. */
+details.palier { background: var(--surface); border-radius: 12px; }
+details.palier > summary { list-style: none; cursor: pointer; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; padding: 10px 12px; align-items: center; }
+details.palier > summary::-webkit-details-marker { display: none; }
+details.palier > summary::after { content: ""; grid-row: 1 / span 2; grid-column: 2; width: 7px; height: 7px; border-right: 2px solid var(--k); border-bottom: 2px solid var(--k); transform: rotate(45deg); transition: transform .2s; margin-right: 4px; }
+details.palier[open] > summary::after { transform: rotate(225deg); }
+.pal-t { font-weight: 600; font-size: 14px; color: var(--ink); }
+.pal-s { grid-column: 1; font-size: 13px; color: var(--ink-soft); font-variant-numeric: tabular-nums; }
+.pal-b { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 8px; }
+.pal-b .lrow { background: var(--ground); }
+.pal-b .synth { margin: 0; }
