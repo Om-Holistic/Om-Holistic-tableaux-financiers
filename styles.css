@@ -315,6 +315,29 @@ details.card.product.tool-cal > summary > span:first-child::before { background:
 details.card.product.tool-cap > summary > span:first-child::before { background: var(--k-sub); border-radius: 50%; }
 details.card.product.tool-all > summary > span:first-child::before { background: var(--k-sub); }
 details.card.product > details.sec { margin-top: 10px; }
+/* Acquisition : la carte d'un produit se lit en étapes (objectif, sans pub, passerelle, reste, budget),
+   avec les mêmes couleurs que les sous-blocs, toujours ouvertes et leurs champs visibles. */
+.step { --k: var(--k-price); --kt: var(--k-price-tint); margin-top: 10px; border-radius: 14px; background: var(--kt); border-left: 5px solid var(--k); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.step.sec-cal { --k: var(--k-cal); --kt: var(--k-cal-tint); }
+.step.sec-ins { --k: var(--k-ins); --kt: var(--k-ins-tint); }
+.step.sec-promo { --k: var(--k-promo); --kt: var(--k-promo-tint); }
+.step.sec-sub { --k: var(--k-sub); --kt: var(--k-sub-tint); }
+.step-h { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.step-t { font-weight: 600; color: var(--k); font-size: 15px; }
+.step-v { font-size: 17px; white-space: nowrap; font-variant-numeric: tabular-nums; color: var(--ink); }
+.step-help { margin: -4px 0 0; font-size: 13px; color: var(--ink-soft); }
+.step .muted { margin: 0; }
+.step input, .step select { background: var(--surface); }
+.step button:not(.icon) { background: var(--surface); border: 1px solid var(--k); color: var(--ink); }
+.step .eq { margin: 0; font-size: 14px; font-variant-numeric: tabular-nums; line-height: 1.45; }
+.step .eq.neg b, .step .eq.neg { color: var(--bad); } .step .eq.pos { color: var(--good); }
+.step .lrow { background: var(--surface); }
+details.more { border-top: 1px solid color-mix(in srgb, var(--k) 30%, transparent); padding-top: 8px; }
+details.more > summary { list-style: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--k); display: flex; align-items: center; gap: 8px; }
+details.more > summary::-webkit-details-marker { display: none; }
+details.more > summary::after { content: ""; width: 6px; height: 6px; border-right: 2px solid var(--k); border-bottom: 2px solid var(--k); transform: rotate(45deg); transition: transform .2s; margin-top: -3px; }
+details.more[open] > summary::after { transform: rotate(225deg); margin-top: 2px; }
+.more-b { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
 label.file { position: relative; display: inline-flex; align-items: center; cursor: pointer; padding: 10px 14px; border-radius: 12px; background: var(--sage-tint); font-weight: 500; color: var(--ink); font-size: 15px; }
 label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; padding: 0; }
 .goal-cap { margin-top: 6px; padding: 8px 10px; border-radius: 10px; font-size: 13px; line-height: 1.4; }
@@ -813,3 +836,30 @@ main, #page, .card { min-width: 0; max-width: 100%; }
 /* Titre du bandeau : le nom de la page suit « Om Holistic ». */
 .head h1 .pg { font-weight: 500; }
 @media (max-width: 767px) { .head { min-width: 0; } .head h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .head h1 .pg { font-size: .85em; } }
+
+/* Charges : bouton d'ajout détaché des blocs au-dessus, récapitulatif d'une charge, fenêtre d'ajout et de modification. */
+.add-row { margin-top: 14px; }
+button.add { width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 12px; border-radius: 14px;
+  background: none; border: 1.5px dashed var(--sage); color: var(--sage); font-weight: 600; }
+button.add::before { content: "+"; font-size: 20px; line-height: 1; font-weight: 500; }
+.ch-recap { margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+.ch-recap > div { display: flex; flex-direction: column; gap: 1px; }
+.ch-recap dt { color: var(--ink-soft); font-size: 12px; }
+.ch-recap dd { margin: 0; min-width: 0; }
+.sec-b .ch-acts button.danger { color: var(--bad); border-color: var(--line); }
+.ch-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px; }
+.grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+body.modal-open { overflow: hidden; }
+.modal { position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center; padding: 16px;
+  background: rgba(20, 16, 40, .5); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: pick-fade .18s ease-out; }
+.modal-box { width: 100%; max-width: 460px; max-height: calc(100dvh - 32px); overflow: auto; overscroll-behavior: contain; background: var(--surface); border-radius: 24px;
+  padding: 20px 18px 0; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 24px 60px rgba(20, 16, 40, .35); animation: pick-pop .2s ease-out; }
+.modal-t { font-size: 18px; text-align: center; margin: 0 0 4px; }
+.modal-t small { display: block; font-size: 13px; font-weight: 400; color: var(--ink-soft); margin-top: 2px; }
+.modal-box h4 { margin: 6px 0 0; font-size: 13px; color: var(--sage); }
+.modal-box p { margin: 0; }
+.modal-box button.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
+.modal-acts { position: sticky; bottom: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; margin: 4px -18px 0; padding: 12px 18px calc(12px + env(safe-area-inset-bottom));
+  background: var(--surface); border-top: 1px solid var(--line); }
+.modal-acts button { border-radius: 14px; padding: 12px; font-weight: 600; }
+.modal-acts button.primary { background: var(--sage); color: #fff; border: 0; }

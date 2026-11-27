@@ -129,9 +129,12 @@ function linkCount(a, q) {
   const buys = ms.reduce((t, m) => t + m.products[j].fromSolo, 0), subs = ms[0].direct + ms[0].post;
   return `<p class="muted">Soit environ <b>${num(Math.round(buys))} achats de ${esc(q.name)}</b> entre ${monthName(from)} et ${monthName(to)}, pour environ ${num(Math.round(subs))} abonnées ${esc(soloName(a))} au début de cette période.</p>`;
 }
+// Les chemins « draft. » visent le brouillon de la fenêtre de charge, pas l'état enregistré.
+const isDraft = path => String(path).startsWith('draft.');
 function resolve(path) {
   const keys = path.split('.'), last = keys.pop();
-  return [keys.reduce((o, k) => o[k], state), last];
+  const root = keys[0] === 'draft' ? (keys.shift(), view.chEdit.c) : state;
+  return [keys.reduce((o, k) => o[k], root), last];
 }
 
 // Une ligne compacte : champs côte à côte, bouton de suppression au bout de la ligne.
@@ -1209,24 +1212,53 @@ function chargeSummary(c, a, dates) {
 }
 const badge = c => !(+c.amount) && !(c.steps || []).some(st => +st.amount) ? '<span class="tag todo">À compléter</span>' : c.estimate ? '<span class="tag est">Estimation</span>' : '<span class="tag on">Confirmé</span>';
 
-function chargeEditor(c, t, a, dates, scopes) {
+// Carte d'une charge : repliée, elle donne le montant de la période ; dépliée, un récapitulatif
+// et deux boutons. La modification se fait dans une fenêtre, pour que la charge ne change pas de bloc pendant la saisie.
+function chargeCard(c, t, a, dates, scopes) {
   const id = 'ch' + c.id;
-  const anchors = CHARGE_ANCHORS.filter(([k]) => k !== 'product' || (a && c.scope && c.scope !== 'app'));
+  const scope = scopes && (scopes.find(([k]) => k === (c.scope || 'app')) || [])[1];
+  const steps = (c.steps || []).length ? [...c.steps].sort((x, y) => x.after - y.after).map(st => `${amountText(c, st.amount)} au bout de ${num(st.after)} mois`).join(', puis ') : '';
+  const line = (k, v) => v ? `<div><dt>${k}</dt><dd>${v}</dd></div>` : '';
   return `<details class="card charge" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name)} ${badge(c)}<br><span class="sum-sub">${chargeSummary(c, a, dates)}</span></span></summary>
-    ${fields(c, t, [['name', 'Nom', 'text']])}
-    <div class="grid">${select('Catégorie', t + '.category', c.category, CHARGE_CATEGORIES).replace('<label>', '<label class="wide">')}${select('Type', t + '.type', c.type, a ? CHARGE_TYPES : CHARGE_TYPES.filter(([k]) => k === 'fixe' || k === 'unique'))}${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}</div>
-    ${scopes ? '<div class="grid">' + select('Rattachée à', t + '.scope', c.scope || 'app', scopes).replace('<label>', '<label class="wide">') + '</div>' : ''}
-    <h4>${c.type === 'unique' ? 'Quand' : 'Démarrage et fin'}</h4>
-    <div class="grid">${select(c.type === 'unique' ? 'Payée au' : 'Commence au', t + '.anchor', c.anchor || 'date', anchors).replace('<label>', '<label class="wide">')}
-      ${c.anchor === 'date' ? monthField('Mois', t + '.start', c.start, 'dès le début') : field('Décalage (mois après)', t + '.offset', c.offset || 0)}
+    <dl class="ch-recap">${line('Type', esc((CHARGE_TYPES.find(([k]) => k === c.type) || [])[1] || ''))}${line('Montée en charge', steps)}${line('Rattachée à', scope && esc(scope))}${line('Remarque', esc(c.note || ''))}</dl>
+    <div class="ch-acts"><button data-chedit="${esc(t)}">Modifier</button><button class="danger" data-remove="${esc(t)}">Supprimer</button></div></details>`;
+}
+
+// Contexte d'une liste de charges : application, dates repères et rattachements possibles.
+function chargeCtx(path) {
+  if (path.startsWith('shared.')) return { a: null, dates: appDates(state.apps), scopes: null };
+  const a = state.apps[+path.split('.')[1]];
+  return { a, dates: appDates([a]), scopes: [['app', 'Commune à tous les produits ' + a.name], ['sub', soloName(a)], ...a.programs.map(q => [q.id, progName(a, q)])] };
+}
+const CH_KIND = { var: 'Charges variables', fix: 'Charges fixes', str: 'Charges de structure Om Holistic' };
+// Fenêtre centrée d'ajout ou de modification d'une charge. Les champs agissent sur un brouillon (chemins « draft. »),
+// la liste n'est modifiée qu'au bouton Ajouter / Enregistrer.
+function chargeModal() {
+  const e = view.chEdit;
+  if (!e) return '';
+  const c = e.c, t = 'draft', { a, dates, scopes } = chargeCtx(e.list);
+  const anchors = CHARGE_ANCHORS.filter(([k]) => k !== 'product' || (a && c.scope && c.scope !== 'app'));
+  const types = a ? CHARGE_TYPES : CHARGE_TYPES.filter(([k]) => k === 'fixe' || k === 'unique');
+  const where = e.j === null ? `${CH_KIND[e.kind]}${a && e.kind !== 'str' ? ' de ' + esc(a.name) : ''}` : esc(c.name);
+  return `<div class="modal" data-chclose role="dialog" aria-modal="true" aria-labelledby="chm-t"><div class="modal-box ch-box">
+    <h3 class="modal-t" id="chm-t">${e.j === null ? 'Nouvelle charge' : 'Modifier la charge'}<small>${where}</small></h3>
+    <div class="grid one">${field('Nom', t + '.name', c.name, 'text').replace('<input', '<input placeholder="ex. Hébergement du site" autocomplete="off"')}
+      ${select('Catégorie', t + '.category', c.category || '', [['', 'Choisis une catégorie'], ...CHARGE_CATEGORIES])}
+      ${select('Type', t + '.type', c.type, types)}</div>
+    <div class="grid two">${field(AMOUNT_LABEL[c.type] || 'Montant', t + '.amount', c.amount)}${select('Ce montant est', t + '.estimate_ok', c.estimate ? 'est' : 'ok', [['est', 'une estimation'], ['ok', 'confirmé']])}</div>
+    ${scopes ? `<div class="grid one">${select('Rattachée à', t + '.scope', c.scope || 'app', scopes)}</div>` : ''}
+    <h4>${c.type === 'unique' ? 'Quand' : 'Dates'}</h4>
+    <div class="grid one">${select(c.type === 'unique' ? 'Payée au' : 'Commence au', t + '.anchor', c.anchor || 'date', anchors)}
+      ${c.anchor === 'date' ? monthField('Mois', t + '.start', c.start, 'dès le début') : field('Décalage (mois après ce repère)', t + '.offset', c.offset || 0)}
       ${c.type === 'unique' ? '' : monthField('Fin', t + '.end', c.end, 'sans fin')}</div>
-    <p class="muted">Calculé : ${whenText(c, dates)}. Si la date repère change dans ton calendrier, la charge suit.</p>
+    <p class="muted">Soit ${esc(whenText(c, dates))}. Si la date repère change dans ton calendrier, la charge suit.</p>
     ${c.type === 'unique' ? '' : `<h4>Montée en charge</h4>
-    ${(c.steps || []).map((st, k) => lineEditor(st, `${t}.steps.${k}`, [['after', 'Au bout de (mois)'], ['amount', c.type === 'ca' ? 'Nouveau %' : 'Nouveau montant (€)']], 'Supprimer ce palier')).join('')}
-    <div class="row"><button data-add="${t}.steps">Ajouter un palier</button></div>`}
-    ${check('Montant confirmé (sinon, c\'est une estimation)', t + '.estimate_ok', !c.estimate)}
-    ${fields(c, t, [['note', 'Hypothèse, source ou remarque', 'text']])}
-    <div class="row"><button class="danger" data-remove="${t}">Supprimer la charge</button></div></details>`;
+    ${(c.steps || []).map((st, k) => lineEditor(st, `${t}.steps.${k}`, [['after', 'Au bout de (mois)'], ['amount', c.type === 'ca' ? 'Nouveau %' : 'Nouveau montant (€)']], 'Supprimer ce palier')).join('') || '<p class="muted">Aucune : le montant reste le même.</p>'}
+    <div class="row"><button class="ghost" data-add="${t}.steps">Ajouter un palier</button></div>`}
+    <div class="grid one">${field('Remarque (hypothèse, source, devis…)', t + '.note', c.note || '', 'text')}</div>
+    ${e.err ? `<p class="warn">${esc(e.err)}</p>` : ''}
+    <div class="modal-acts"><button class="ghost" data-chclose>Annuler</button><button class="primary" data-chsave>${e.j === null ? 'Ajouter la charge' : 'Enregistrer'}</button></div>
+  </div></div>`;
 }
 
 // Charges mensuelles fixes à quelques dates clés : on voit la montée en charge d'un coup d'œil.
@@ -1251,7 +1283,7 @@ function chargeGroups(list, path, a, dates, scopes, keep = () => true) {
     const todo = items.filter(x => badge(x.c).includes('todo')).length;
     const v = chAmt ? items.reduce((t, x) => t + chargeAmount(x.c, a), 0) : null;
     return section(id, CAT_KIND[k], n, `${v === null ? '' : periodAmount(v) + ' · '}${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
-      items.map(({ c, j }) => chargeEditor(c, `${path}.${j}`, a, dates, scopes)).join(''));
+      items.map(({ c, j }) => chargeCard(c, `${path}.${j}`, a, dates, scopes)).join(''));
   }).join('');
 }
 
@@ -1269,27 +1301,27 @@ const saveAcqHidden = () => { try { localStorage.setItem('om-acq-hidden', JSON.s
 // Rythme sans pub, saisi sur la page Acquisition : abonnement puis programme.
 // Croissance sans pub : courbe en S (notoriété), paliers réguliers, ou paliers saisis à la main.
 const growthKind = q => q.palierMode ? 'manual' : q.shape === 'lin' ? 'lin' : q.shape === 'brand' ? 'brand' : 's';
-function growthEditor(q, t, unit, a) {
+const GROWTH_KINDS = [['brand', 'Part de mon vivier'], ['s', 'Courbe en S propre'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']];
+const growthPick = (q, t) => `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${GROWTH_KINDS.map(([v, l]) => `<option value="${v}" ${v === growthKind(q) ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
+// Champs du sans pub, selon sa forme : les deux taux du vivier, ou la courbe propre au produit.
+function growthFields(q, t, unit, a) {
   const kind = growthKind(q);
-  const pick = `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${[['brand', 'Part de mon vivier'], ['s', 'Courbe en S propre'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']].map(([v, l]) => `<option value="${v}" ${v === kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
   if (kind === 'brand') {
     // Le sans pub suit le vivier : nouvelles venues et vivier déjà là, chacune à son taux.
     const from = q.start || appStart(a), y1 = addMonths(from, 12), y3 = addMonths(from, 36), b = m => num(Math.round(audienceBuyers(a, q, m)));
-    return pick + `<div class="grid">${field('Nouvelles venues du mois\n% qui achètent', t + '.audienceNew', q.audienceNew)}${field('Vivier déjà là\n% qui achètent chaque mois', t + '.audienceRate', q.audienceRate)}</div>
-      <p class="muted">Une personne qui vient de découvrir ton travail achète plus facilement que celle qui te suit depuis deux ans sans acheter. Et une acheteuse sort du compte : on ne la compte pas deux fois. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard) : <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans, ${b(PLAN_END)} fin ${PLAN_END.slice(0, 4)}</b>.</p>`;
+    return `<div class="grid">${field('Nouvelles venues\n% qui achètent le mois de leur arrivée', t + '.audienceNew', q.audienceNew)}${field('Vivier déjà là\n% qui achètent chaque mois', t + '.audienceRate', q.audienceRate)}</div>
+      <p class="muted">Une personne qui vient de te découvrir achète plus facilement que celle qui te suit depuis longtemps. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard), ça donne <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans</b>.</p>`;
   }
   const body = kind === 'manual'
     ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', unit + ' / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier : ${num(q.target)} / semaine.</p>`
     : fields(q, t, kind === 's' ? [['initial', 'Au départ : ton audience\n' + unit.toLowerCase() + ' / semaine'], ['target', 'À maturité\n' + unit.toLowerCase() + ' / semaine'], ['months', 'Temps pour y arriver\nmois']] : growth);
-  const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. Par exemple 2 000 abonnées Instagram et email, dont 1 % s'inscrivent dans le mois : 20 par mois, soit 5 par semaine. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche dans les stores, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
-  return pick + body + est;
+  const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
+  return body + est;
 }
-function subRhythm(a, p) { return growthEditor(a.sub, p + '.sub', 'Abonnées', a); }
-function progRhythm(q, t, a) {
-  return `<h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
-    ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
-    <h4>Ensuite</h4>${growthEditor(q, t, 'Clientes', a)}`;
-}
+// Étape de la carte d'un produit : un titre, son chiffre, une phrase d'aide, puis les champs à régler.
+const step = (kind, title, value, help, body) => `<section class="step sec-${kind}"><div class="step-h"><span class="step-t">${title}</span><b class="step-v">${value}</b></div>${help ? `<p class="step-help">${help}</p>` : ''}${body}</section>`;
+// Réglages secondaires d'une étape, repliés.
+const more = (id, title, body) => `<details class="more" id="${esc(id)}" ${view.open.has(id) ? 'open' : ''}><summary>${title}</summary><div class="more-b">${body}</div></details>`;
 const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.shape === 'brand' && !q.palierMode ? `part de ton vivier (${fmtN(+q.audienceNew || 0, 2)} % des nouvelles, ${fmtN(+q.audienceRate || 0, 2)} % des autres)` : q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
 // Nouvelles clientes par mois jusqu'à fin 2032, empilées : sans pub, pub, venues de l'abonnement.
 // Pic du lancement d'un programme, mois par mois : le rythme spécifique des premières semaines, à part du flux régulier.
@@ -1316,32 +1348,77 @@ function pubGapCached(a, j) {
   if (!gapCache.has(key)) { if (gapCache.size > 40) gapCache.clear(); gapCache.set(key, pubGap(a, j)); }
   return gapCache.get(key);
 }
-function goalBlock(a, st, p) {
-  const o = st.o, prog = st.key !== 'sub', g = o.goal || { steps: [] }, t = st.t;
+// Carte d'un produit, lue comme une histoire : objectif → sans pub → venues de l'abonnement → reste pour la pub → budget.
+function productStory(a, st, p, campaign) {
+  const o = st.o, prog = st.key !== 'sub', g = o.goal || { steps: [] }, t = st.t, steps = g.steps || [];
   const kind = prog ? 'year' : g.kind === 'new' ? 'new' : 'active';
-  const unit = kind === 'active' ? 'abonnées' : kind === 'new' ? 'nouvelles abonnées / an' : 'inscriptions / an';
-  const plan = pubGapCached(a, prog ? st.j : null), who = prog ? 'clientes' : 'abonnées';
-  const res = !plan ? '' : plan.segs.map((sg, k) => `<div class="gap">
-      <div class="gap-h"><span class="badge">${k + 1}</span><b>${num(sg.count)} ${unit}</b> en ${monthName(sg.at)}</div>
-      <dl class="gap-l">
-        <div><dt>Sans pub${prog ? ' et passerelles' : ''}</dt><dd>${num(Math.round(sg.free))}</dd></div>
-        <div class="${sg.count > sg.free ? 'neg' : 'pos'}"><dt>À combler par la pub</dt><dd>${num(Math.max(0, Math.round(sg.count - sg.free)))}</dd></div>
-        <div><dt>Pub nécessaire</dt><dd>${sg.budget ? `<b>${money(sg.budget)} / mois</b>` : 'aucune'}</dd></div>
-        ${sg.budget ? `<p class="gap-n">${sg.end ? `De ${monthShort(sg.start)} à ${monthShort(sg.end)}` : `Dès ${monthShort(sg.start)}`} : ${num(Math.round(sg.perMonth))} ${who} par mois × ${money(plan.cac)}</p>` : ''}
-        <div class="${sg.current + 0.5 >= sg.count ? 'pos' : 'neg'}"><dt>Avec tes campagnes</dt><dd>${num(Math.round(sg.current))} ${sg.current + 0.5 >= sg.count ? '✓' : '✗'}</dd></div>
-      </dl></div>`).join('');
-  const same = plan && JSON.stringify((o.campaigns || []).map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(plan.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
-  const sum = !(g.steps || []).length ? 'aucun : campagnes saisies à la main' : g.steps.map(x => `${num(+x.count || 0)} à ${num(+x.months || 0)} mois`).join(' · ') + (plan && !same && plan.segs.some(sg => sg.current + 0.5 < sg.count) ? ' · <b class="neg">pas atteint</b>' : '');
-  return section(st.id + '-goal', 'cal', prog ? 'Objectif d\'inscriptions' : 'Objectif d\'abonnées', sum, `
-    ${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
-    <h4>Paliers, comptés depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'})</h4>
-    ${(g.steps || []).map((x, k) => lineEditor(x, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', kind === 'active' ? 'Abonnées en même temps' : kind === 'new' ? 'Nouvelles abonnées / an' : 'Inscriptions / an']], 'Supprimer ce palier')).join('')}
-    <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
-    ${(g.steps || []).length ? `<div class="grid">${field(`Coût par ${prog ? 'cliente' : 'abonnée payante'} venue de la pub\n€, pour le calcul`, t + '.goal.cac', g.cac || plan?.cac || 50)}</div>
-    ${res}
-    ${plan ? `<div class="row"><button data-pubgap="${esc(t)}" ${same ? 'disabled' : ''}>${same ? 'Campagnes en place' : 'Créer ces campagnes pub'}</button></div>
-    <p class="muted">${same ? 'Tes campagnes correspondent à cet objectif.' : 'Remplace tes campagnes actuelles par celles qui atteignent l\'objectif. Tu pourras ensuite les modifier dans « Avec pub ».'}</p>` : ''}`
-    : '<p class="muted">Sans objectif, tu saisis toi-même tes campagnes dans « Avec pub ».</p>'}`);
+  const u = n => kind === 'active' ? `${num(Math.round(n))} abonnées` : `${num(Math.round(n))} / an`;
+  const plan = steps.length ? pubGapCached(a, prog ? st.j : null) : null, segs = plan ? plan.segs : [];
+  const who = prog ? 'cliente' : 'abonnée', camps = o.campaigns || [], orgOn = o.organic !== false, brand = o.shape === 'brand' && !o.palierMode;
+  const solo = soloName(a), at = sg => monthName(sg.at), free = sg => Math.max(0, sg.free - (sg.solo || 0));
+  const list = f => segs.length > 1 ? ` Soit ${segs.map(sg => `${u(f(sg))} en ${at(sg)}`).join(', ')}.` : segs.length ? ` Soit ${u(f(segs[0]))} en ${at(segs[0])}.` : '';
+  const s0 = segs[0];
+
+  // 1. Objectif
+  const goal = step('cal', prog ? 'Ton objectif' : 'Ton objectif d\'abonnées', s0 ? u(s0.count) : 'aucun',
+    steps.length ? `${prog ? 'Combien d\'inscriptions par an tu vises' : kind === 'active' ? 'Combien d\'abonnées en même temps tu vises' : 'Combien de nouvelles abonnées par an tu vises'}, et quand. Compté depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'}).${segs.length ? ` Soit ${segs.map(sg => `${u(sg.count)} en ${at(sg)}`).join(', ')}.` : ''}`
+      : 'Fixe un objectif : l\'outil calcule ce qui manque et la pub qu\'il faut. Sans objectif, tu règles toi-même ta pub plus bas.',
+    `${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
+    ${steps.map((x, k) => lineEditor(x, `${t}.goal.steps.${k}`, [['months', `Au bout de\nmois après ${prog ? 'le lancement' : 'l\'ouverture'}`], ['count', kind === 'active' ? 'Visées\nabonnées en même temps' : kind === 'new' ? 'Visées\nnouvelles abonnées par an' : 'Visées\ninscriptions par an']], 'Supprimer ce palier')).join('')}
+    <div class="row"><button data-add="${t}.goal.steps">${steps.length ? 'Ajouter une date d\'objectif' : 'Fixer un objectif'}</button></div>`);
+
+  // 2. Sans pub
+  const growth = `${check('Compter des clientes sans pub (vivier, bouche-à-oreille, site)', t + '.organic', orgOn)}
+    ${orgOn ? growthPick(o, t) : ''}
+    ${prog && orgOn ? `${check('Rythme à part pour les premières semaines', t + '.launch', o.launch)}${o.launch ? fields(o, t, [['launchWeeks', 'Pendant\nsemaines'], ['launchRate', 'Clientes\npar semaine']]) : ''}` : ''}
+    <div class="grid">${field('Effet boule de neige de la pub\n% de clientes en plus pour 100 venues de la pub', t + '.viral', o.viral ?? 20)}</div>
+    <p class="muted">Bouche-à-oreille et avis : 15 à 20 % est prudent, on voit de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans le sans pub.</p>
+    ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`;
+  const org = step('ins', brand && orgOn ? 'Sans pub, depuis ton vivier' : 'Sans pub', !orgOn ? 'non compté' : s0 ? u(free(s0)) : `${num(Math.round(st.orgN))} sur 12 mois`,
+    !orgOn ? `Aucune ${who} sans pub n'est comptée : la case est décochée dans les autres réglages ci-dessous.`
+      : `Ce qui arrive seul, sans payer.${brand ? ` Chaque mois, une petite part de ton vivier (Instagram et newsletter) achète ${esc(st.name)}.` : ''}${list(free)}`,
+    (orgOn ? growthFields(o, t, prog ? 'Clientes' : 'Abonnées', a) : '') + more(st.id + '-org', 'Autres réglages du sans pub', growth));
+
+  // 3. Venues de l'abonnement
+  const link = !prog ? '' : step('sub', `Venues de ${esc(solo)}`, s0 ? u(s0.solo || 0) : `${num(Math.round(st.soloN))} sur 12 mois`,
+    `Des abonnées de ${esc(solo)} qui achètent aussi ${esc(o.name)}. Elles ne coûtent rien à trouver.${list(sg => sg.solo || 0)}`,
+    linkFields(a, o, t));
+
+  // 4. Reste à trouver par la pub
+  const left = sg => Math.max(0, Math.round(sg.count - sg.free));
+  const gap = !segs.length ? '' : step('promo', 'Reste à trouver par la pub', left(s0) ? u(left(s0)) : 'rien',
+    'Ton objectif, moins ce qui arrive seul.',
+    segs.map(sg => `<p class="eq"><b>${at(sg)}</b> : ${u(sg.count)} visées − ${num(Math.round(free(sg)))} sans pub${prog ? ` − ${num(Math.round(sg.solo || 0))} de ${esc(solo)}` : ''} = ${left(sg) ? `<b>${num(left(sg))} à trouver par la pub</b>` : '<b class="pos">rien à trouver ✓</b>'}</p>`).join('')
+    + `<div class="grid">${field(`Coût d'une ${prog ? 'cliente' : 'abonnée payante'} venue de la pub\n€, pour calculer le budget`, t + '.goal.cac', g.cac || plan.cac || 50)}</div>`);
+
+  // 5. Budget pub
+  const same = plan && JSON.stringify(camps.map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(plan.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
+  const campList = camps.map((c, k) => campaign(c, `${t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>';
+  const campBody = `${campList}<div class="row"><button data-add="${t}.campaigns">Ajouter une campagne</button></div>
+    ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
+    <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub ».</p>`;
+  const campTitle = `Mes campagnes : ${camps.length ? `${camps.length} · ${short(st.pubB)} sur 12 mois` : 'aucune'}`;
+  const withBudget = segs.filter(sg => sg.budget);
+  const reached = segs.every(sg => sg.current + 0.5 >= sg.count);
+  const budget = !segs.length
+    ? step('promo', 'Ta pub', camps.length ? `${money(Math.round(st.pubB / 12))} / mois` : 'aucune', `Sans objectif, tu choisis toi-même tes campagnes : budget par mois et coût d'une ${who}.`, campBody)
+    : step('promo', 'Budget pub', withBudget.length ? `${money(withBudget[0].budget)} / mois` : '0 €',
+      withBudget.length ? `Ce que coûte la pub pour trouver ce qui manque.` : `Pas de pub nécessaire : ce qui arrive seul suffit.`,
+      withBudget.map(sg => `<p class="eq">${sg.end ? `De ${monthName(sg.start)} à ${monthName(sg.end)}` : `Dès ${monthName(sg.start)}`} : ${num(Math.round(sg.perMonth))} ${who}s par mois × ${money(plan.cac)} = <b>${money(sg.budget)} / mois</b></p>`).join('')
+      + `<p class="eq ${reached ? 'pos' : 'neg'}">Avec tes campagnes actuelles : ${segs.map(sg => `${u(sg.current)} en ${at(sg)}`).join(', ')} ${reached ? '✓ objectif atteint' : '✗ objectif pas atteint'}</p>`
+      + (withBudget.length || camps.length ? `<div class="row"><button data-pubgap="${esc(t)}" ${same ? 'disabled' : ''}>${same ? 'Campagnes en place' : 'Créer ces campagnes pub'}</button></div>
+      <p class="muted">${same ? 'Tes campagnes correspondent à cet objectif.' : 'Remplace tes campagnes actuelles par celles qui atteignent l\'objectif. Tu peux ensuite les modifier juste en dessous.'}</p>` : '')
+      + more(st.id + '-pub', campTitle, campBody));
+  return goal + org + link + gap + budget;
+}
+// État de l'objectif, pour la carte repliée.
+function goalStatus(a, st) {
+  const o = st.o, prog = st.key !== 'sub', g = o.goal || {};
+  if (!(g.steps || []).length) return '';
+  const plan = pubGapCached(a, prog ? st.j : null), s0 = plan && plan.segs[0];
+  if (!s0) return '';
+  const ok = plan.segs.every(sg => sg.current + 0.5 >= sg.count), unit = prog || g.kind === 'new' ? ' / an' : ' abonnées';
+  return `<br>objectif ${num(s0.count)}${unit} en ${monthName(s0.at)} : <b class="${ok ? 'pos' : 'neg'}">${ok ? 'atteint' : 'pas atteint'}</b>`;
 }
 
 // Raccourci depuis Acquisition : le vivier alimente le sans pub, et le bouton pré-remplit tous les produits.
@@ -1355,7 +1432,7 @@ function audienceLink(a, p) {
       return off.length ? `<div class="gap">${off.map(x => `<p class="warn">${esc(x.n)} n'utilise pas le vivier : ${x.q.organic === false ? 'son sans pub est décoché' : x.q.palierMode ? 'ses paliers sont saisis à la main' : 'il garde sa propre courbe'}.</p><div class="row"><button data-linkviv="${esc(x.t)}">Brancher ${esc(x.n)} sur le vivier</button></div>`).join('')}</div>` : '';
     })()}
     <div class="row"><button data-prefill="${esc(p)}">Remettre les taux conseillés pour tous les produits</button></div>
-    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux ici, dans sa partie « Sans pub ».</p>
+    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux dans sa carte, à l'étape « Sans pub, depuis ton vivier ».</p>
   </details>`;
 }
 // ---------- Notoriété : ton vivier, et ce qui le fait grandir (relais → Instagram → newsletter, puis stores) ----------
@@ -1462,25 +1539,10 @@ function acquisitionPage(a, i) {
     const rows = win.map(m => { const c = campaignClients(o, m.month), f = st.fresh(m);
       return `<tr><td>${monthShort(m.month)}</td><td>${num(Math.round(Math.max(0, f - c)))}</td><td>${c ? num(Math.round(c)) : '—'}</td>${prog ? `<td>${num(Math.round(st.solo(m)))}</td>` : ''}<td><b>${num(Math.round(f + (prog ? st.solo(m) : 0)))}</b></td><td>${campaignBudget(o, m.month) ? short(campaignBudget(o, m.month)) : '—'}</td></tr>`; }).join('');
     const orgOn = o.organic !== false;
-    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}</span>
+    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}${goalStatus(a, st)}</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
       ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1).filter(m => m.month <= PLAN_END).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
-      ${goalBlock(a, st, p)}
-      ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
-        ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
-        ${orgOn ? (prog ? progRhythm(o, st.t, a) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
-        <h4>Effet boule de neige de la pub</h4>
-        <div class="grid">${field('Bouche-à-oreille et avis\n% de clientes en plus pour 100 venues de la pub', st.t + '.viral', o.viral ?? 20)}</div>
-        <p class="muted">15 à 20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
-        ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`)}
-      ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
-        ${linkFields(a, o, st.t)}
-        <p class="muted">Ces clientes sont déjà abonnées : elles ne coûtent rien à acquérir et gardent leur abonnement.</p>`) : ''}
-      ${section(st.id + '-pub', 'promo', 'Avec pub', `${camps.length ? `${camps.length} campagne${camps.length > 1 ? 's' : ''} · ${short(st.pubB)} sur 12 mois` : 'aucune campagne'} · ${num(Math.round(st.pubN))} ${who}s`, `
-        ${camps.map((c, k) => campaign(c, `${st.t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>'}
-        <div class="row"><button data-add="${st.t}.campaigns">Ajouter une campagne</button></div>
-        ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
-        <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub ».</p>`)}
+      ${productStory(a, st, p, campaign)}
       ${section(st.id + '-mois', 'cal', 'Mois par mois', `${num(Math.round(st.all))} ${who}s · ${short(st.pubB)} de pub sur 12 mois`, `<table class="acq-tab"><thead><tr><th>Mois</th><th>Sans pub</th><th>Pub</th>${prog ? '<th>Abonnées</th>' : ''}<th>Total</th><th>Budget</th></tr></thead><tbody>${rows}</tbody></table>`)}
       <dl class="pal-sum">
         <div><dt>Valeur d'une ${who}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
@@ -1595,15 +1657,16 @@ function chargesPage(a, i) {
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${tot ? periodAmount(tot.v) + ' · ' : ''}${nV} charge${nV > 1 ? 's' : ''}${a.programs.length ? ' + coaching' : ''}`,
       `${computed}${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || (computed ? '' : '<p class="muted">Aucune pour l\'instant.</p>')}
-      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+      <div class="add-row"><button class="add" data-chadd="${p}.charges|var">Ajouter une charge variable</button></div>`)}
     ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${tot ? periodAmount(tot.f) + ' · ' : ''}${nF} charge${nF > 1 ? 's' : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
-      <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
+      <div class="add-row"><button class="add" data-chadd="${p}.charges|fix">Ajouter une charge fixe</button></div>`)}
     ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${tot ? 'quote-part ' + periodAmount(tot.s) + ' · ' : ''}${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}`,
       `<div class="grid">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']]).replace('<label>', '<label class="wide">')}</div>
       <details class="fold" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
       ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
-      <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`)}`;
+      <div class="add-row"><button class="add" data-chadd="shared.charges|str">Ajouter une charge de structure</button></div>`)}
+    ${chargeModal()}`;
   }
 }
 
@@ -2309,7 +2372,8 @@ function renderToolbar() {
 }
 
 function render(fresh = false) {
-  if (fresh) pickOpen = null;
+  if (fresh) { pickOpen = null; view.chEdit = null; }
+  const boxTop = document.querySelector('.modal-box')?.scrollTop || 0;
   // Garde ouvertes les zones dépliées, sauf en arrivant sur une nouvelle page.
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
@@ -2317,6 +2381,19 @@ function render(fresh = false) {
   const pages = { notoriete: () => notorietePage(a, i), acquisition: () => acquisitionPage(a, i), calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
+  // Fenêtre ouverte : la page derrière ne défile pas, et la fenêtre garde sa position après chaque saisie.
+  const box = document.querySelector('.modal-box');
+  document.body.classList.toggle('modal-open', !!box);
+  if (box) box.scrollTop = boxTop;
+}
+
+// Après un ajout ou une modification : on ouvre les blocs qui contiennent la charge (elle reste repliée) et on la montre.
+function revealCharge(id) {
+  const el = document.getElementById('ch' + id);
+  if (!el) return;
+  for (let d = el.parentElement && el.parentElement.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true;
+  el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  el.classList.add('flash'); setTimeout(() => el.classList.remove('flash'), 1600);
 }
 
 // ---------- Événements ----------
@@ -2334,6 +2411,8 @@ function route() {
   else window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', route);
+// Échap ferme la fenêtre de charge sans rien changer.
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && view.chEdit) { view.chEdit = null; render(); } });
 // Bandeau replié / déplié : mémorisé pour toutes les pages.
 
 document.addEventListener('change', async e => {
@@ -2363,7 +2442,8 @@ document.addEventListener('change', async e => {
     if ((m && y) || (!m && !y)) {
       const [o, k] = resolve(pick.dataset.mpath);
       o[k] = m && y ? `${y}-${m}` : '';
-      save(); render();
+      if (!isDraft(pick.dataset.mpath)) save();
+      render();
     }
   } else if (t.dataset.actual) {
     const [ai, month, f] = t.dataset.actual.split('|'), a = state.apps[+ai];
@@ -2394,10 +2474,10 @@ document.addEventListener('change', async e => {
     saveCalHidden(); render();
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
-    if (k === 'estimate_ok') o.estimate = !t.checked;
+    if (k === 'estimate_ok') o.estimate = t.type === 'checkbox' ? !t.checked : t.value !== 'ok';
     else if (t.dataset.path.includes('.actuals.') && t.value === '') delete o[k];
     else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.dataset.path.startsWith('scenarios.') ? Math.max(-100, +t.value || 0) : Math.max(0, +t.value || 0)) : t.value;
-    save();
+    if (isDraft(t.dataset.path)) { if (view.chEdit) view.chEdit.err = ''; } else save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
     // pour que les résumés se mettent à jour sans fermer le clavier.
     setTimeout(() => {
@@ -2464,10 +2544,32 @@ document.addEventListener('click', e => {
       scenarios: () => ({ id: newId(), name: 'Nouveau scénario', fixedYear: 0, socialRate: 0, socialBase: 'result', taxRate: 0, taxBase: 'result', distRate: 0, note: '' }),
       charges: () => charge('Nouvelle charge', 'fixe', 0, 'app', '', '', { anchor: 'first' })
     }[k];
-    o[k].push(fresh()); save(); render();
+    o[k].push(fresh()); if (!isDraft(t.dataset.add)) save(); render();
   } else if (t.dataset.remove) {
     const [o, k] = resolve(t.dataset.remove);
-    o.splice(+k, 1); save(); render();
+    o.splice(+k, 1); if (!isDraft(t.dataset.remove)) save(); render();
+  } else if (t.dataset.chadd) {
+    // Nouvelle charge : un brouillon dans une fenêtre, type proposé selon le bloc (variable, fixe, structure).
+    const [list, kind] = t.dataset.chadd.split('|');
+    view.chEdit = { list, j: null, kind, err: '', c: charge('', kind === 'var' ? 'cliente' : 'fixe', '', 'app', '', '', { anchor: 'first', category: '' }) };
+    render();
+  } else if (t.dataset.chedit) {
+    const keys = t.dataset.chedit.split('.'), j = +keys.pop(), list = keys.join('.');
+    view.chEdit = { list, j, kind: list.startsWith('shared.') ? 'str' : '', err: '', c: JSON.parse(JSON.stringify(resolve(t.dataset.chedit)[0][j])) };
+    render();
+  } else if (t.dataset.chclose !== undefined && (e.target === t || t.tagName === 'BUTTON')) {
+    view.chEdit = null; render();
+  } else if (t.dataset.chsave !== undefined) {
+    const ed = view.chEdit, c = ed.c;
+    c.name = String(c.name || '').trim();
+    ed.err = !c.name ? 'Donne un nom à la charge.' : !c.category ? 'Choisis une catégorie.' : '';
+    if (ed.err) { render(); return; }
+    if (c.type === 'unique') { c.end = ''; c.steps = []; }
+    c.amount = +c.amount || 0;
+    const [o, k] = resolve(ed.list + '.x'), list = o;
+    if (ed.j === null) list.push(c); else list[ed.j] = c;
+    view.chEdit = null; save(); render();
+    revealCharge(c.id);
   } else if (t.dataset.removeApp) {
     state.apps.splice(+t.dataset.removeApp, 1); view.app = '0'; save(); render();
   } else if (t.id === 'reset') { view.confirmReset = true; render();
