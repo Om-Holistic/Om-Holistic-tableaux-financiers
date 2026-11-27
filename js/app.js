@@ -1196,11 +1196,16 @@ function whenText(c, dates) {
   if (c.type === 'unique') return `en ${start ? monthName(start) : monthName(dates.first)}${from ? ' (' + from + ')' : ''}`;
   return `${start ? 'dès ' + monthName(start) : 'dès le début'}${from ? ' (' + from + ')' : ''}${end}`;
 }
+// Montants de la période affichée, par charge (rempli par la page Charges le temps de l'afficher).
+let chAmt = null;
+const chargeAmount = (c, a) => chAmt ? (a ? chAmt.lines[c.id] : chAmt.structureLines[c.id]) || 0 : null;
+const periodAmount = v => `<b>${money(v)}</b> ${periodName()}`;
 function chargeSummary(c, a, dates) {
   const prog = a && a.programs.find(p => p.id === c.scope);
   const scope = !a ? '' : c.scope === 'sub' ? ' · ' + esc(soloName(a)) : prog ? ' · ' + esc(progName(a, prog)) : '';
   const steps = (c.steps || []).length ? ' → ' + [...c.steps].sort((x, y) => x.after - y.after).map(st => `${amountText(c, st.amount)} à +${num(st.after)} mois`).join(' → ') : '';
-  return `${amountText(c, c.amount)}${steps} · ${whenText(c, dates)}${scope}`;
+  const v = chargeAmount(c, a);
+  return `${v === null ? '' : periodAmount(v) + ' · '}${amountText(c, c.amount)}${steps} · ${whenText(c, dates)}${scope}`;
 }
 const badge = c => !(+c.amount) && !(c.steps || []).some(st => +st.amount) ? '<span class="tag todo">À compléter</span>' : c.estimate ? '<span class="tag est">Estimation</span>' : '<span class="tag on">Confirmé</span>';
 
@@ -1244,7 +1249,8 @@ function chargeGroups(list, path, a, dates, scopes, keep = () => true) {
     if (!items.length) return '';
     const id = (a ? 'cg-' : 'sg-') + k + (keep === isFixed ? '-f' : keep.length ? '-v' : '');
     const todo = items.filter(x => badge(x.c).includes('todo')).length;
-    return section(id, CAT_KIND[k], n, `${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
+    const v = chAmt ? items.reduce((t, x) => t + chargeAmount(x.c, a), 0) : null;
+    return section(id, CAT_KIND[k], n, `${v === null ? '' : periodAmount(v) + ' · '}${items.length} charge${items.length > 1 ? 's' : ''}${todo ? ` · ${todo} à compléter` : ''}`,
       items.map(({ c, j }) => chargeEditor(c, `${path}.${j}`, a, dates, scopes)).join(''));
   }).join('');
 }
@@ -1528,7 +1534,8 @@ function chargesPeriodCard(a, i, r) {
   const sum = ls => ls.reduce((t, l) => t + l.v, 0);
   // Une sous-rubrique par nature de charge (comme les comptes 60 à 64 d'un compte de résultat), dépliable.
   const byCat = (ls, pre) => CHARGE_CATEGORIES.map(([k, n]) => {
-    const on = ls.filter(l => l.cat === k && l.v > 0.5).sort((p, q) => q.v - p.v);
+    // Le coaching reste affiché même à 0 € : on voit qu'il est compté.
+    const on = ls.filter(l => l.cat === k && (l.v > 0.5 || (l.id === ':coaching' && a.programs.length))).sort((p, q) => q.v - p.v);
     if (!on.length) return '';
     const v = sum(on);
     return section(`${pre}-${k}`, CAT_KIND[k], n, `<b>${money(v)}</b> · ${pctOf(v, ca)} du CA`,
@@ -1565,6 +1572,16 @@ function chargesPage(a, i) {
   const nV = list.filter(c => !isFixed(c)).length, nF = list.length - nV;
   const pe = r.all[i].pnl.filter(e => inPeriod(e.month)), ps = pe.length ? sumPnl(pe) : null;
   const tot = ps && { v: ps.total.fees + ps.total.variable + ps.total.coaching, f: ps.total.fixed, s: ps.structure };
+  chAmt = ps || { lines: {}, structureLines: {} };
+  try { return chargesBody(); } finally { chAmt = null; }
+  function chargesBody() {
+  const L = k => chAmt.lines[k] || 0;
+  // Coûts calculés ailleurs, montrés ici pour que les cartes s'additionnent : coaching (toujours), pub et stores.
+  const calc = (id, kind, title, v, text) => section(id, kind, title, `${periodAmount(v)} · calculé`, `<p class="muted">${text}</p>`);
+  const computed = (a.programs.length ? calc('cg-coach', CAT_KIND.coaching, 'Coaching', L(':coaching'),
+      `Heures à payer à des coachs × ${money(+a.coachRate || 0)} / h. Les heures qui manquent au-delà des tiennes sont calculées dans l'onglet <a href="#coaching" data-goto="coaching">Coaching</a>.${L(':coaching') < 0.5 ? ` ${periodName()[0].toUpperCase() + periodName().slice(1)}, tes heures suffisent : rien à payer.` : ''}`) : '')
+    + (L(':acq') >= 0.5 ? calc('cg-acq', CAT_KIND.marketing, 'Campagnes pub', L(':acq'), 'Budgets des campagnes, réglés dans <a href="#acquisition" data-goto="acquisition">Acquisition</a>.') : '')
+    + (L(':store') >= 0.5 ? calc('cg-store', CAT_KIND.paiement, 'Commissions App Store / Google Play', L(':store'), `${num(+a.channels?.store || 0)} % des ventes passent par les stores.`) : '');
   return `${banner({ label: 'Charges', chip: periodChip(), big: money(cost),
       note: `${pctOf(cost, r.sum('caHT'))} du CA HT ${periodName()}, structure comprise : le même total que dans Résultat. Détail juste en dessous.`,
       tiles: [
@@ -1576,18 +1593,18 @@ function chargesPage(a, i) {
     ${chargesPeriodCard(a, i, r)}
     <p class="muted"><a href="#acquisition" data-goto="acquisition">Canaux de vente, budget pub et coût par cliente : Acquisition ›</a></p>
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
-    ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
-      `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
-      ${a.programs.length ? `<p class="muted">Coaching : heures à payer à des coachs × ${money(+a.coachRate || 0)} / h, calculées dans l'onglet <a href="#coaching" data-goto="coaching">Coaching</a>.</p>` : ''}
+    ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${tot ? periodAmount(tot.v) + ' · ' : ''}${nV} charge${nV > 1 ? 's' : ''}${a.programs.length ? ' + coaching' : ''}`,
+      `${computed}${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || (computed ? '' : '<p class="muted">Aucune pour l\'instant.</p>')}
       <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
-    ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${nF} charge${nF > 1 ? 's' : ''}${tot ? ` · ${money(tot.f)} ${periodName()}` : ''}`,
+    ${chargeFold('ch-fix', `Charges fixes de ${esc(a.name)}`, `${tot ? periodAmount(tot.f) + ' · ' : ''}${nF} charge${nF > 1 ? 's' : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, isFixed) || '<p class="muted">Aucune pour l\'instant.</p>'}
       <div class="row"><button data-add="${p}.charges">Ajouter une charge</button></div>`)}
-    ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}${tot ? ` · quote-part ${money(tot.s)} ${periodName()}` : ''}`,
+    ${chargeFold('ch-str', 'Charges de structure Om Holistic', `${tot ? 'quote-part ' + periodAmount(tot.s) + ' · ' : ''}${sh.charges.length} charge${sh.charges.length > 1 ? 's' : ''}`,
       `<div class="grid">${select('Répartition entre les applications', 'shared.key', sh.key, [['ca', 'Au prorata du chiffre d\'affaires'], ['egal', 'À parts égales']]).replace('<label>', '<label class="wide">')}</div>
       <details class="fold" id="sh-ramp" ${view.open.has('sh-ramp') ? 'open' : ''}><summary>Montée en charge de la structure</summary>${chargeRamp(sh.charges, all)}</details>
       ${chargeGroups(sh.charges, 'shared.charges', null, all, null)}
       <div class="row"><button data-add="shared.charges">Ajouter une charge de structure</button></div>`)}`;
+  }
 }
 
 // ---------- Compte d'exploitation ----------
