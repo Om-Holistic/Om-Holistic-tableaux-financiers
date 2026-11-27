@@ -1360,7 +1360,7 @@ function productSynth(a, st) {
     <div class="sy-row tot"><span>= À combler par la pub</span><b>${P.left(sg) ? num(P.left(sg)) : 'rien ✓'}</b></div>
     ${cacField}
     <div class="sy-row big"><span>= Budget pub</span><b>${P.auto ? `${money(budget)} / mois` : `${money(Math.round(st.pubB / 12))} / mois`}</b></div>
-    <p class="sy-n">${P.auto ? `${sg.end ? `de ${monthName(sg.start)} à ${monthName(sg.end)}` : `dès ${monthName(sg.start)}`} · ${money(Math.round(st.pubB))} sur les 12 prochains mois` : `tes campagnes à toi · l'objectif demanderait ${money(sg.budget)} / mois`}</p>
+    <p class="sy-n">${P.auto ? `${sg.end ? `de ${monthName(sg.start)} à ${monthName(sg.end)}` : `dès ${monthName(sg.start)}`}` : `tes campagnes à toi · l'objectif demanderait ${money(sg.budget)} / mois`}</p>
     ${value}</div>`;
 }
 function productStory(a, st, p, campaign) {
@@ -1542,15 +1542,24 @@ function acquisitionPage(a, i) {
   };
   const cards = stats.filter(shown).map(st => {
     const o = st.o, who = st.key === 'sub' ? 'abonnée' : 'cliente', camps = o.campaigns || [], prog = st.key !== 'sub';
-    const rows = win.map(m => { const c = campaignClients(o, m.month), f = st.fresh(m);
-      return `<tr><td>${monthShort(m.month)}</td><td>${num(Math.round(Math.max(0, f - c)))}</td><td>${c ? num(Math.round(c)) : '—'}</td>${prog ? `<td>${num(Math.round(st.solo(m)))}</td>` : ''}<td><b>${num(Math.round(f + (prog ? st.solo(m) : 0)))}</b></td><td>${campaignBudget(o, m.month) ? short(campaignBudget(o, m.month)) : '—'}</td></tr>`; }).join('');
+    // Année par année, du démarrage du produit à fin 2032 : arrivées par source et budget pub de l'année.
+    const k0p = Math.max(0, ms.findIndex(m => m.month >= ((prog ? o.start : a.sub.start) || from)));
+    const yrs = new Map();
+    for (const m of ms.slice(k0p).filter(m => m.month <= PLAN_END)) {
+      const c = campaignClients(o, m.month), f = st.fresh(m), y = yrs.get(m.month.slice(0, 4)) || { org: 0, pub: 0, solo: 0, budget: 0 };
+      y.org += Math.max(0, f - c); y.pub += Math.min(c, f); y.solo += prog ? st.solo(m) : 0; y.budget += campaignBudget(o, m.month);
+      yrs.set(m.month.slice(0, 4), y);
+    }
+    const yrPub = [...yrs.values()].reduce((t, y) => t + y.budget, 0);
+    const rows = [...yrs].map(([yr, y]) => `<tr><td>${yr}</td><td>${num(Math.round(y.org))}</td><td>${y.pub >= 0.5 ? num(Math.round(y.pub)) : '—'}</td>${prog ? `<td>${num(Math.round(y.solo))}</td>` : ''}<td><b>${num(Math.round(y.org + y.pub + y.solo))}</b></td><td>${y.budget ? short(y.budget) : '—'}</td></tr>`).join('')
+      + `<tr class="tot"><td>Total</td><td colspan="${prog ? 4 : 3}"></td><td><b>${money(yrPub)}</b></td></tr>`;
     const orgOn = o.organic !== false;
     return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}${goalStatus(a, st)}</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
       ${productSynth(a, st)}
       ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1).filter(m => m.month <= PLAN_END).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
       ${productStory(a, st, p, campaign)}
-      ${section(st.id + '-mois', 'cal', 'Mois par mois', `${num(Math.round(st.all))} ${who}s · ${short(st.pubB)} de pub sur 12 mois`, `<table class="acq-tab"><thead><tr><th>Mois</th><th>Sans pub</th><th>Pub</th>${prog ? '<th>Abonnées</th>' : ''}<th>Total</th><th>Budget</th></tr></thead><tbody>${rows}</tbody></table>`)}
+      ${section(st.id + '-mois', 'cal', 'Année par année', `${short(yrPub)} de pub d'ici fin ${PLAN_END.slice(0, 4)}`, `<table class="acq-tab"><thead><tr><th>Année</th><th>Sans pub</th><th>Pub</th>${prog ? '<th>Abonnées</th>' : ''}<th>Total</th><th>Budget</th></tr></thead><tbody>${rows}</tbody></table>`)}
       </details>`;
   }).join('');
   return `${banner({ label: `Nouvelles clientes · ${esc(a.name)}`, big: `${num(Math.round(allN / 12))} / mois`,

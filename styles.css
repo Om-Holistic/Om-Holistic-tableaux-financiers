@@ -909,3 +909,4 @@ details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"
 @media (max-width: 767px) { header { gap: 4px; } .hnav { margin-right: 6px; } .head { flex: 1; } }
 @media (min-width: 768px) { .hnav { margin: -10px 0 -18px -8px; } }
 
+.acq-tab tr.tot td { border-bottom: 0; font-weight: 600; }
