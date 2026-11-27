@@ -1246,12 +1246,20 @@ function progRhythm(q, t, a) {
 }
 const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.shape === 'brand' && !q.palierMode ? `${fmtN(+q.audienceRate || 0, 2)} % de ton audience / mois` : q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
 // Nouvelles clientes par mois sur 3 ans, empilées : sans pub, pub, venues de l'abonnement.
+// Pic du lancement d'un programme, mois par mois : le rythme spécifique des premières semaines, à part du flux régulier.
+function launchByMonth(a, q) {
+  const out = {};
+  if (!q.launch || !q.start || q.organic === false) return out;
+  const d0 = firstMonday(monthDate(q.start)), vol = Number.isFinite(+a.volume) && +a.volume > 0 ? +a.volume : 1;
+  for (let w = 0; w < Math.max(0, +q.launchWeeks || 0); w++) for (const [m, sh] of weekShares(addWeeks(d0, w))) out[m] = (out[m] || 0) + Math.floor(Math.max(0, +q.launchRate || 0)) * sh * vol;
+  return out;
+}
 function acqChart(rows) {
-  const W = 320, H = 120, T = 14, n = rows.length, bw = W / n, max = Math.max(1, ...rows.map(r => r.org + r.pub + r.solo));
-  const bars = rows.map((r, k) => { let y = H; return [['org', 'var(--k-ins)'], ['pub', 'var(--k-promo)'], ['solo', 'var(--k-sub)']].map(([key, col]) => { const h = r[key] / max * (H - T); y -= h; return h > 0 ? `<rect x="${(k * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>` : ''; }).join(''); }).join('');
+  const W = 320, H = 120, T = 14, n = rows.length, bw = W / n, max = Math.max(1, ...rows.map(r => r.org + (r.launch || 0) + r.pub + r.solo));
+  const bars = rows.map((r, k) => { let y = H; return [['org', 'var(--k-ins)'], ['launch', 'var(--k-cal)'], ['pub', 'var(--k-promo)'], ['solo', 'var(--k-sub)']].map(([key, col]) => { const h = (r[key] || 0) / max * (H - T); y -= h; return h > 0 ? `<rect x="${(k * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>` : ''; }).join(''); }).join('');
   const ticks = rows.map((r, k) => r.month.endsWith('-01') ? `<text x="${(k * bw + 1).toFixed(1)}" y="${H + 12}" font-size="9" fill="var(--ink-soft)">${r.month.slice(0, 4)}</text>` : '').join('');
   return `<figure class="acq-chart"><svg viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Nouvelles clientes par mois">${bars}${ticks}<text x="${W}" y="10" font-size="9" text-anchor="end" fill="var(--ink-soft)">max ${num(Math.round(max))} / mois</text></svg>
-    <figcaption><span><i style="background:var(--k-ins)"></i>Sans pub</span><span><i style="background:var(--k-promo)"></i>Pub</span>${rows.some(r => r.solo) ? '<span><i style="background:var(--k-sub)"></i>Abonnées</span>' : ''}</figcaption></figure>`;
+    <figcaption><span><i style="background:var(--k-ins)"></i>Sans pub</span>${rows.some(r => r.launch) ? '<span><i style="background:var(--k-cal)"></i>Lancement</span>' : ''}<span><i style="background:var(--k-promo)"></i>Pub</span>${rows.some(r => r.solo) ? '<span><i style="background:var(--k-sub)"></i>Abonnées</span>' : ''}</figcaption></figure>`;
 }
 
 // Objectif total d'un produit, toutes sources confondues : le sans pub et les passerelles d'abord, la pub comble l'écart.
@@ -1399,14 +1407,14 @@ function acquisitionPage(a, i) {
     const orgOn = o.organic !== false;
     return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
-      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))); return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); return { month: m.month, pub: Math.min(c, f), org: Math.max(0, f - c), solo: prog ? st.solo(m) : 0 }; })); })()}
+      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
       ${goalBlock(a, st, p)}
       ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
         ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
         ${orgOn ? (prog ? progRhythm(o, st.t, a) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
         <h4>Effet boule de neige de la pub</h4>
         <div class="grid">${field('Bouche-à-oreille et avis\n% de clientes en plus pour 100 venues de la pub', st.t + '.viral', o.viral ?? 20)}</div>
-        <p class="muted">20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
+        <p class="muted">15 à 20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
         ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`)}
       ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
         ${linkFields(a, o, st.t)}
