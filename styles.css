@@ -440,6 +440,10 @@ details.card.product[open] .pstats { display: none; }
 /* Acquisition : une ligne par produit */
 .pal-sum dd.ok { color: var(--good); } .pal-sum dd.mid { color: #b7791f; } .pal-sum dd.bad { color: var(--bad); }
 .acq-res { margin: 4px 0 0; }
+.acq-chart { margin: 4px 0 14px; }
+.acq-chart svg { width: 100%; height: auto; display: block; }
+.acq-chart figcaption { display: flex; gap: 14px; font-size: 12px; color: var(--ink-soft); margin-top: 4px; }
+.acq-chart figcaption i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
 .camp { padding: 10px 12px; margin: 0 0 10px; border-radius: 14px; background: var(--ground); }
 .camp .lrow { background: none; padding: 0; margin: 0 0 6px; }
 .acq-tab { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }

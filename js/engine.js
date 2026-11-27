@@ -38,6 +38,11 @@ function weeklyRate(p, w) {
     }
     return b;
   }
+  // Courbe en S : l'appli est d'abord peu connue, la croissance s'accélère avec les avis, puis se stabilise à maturité.
+  if (p.shape === 's') {
+    const t = Math.min(1, Math.max(0, w) / duration), L = x => 1 / (1 + Math.exp(-10 * (x - 0.5)));
+    return a + (b - a) * (L(t) - L(0)) / (L(1) - L(0));
+  }
   return a + Math.sign(b - a) * Math.min(Math.abs(b - a), Math.floor(Math.max(0, w) * changes / duration) * step);
 }
 

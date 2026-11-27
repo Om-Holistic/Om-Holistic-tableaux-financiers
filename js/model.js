@@ -54,7 +54,8 @@ function program(name, start, prices, duration) {
     initial: 2, target: 5, months: 24, step: 1,
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
     // organic : le rythme saisi ici compte (clientes venues sans pub). campaigns : campagnes pub, réglées dans Acquisition.
-    organic: true, campaigns: []
+    // shape : forme de la croissance sans pub, 's' (en S, notoriété) ou 'lin' (paliers réguliers).
+    organic: true, campaigns: [], shape: 's'
   };
 }
 
@@ -74,7 +75,7 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: []
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's'
     },
     programs: []
   };
@@ -454,6 +455,8 @@ function migrate(state) {
       q.organic = !q.adMode;
     }
     if (q.organic === undefined) q.organic = true;
+    // Les rythmes déjà saisis gardent leur forme : paliers réguliers.
+    if (!q.shape) q.shape = 'lin';
     delete q.adMode; delete q.adSteps;
   }
   if (!state.vat) state.vat = { ttc: false, rate: 20 };

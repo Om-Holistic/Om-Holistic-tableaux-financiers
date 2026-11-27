@@ -108,3 +108,17 @@ test('ancien budget pub par paliers : converti en campagnes datées', () => {
   assert.strictEqual(n.organic, false);
   assert.deepStrictEqual(n.campaigns, [{ start: '2028-01', end: '2028-06', budget: 1000, cac: 40 }, { start: '2028-07', end: '', budget: 2000, cac: 40 }]);
 });
+
+test('croissance en S : départ au rythme initial, maturité au rythme visé, accélération au milieu', () => {
+  const p = { initial: 2, target: 100, months: 36, shape: 's' }, d = Math.round(36 * 52 / 12);
+  assert.ok(Math.abs(E.weeklyRate(p, 0) - 2) < 1e-9);
+  assert.ok(Math.abs(E.weeklyRate(p, d) - 100) < 1e-9 && E.weeklyRate(p, d + 50) === 100);
+  const q1 = E.weeklyRate(p, d / 4) - 2, mid = E.weeklyRate(p, d / 2);
+  assert.ok(q1 < 10, String(q1)); assert.ok(Math.abs(mid - 51) < 1, String(mid));
+});
+
+test('ancien rythme : il garde sa forme en paliers réguliers', () => {
+  const old = M.defaultState(); for (const q of [old.apps[0].sub, ...old.apps[0].programs]) delete q.shape;
+  const s = M.migrate(old);
+  assert.strictEqual(s.apps[0].sub.shape, 'lin'); assert.strictEqual(s.apps[0].programs[0].shape, 'lin');
+});
