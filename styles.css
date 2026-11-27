@@ -754,6 +754,8 @@ html, body { overscroll-behavior-y: none; }
     box-shadow: 0 0 0 12px var(--ground);
   }
   #page > details.hero.banner[open]:first-child { max-height: 60vh; overflow-y: auto; }
+  /* Le bandeau fixe porte une marge de fond de 12 px : la carte suivante démarre plus bas pour ne pas être rognée. */
+  #page > details.hero.banner:first-child + details.card { margin-top: 26px; }
 }
 
 /* Téléphone : la page ne bouge jamais en largeur. Seuls les tableaux larges défilent dans leur cadre.

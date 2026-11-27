@@ -1328,10 +1328,10 @@ function goalBlock(a, st, p) {
 // Raccourci depuis Acquisition : le vivier alimente le sans pub, et le bouton pré-remplit tous les produits.
 function audienceLink(a, p) {
   const from = appStart(a), used = [a.sub, ...a.programs.filter(q => q.enabled)].filter(q => q.shape === 'brand' && !q.palierMode && q.organic !== false);
-  return `<details class="card" id="acq-brand" ${view.open.has('acq-brand') ? 'open' : ''}><summary><span>Sans pub depuis ton vivier<br><span class="sum-sub">${num(Math.round(audienceAt(a, from)))} → ${num(Math.round(audienceAt(a, addMonths(from, 36))))} personnes en 3 ans · ${used.length} produit${used.length > 1 ? 's' : ''} branché${used.length > 1 ? 's' : ''}</span></span></summary>
+  return `<details class="card" id="acq-brand" ${view.open.has('acq-brand') ? 'open' : ''}><summary><span>Sans pub depuis ton vivier<br><span class="sum-sub">${num(Math.round(audienceAt(a, from)))} → ${num(Math.round(audienceAt(a, PLAN_END)))} personnes d'ici fin ${PLAN_END.slice(0, 4)} · ${used.length ? `utilisé par ${used.map(q => esc(q === a.sub ? soloName(a) : q.name)).join(', ')}` : 'aucun produit ne l\'utilise encore'}</span></span></summary>
     <p class="muted">Le sans pub de chaque produit vient de ton vivier (abonnées Instagram et newsletter), réglé sur la page <a href="#notoriete" data-goto="notoriete">Notoriété</a>. Un produit lancé plus tard profite du vivier déjà construit.</p>
-    <div class="row"><button data-prefill="${esc(p)}">Pré-remplir tous les produits</button></div>
-    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Tout reste modifiable.</p>
+    <div class="row"><button data-prefill="${esc(p)}">Remettre les taux conseillés pour tous les produits</button></div>
+    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux ici, dans sa partie « Sans pub ».</p>
   </details>`;
 }
 // ---------- Notoriété : ton vivier, et ce qui le fait grandir (relais → Instagram → newsletter, puis stores) ----------
@@ -1438,7 +1438,7 @@ function acquisitionPage(a, i) {
     const rows = win.map(m => { const c = campaignClients(o, m.month), f = st.fresh(m);
       return `<tr><td>${monthShort(m.month)}</td><td>${num(Math.round(Math.max(0, f - c)))}</td><td>${c ? num(Math.round(c)) : '—'}</td>${prog ? `<td>${num(Math.round(st.solo(m)))}</td>` : ''}<td><b>${num(Math.round(f + (prog ? st.solo(m) : 0)))}</b></td><td>${campaignBudget(o, m.month) ? short(campaignBudget(o, m.month)) : '—'}</td></tr>`; }).join('');
     const orgOn = o.organic !== false;
-    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois</span>
+    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
       ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1).filter(m => m.month <= PLAN_END).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
       ${goalBlock(a, st, p)}
