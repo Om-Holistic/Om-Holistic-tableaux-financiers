@@ -1369,9 +1369,11 @@ function productStory(a, st, p, campaign) {
   const solo = soloName(a), at = sg => monthName(sg.at);
   const list = f => segs.length ? `Soit ${segs.map(sg => `${u(f(sg))} en ${at(sg)}`).join(', ')}.` : '';
   const s0 = segs.length ? focusSeg(segs) : null;
+  // Le chiffre d'en-tête vaut pour une date : on la dit. Les étapes qui listent chaque date n'en ont pas.
+  const on = v => s0 ? `${v}<small>en ${monthName(s0.at)}</small>` : v;
 
   // 1. Objectif
-  const goal = step(st.id + '-i1', 'cal', prog ? 'Ton objectif' : 'Ton objectif d\'abonnées', s0 ? u(s0.count) : 'aucun',
+  const goal = step(st.id + '-i1', 'cal', prog ? 'Ton objectif' : 'Ton objectif d\'abonnées', s0 ? on(u(s0.count)) : 'aucun',
     steps.length ? `${prog ? 'Combien d\'inscriptions par an tu vises' : kind === 'active' ? 'Combien d\'abonnées en même temps tu vises' : 'Combien de nouvelles abonnées par an tu vises'}, et quand. Compté depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'}). ${segs.length ? `Soit ${segs.map(sg => `${u(sg.count)} en ${at(sg)}`).join(', ')}.` : ''}`
       : 'Fixe un objectif : l\'outil calcule ce qui manque et la pub qu\'il faut. Sans objectif, tu règles toi-même ta pub plus bas.',
     `${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
@@ -1385,7 +1387,7 @@ function productStory(a, st, p, campaign) {
     <div class="grid">${field('Effet boule de neige de la pub\n% de clientes en plus pour 100 venues de la pub', t + '.viral', o.viral ?? 20)}</div>
     <p class="muted">Bouche-à-oreille et avis : 15 à 20 % est prudent, on voit de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans le sans pub.</p>
     ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`;
-  const org = step(st.id + '-i2', 'ins', brand && orgOn ? 'Sans pub, depuis ton vivier' : 'Sans pub', !orgOn ? 'non compté' : s0 ? u(free(s0)) : `${num(Math.round(st.orgN))} sur 12 mois`,
+  const org = step(st.id + '-i2', 'ins', brand && orgOn ? 'Sans pub, depuis ton vivier' : 'Sans pub', !orgOn ? 'non compté' : s0 ? on(u(free(s0))) : `${num(Math.round(st.orgN))} sur 12 mois`,
     !orgOn ? `Aucune ${who} sans pub n'est comptée : la case est décochée dans les autres réglages.`
       : `Ce qui arrive seul, sans payer. ${list(free)}${brand ? ` ${brandNote(o, a, prog ? 'clientes' : 'abonnées')}` : ''}`,
     (orgOn && !brand ? `<div class="notice"><p><b>${o.palierMode ? 'Tu as saisi des paliers à la main' : 'Ce produit suit sa propre courbe'}</b> : ton vivier n'est pas utilisé, les chiffres ci-dessous sont ceux que tu as tapés.</p>
@@ -1394,12 +1396,12 @@ function productStory(a, st, p, campaign) {
     + (orgOn ? growthFields(o, t, prog ? 'Clientes' : 'Abonnées', a) : '') + more(st.id + '-org', 'Autres réglages du sans pub', growth));
 
   // 3. Venues de l'abonnement
-  const link = !prog ? '' : step(st.id + '-i3', 'sub', `Venues de ${esc(solo)}`, s0 ? u(s0.solo || 0) : `${num(Math.round(st.soloN))} sur 12 mois`,
+  const link = !prog ? '' : step(st.id + '-i3', 'sub', `Venues de ${esc(solo)}`, s0 ? on(u(s0.solo || 0)) : `${num(Math.round(st.soloN))} sur 12 mois`,
     `Des abonnées de ${esc(solo)} qui achètent aussi ${esc(o.name)}. Elles ne coûtent rien à trouver. ${list(sg => sg.solo || 0)}${linkCount(a, o).replace(/<\/?p[^>]*>/g, ' ')}`,
     `<div class="grid one">${field(`Achat du programme depuis l'abonnement (% par an)\nPart des abonnées ${solo} qui achètent ${o.name} dans l'année`, t + '.fromSolo', o.fromSolo)}${field(o.gift ? `Deviennent abonnées payantes après l'offre (%)\nPart des clientes ${progName(a, o)} qui gardent ${solo} en payant après l'année offerte` : `Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, o)} qui gardent ${solo} à la fin`, t + '.toSolo', o.toSolo)}</div>`);
 
   // 4. Reste à trouver par la pub
-  const gap = !segs.length ? '' : step(st.id + '-i4', 'promo', 'Reste à trouver par la pub', left(s0) ? u(left(s0)) : 'rien',
+  const gap = !segs.length ? '' : step(st.id + '-i4', 'promo', 'Reste à trouver par la pub', '',
     'Ton objectif, moins ce qui arrive seul.',
     segs.map(sg => `<p class="eq"><b>${at(sg)}</b> : ${u(sg.count)} − ${num(Math.round(free(sg)))} sans pub${prog ? ` − ${num(Math.round(sg.solo || 0))} de ${esc(solo)}` : ''} = ${left(sg) ? `<b>${num(left(sg))}</b>` : '<b class="pos">rien ✓</b>'}</p>`).join(''));
 
@@ -1410,7 +1412,7 @@ function productStory(a, st, p, campaign) {
   const reached = segs.every(sg => sg.current + 0.5 >= sg.count);
   const budget = !segs.length
     ? step(st.id + '-i5', 'promo', 'Ta pub', camps.length ? `${money(Math.round(st.pubB / 12))} / mois` : 'aucune', `Sans objectif, tu choisis toi-même tes campagnes : budget par mois et coût d'une ${who}. Le budget de chaque mois est compté dans Charges, ligne « Campagnes pub ».`, campBody)
-    : step(st.id + '-i5', 'promo', 'Budget pub', P.auto ? (s0.budget ? `${money(s0.budget)} / mois` : '0 €') : `${money(Math.round(st.pubB / 12))} / mois`,
+    : step(st.id + '-i5', 'promo', 'Budget pub', '',
       `${P.auto ? 'Calculé tout seul : ce qui reste à trouver, multiplié par le coût d\'une ' + who + ' venue de la pub. Il change dès que tu modifies l\'objectif, le vivier ou le coût.' : 'Tu saisis tes propres campagnes. Coche la case pour revenir au calcul automatique.'} Le budget de chaque mois est compté dans Charges, ligne « Campagnes pub ».`,
       check('La pub suit mon objectif (calcul automatique)', t + '.goal.auto', P.auto)
       + (P.auto ? (lines || '<p class="eq pos">Pas de pub nécessaire : ce qui arrive seul suffit.</p>')
