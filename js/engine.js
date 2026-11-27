@@ -165,11 +165,13 @@ function simulate(a, soloStock) {
     // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
       const trial = pos(a.sub.trialDays);
-      const count = vol * weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * (trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1);
+      // Budget pub : le coût d'acquisition est celui d'une abonnée payante, donc le budget donne directement les payantes.
+      const conv = trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1;
+      const count = vol * (a.sub.adMode ? adRate(a.sub, monthKey(d)) : weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * conv);
       const paid = new Date(+d + trial * DAY);
       const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
       credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
-      if (trial > 0) credit(d, (mm, share) => { mm.trials += weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * share; });
+      if (trial > 0) credit(d, (mm, share) => { mm.trials += (conv ? count / vol / conv : 0) * share; });
     }
     // Plan avec levée : abonnées payantes apportées par la publicité, montée en charge sur quelques mois.
     const paid = a.paid;

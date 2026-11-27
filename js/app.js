@@ -72,8 +72,8 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'calendrier', 'utilisatrices', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
-const SETTINGS_PAGES = ['calendrier', 'charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'calendrier', 'utilisatrices', 'acquisition', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
+const SETTINGS_PAGES = ['calendrier', 'acquisition', 'charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
@@ -195,13 +195,7 @@ function programCard(a, q, j, p) {
       ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
         <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
       ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
-        ${check('Calculer les inscriptions à partir de mon budget pub', t + '.adMode', q.adMode)}
-        ${q.adMode ? `<div class="grid">${field('Coût d\'acquisition\n€ par nouvelle cliente', t + '.acq', q.acq || 0)}</div>
-        <h4>Budget pub par mois</h4>
-        ${(q.adSteps || []).map((x, k) => lineEditor(x, `${t}.adSteps.${k}`, [['start', 'À partir de', 'month'], ['budget', 'Budget (€ / mois)']], 'Retirer ce budget')).join('') || '<p class="muted">Aucun budget saisi.</p>'}
-        <div class="row"><button data-add="${t}.adSteps">Ajouter un budget</button></div>
-        ${+q.acq > 0 && adNow.length ? `<p class="pal-ok">${adNow.map(x => `Dès ${monthName(x.start)} : ${money(+x.budget || 0)} ÷ ${money(+q.acq)} = <b>${num(Math.round((+x.budget || 0) / +q.acq))} clientes par mois</b>`).join('<br>')}</p>` : '<p class="muted">Indique un coût par cliente et un budget pour voir le nombre de clientes.</p>'}
-        <p class="muted">Ces clientes s'ajoutent aux abonnées qui achètent le programme. Le budget entre dans les charges (publicité).</p>` : `
+        ${q.adMode ? `<p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="acq-p${j}" data-anchor="acq-p${j}">Inscriptions calculées à partir de ton budget pub : Acquisition ›</a></p>` : `
         <h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
         ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
         <h4>Ensuite, montée en puissance</h4>${fields(q, t, growth)}
@@ -305,6 +299,7 @@ function productsPage(a, i) {
       <div class="grid">${field('Durée moyenne d\'abonnement\nmois, aussi après un programme', p + '.sub.duration', a.sub.duration)}</div>
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
       <p class="muted"><a href="#calendrier" data-goto="calendrier" data-open="cal-sd" data-anchor="cal-sd">Ouverture des abonnements : Calendrier ›</a></p>
+      ${a.sub.adMode ? `<p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="acq-sd" data-anchor="acq-sd">Abonnements calculés à partir de ton budget pub : Acquisition ›</a></p>` : ''}
       ${section('open-sd', 'cal', 'Rythme d\'abonnements', `${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
         ${a.sub.palierMode ? a.sub.paliers.map((r, k) => lineEditor(r, p + '.sub.paliers.' + k, [['rate', 'Abonnées / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${p}.sub.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier, le rythme reste à l'objectif / semaine : ${num(a.sub.target)}.</p>` : fields(a.sub, p + '.sub', growth)}
 `)}
@@ -1316,30 +1311,73 @@ function clientValue(a, k) {
   const q = a.programs[k];
   return lastPrice(q.pricing) + Math.min(100, +q.toSolo || 0) / 100 * lastPrice(a.sub.postPricing) * sub(a.sub.duration);
 }
-// Canaux de vente et coût d'acquisition : ce que coûte une nouvelle cliente, face à ce qu'elle rapporte.
-function acquisitionCard(a, p) {
-  const ch = a.channels || { store: 0, storeRate: 15 };
-  const sim = simulate(a).months, firstYear = sim.filter(m => m.month >= (appDates([a]).launch || appStart(a))).slice(0, 12);
-  const pub = (a.charges || []).filter(c => c.category === 'marketing' && c.type === 'fixe').reduce((t, c) => t + firstYear.reduce((s, m) => s + (chargeAt(c, m.month, appDates([a])) || 0), 0), 0);
-  const fresh = firstYear.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) + m.products.reduce((x, q) => x + q.admissions - (q.fromSolo || 0), 0), 0);
-  const rows = [['sub', soloName(a), a.sub, p + '.sub'], ...a.programs.map((q, j) => q.enabled ? [j, progName(a, q), q, `${p}.programs.${j}`] : null).filter(Boolean)].map(([k, name, o, t]) => {
-    const v = clientValue(a, k), acq = +o.acq || 0, avg = fresh ? pub / fresh : 0, cost = acq || avg, ratio = cost ? v / cost : null;
-    return `<div class="acq-row"><div class="acq-name"><b>${esc(name)}</b><span class="muted">vaut environ ${money(v)} par cliente sur sa durée de vie</span></div>
-      ${field('Coût d\'acquisition\n€ par nouvelle cliente', t + '.acq', o.acq || 0)}
-      <span class="acq-ratio ${ratio === null ? '' : ratio >= 3 ? 'ok' : ratio >= 1 ? 'mid' : 'bad'}">${ratio === null ? 'coût non renseigné' : `rapporte ${ratio.toLocaleString('fr-FR', { maximumFractionDigits: 1 })} × ${acq ? 'son coût' : 'la pub moyenne'}`}</span></div>`;
+// ---------- Acquisition : canaux de vente, budget pub et coût d'une nouvelle cliente, produit par produit ----------
+const acqHidden = (() => { try { return new Set(JSON.parse(localStorage.getItem('om-acq-hidden') || '[]')); } catch { return new Set(); } })();
+const saveAcqHidden = () => { try { localStorage.setItem('om-acq-hidden', JSON.stringify([...acqHidden])); } catch { /* stockage indisponible */ } };
+function acquisitionPage(a, i) {
+  const p = 'apps.' + i, ch = a.channels || { store: 0, storeRate: 15 }, dates = appDates([a]);
+  const r = results(), x = r.all[i], ms = x.months;
+  // Fenêtre de lecture : les 12 mois à partir d'aujourd'hui, ou du lancement s'il est plus tard.
+  const from = [thisMonth, dates.launch || appStart(a)].sort().at(-1), k0 = Math.max(0, ms.findIndex(m => m.month >= from)), win = ms.slice(k0, k0 + 12), pnl = x.pnl.slice(k0, k0 + 12);
+  const htK = htShare(state, a);
+  const prods = [{ key: 'sub', name: soloName(a), o: a.sub, t: p + '.sub', id: 'acq-sd', fresh: m => m.newDirect.reduce((u, v) => u + v, 0) },
+    ...a.programs.map((q, j) => q.enabled ? { key: q.id, name: progName(a, q), o: q, j, t: `${p}.programs.${j}`, id: 'acq-p' + j, fresh: m => m.products[j].admissions - (m.products[j].fromSolo || 0) } : null).filter(Boolean)];
+  const shown = x2 => !acqHidden.has(x2.key);
+  const pubFixed = (a.charges || []).filter(c => c.category === 'marketing' && c.type === 'fixe');
+  const fixedYear = pubFixed.reduce((t, c) => t + win.reduce((u, m) => u + (chargeAt(c, m.month, dates) || 0), 0), 0);
+  const acqYear = pnl.reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
+  const freshYear = prods.reduce((t, x2) => t + win.reduce((u, m) => u + x2.fresh(m), 0), 0);
+  const stats = prods.map(x2 => {
+    const o = x2.o, cac = +o.acq || 0, v = clientValue(a, x2.j ?? 'sub') * htK, n = win.reduce((u, m) => u + x2.fresh(m), 0);
+    const steps = (o.adSteps || []).filter(s2 => s2.start).sort((u, w) => u.start.localeCompare(w.start));
+    const budgetNow = o.adMode ? (steps.filter(s2 => s2.start <= from).at(-1)?.budget ?? 0) : cac * n / 12;
+    const price = x2.key === 'sub' ? (+phaseAt(a.sub.directPricing, from).price || 0) * htK : (+phaseAt(o.pricing, from).price || 0) * htK;
+    // Délai pour rentrer dans ses frais : une abonnée rembourse son coût mois après mois ; un programme se paie d'un coup.
+    const payback = !cac || !price ? null : x2.key === 'sub' ? cac / price : cac <= price ? 0 : null;
+    return { ...x2, cac, v, n, steps, budgetNow: +budgetNow || 0, ratio: cac ? v / cac : null, payback };
+  });
+  const best = stats.filter(x2 => x2.ratio !== null).sort((u, w) => w.ratio - u.ratio)[0];
+  const list = `<div class="ucheck"><label class="uc"><input type="checkbox" data-acqall ${prods.every(shown) ? 'checked' : ''}><span>Tout</span></label>${prods.map(x2 => `<label class="uc"><input type="checkbox" data-acqshow="${esc(x2.key)}" ${shown(x2) ? 'checked' : ''}><span>${esc(x2.key === 'sub' ? soloName(a) : x2.o.name)}</span></label>`).join('')}</div>`;
+  const picker = pickPop('pk-acq', 'Produits affichés', list, prods.filter(shown).map(x2 => x2.key === 'sub' ? 'Abonnement' : x2.o.name), prods.length);
+  const ratioCls = st => st.ratio === null ? '' : st.ratio >= 3 ? 'ok' : st.ratio >= 1 ? 'mid' : 'bad';
+  const cards = stats.filter(shown).map(st => {
+    const o = st.o;
+    return `<details class="card product${st.key === 'sub' ? ' solo' : ''}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${o.adMode ? 'piloté par le budget pub' : 'rythme saisi dans Produits'}</span>
+        ${pstats([['Pub / mois', money(st.budgetNow)], ['Coût / cliente', st.cac ? money(st.cac) : '—'], ['Clientes 12 mois', num(Math.round(st.n)), 'hi'], ['LTV / CAC', st.ratio === null ? '—' : fmtN(st.ratio, 1), st.ratio !== null && st.ratio < 1 ? 'bad' : '']])}</span></summary>
+      <div class="grid">${field('Coût d\'acquisition\n€ par nouvelle ' + (st.key === 'sub' ? 'abonnée payante' : 'cliente'), st.t + '.acq', o.acq || 0)}</div>
+      ${check('Calculer les ' + (st.key === 'sub' ? 'abonnements' : 'inscriptions') + ' à partir de mon budget pub', st.t + '.adMode', o.adMode)}
+      ${o.adMode ? `<h4>Budget pub par mois</h4>
+        ${(o.adSteps || []).map((s2, k) => lineEditor(s2, `${st.t}.adSteps.${k}`, [['start', 'À partir de', 'month'], ['budget', 'Budget (€ / mois)']], 'Retirer ce budget')).join('') || '<p class="muted">Aucun budget saisi.</p>'}
+        <div class="row"><button data-add="${st.t}.adSteps">Ajouter un budget</button></div>
+        ${st.cac && st.steps.length ? `<p class="pal-ok acq-res">${st.steps.map(s2 => `Dès ${monthName(s2.start)} : ${money(+s2.budget || 0)} ÷ ${money(st.cac)} = <b>${num(Math.round((+s2.budget || 0) / st.cac))} ${st.key === 'sub' ? 'abonnées' : 'clientes'} par mois</b>`).join('<br>')}</p>` : '<p class="muted">Indique un coût par cliente et un budget pour voir le nombre de clientes.</p>'}`
+        : `<p class="muted">Le nombre de ${st.key === 'sub' ? 'nouvelles abonnées' : 'clientes'} vient du rythme saisi dans <a href="#produits" data-goto="produits" data-open="${st.key === 'sub' ? 'sd' : 'p' + st.j}" data-anchor="${st.key === 'sub' ? 'sd' : 'p' + st.j}">Produits</a>. Chacune coûte le montant ci-dessus.</p>`}
+      <dl class="pal-sum">
+        <div><dt>Valeur d'une ${st.key === 'sub' ? 'abonnée' : 'cliente'}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
+        <div><dt>Face à son coût</dt><dd class="${ratioCls(st)}">${st.ratio === null ? 'coût à saisir' : `rapporte ${fmtN(st.ratio, 1)} ×`}<small>${st.payback === null ? (st.cac ? 'plus cher que le prix du programme' : '') : st.payback === 0 ? 'rentabilisée dès l\'achat' : `rentabilisée en ${fmtN(st.payback, 1)} mois`}</small></dd></div>
+      </dl>
+      ${st.key !== 'sub' ? '<p class="muted">Les abonnées qui achètent le programme ne coûtent rien à acquérir.</p>' : ''}</details>`;
   }).join('');
-  return `<details class="card" id="ch-acq" ${view.open.has('ch-acq') ? 'open' : ''}><summary><span>Canaux de vente et acquisition<br><span class="sum-sub">${+ch.store ? `${num(ch.store)} % par les stores à ${num(ch.storeRate)} %` : 'tout par le site (Stripe)'} · ${fresh ? `publicité ≈ ${money(pub / fresh)} par nouvelle cliente la 1re année` : 'acquisition à régler'}</span></span></summary>
-    <h4>Où paient tes clientes</h4>
-    <div class="grid">${field('Ventes passées par l\'App Store\net Google Play (%)', p + '.channels.store', ch.store)}${field('Commission des stores\n(%)', p + '.channels.storeRate', ch.storeRate)}</div>
-    <p class="muted">15 % pour les petits éditeurs (moins d'un million de dollars par an), 30 % au-delà. Les frais Stripe de tes charges ne s'appliquent plus qu'à la part vendue sur ton site. Par défaut : tout sur le site, à ajuster.</p>
-    <h4>Où vivent tes clientes</h4>
-    <div class="grid">${state.vat.zones.map(z => field(z.name + '\n% des ventes', `${p}.zones.${z.id}`, (a.zones || {})[z.id] || 0)).join('')}</div>
-    ${(() => { const t = state.vat.zones.reduce((s2, z) => s2 + (+(a.zones || {})[z.id] || 0), 0); return Math.abs(t - 100) > 0.5 ? `<p class="warn">Total : ${num(t)} %. Les parts sont ramenées à 100 %.</p>` : ''; })()}
-    <p class="muted">La TVA de chaque zone se règle dans <a href="#reglages" data-goto="reglages" data-open="st-vat" data-anchor="st-vat">Réglages › TVA</a>.</p>
-    <h4>Ce que coûte une nouvelle cliente</h4>
-    <p class="muted">Ta publicité fixe (catégorie Marketing) revient à environ <b>${fresh ? money(pub / fresh) : '—'}</b> par nouvelle cliente la première année (${money(pub)} pour ${num(fresh)} nouvelles clientes). Tu peux aussi raisonner par cliente : indique un coût par nouvelle cliente, il s'ajoute à la publicité fixe (mets alors celle-ci à 0 pour ne pas compter deux fois).</p>
-    ${rows}
-    <p class="muted">Une cliente doit rapporter au moins 3 fois ce qu'elle coûte à acquérir pour que la croissance soit saine. Les clientes venues de l'abonnement ne coûtent rien à acquérir.</p></details>`;
+  return `${banner({ label: `Pub par mois · ${esc(a.name)}`, big: short((acqYear + fixedYear) / 12),
+      note: `Publicité sur les 12 mois à partir de ${monthName(from)} : ${money(Math.round(acqYear + fixedYear))} pour ${num(Math.round(freshYear))} nouvelles clientes.`,
+      tiles: [
+        { label: 'Pub sur 12 mois', mini: 'Pub 12 mois', value: short(acqYear + fixedYear), hint: `dont ${short(fixedYear)} de pub fixe` },
+        { label: 'Nouvelles clientes', mini: 'Clientes', value: num(Math.round(freshYear)), hint: 'sur 12 mois, hors abonnées venues aux programmes' },
+        { label: 'Coût moyen', mini: false, value: freshYear ? money((acqYear + fixedYear) / freshYear) : '—', hint: 'par nouvelle cliente' },
+        { label: 'Meilleur rapport', mini: false, value: best ? esc(best.key === 'sub' ? 'Abonnement' : best.o.name) : '—', cls: 'txt', hint: best ? `rapporte ${fmtN(best.ratio, 1)} × son coût` : 'coûts à saisir' }
+      ] })}
+    ${picker}
+    ${cards}
+    <details class="card" id="acq-fixed" ${view.open.has('acq-fixed') ? 'open' : ''}><summary><span>Publicité fixe<br><span class="sum-sub">${pubFixed.length ? `${pubFixed.length} charge${pubFixed.length > 1 ? 's' : ''} · ${money(Math.round(fixedYear))} sur 12 mois` : 'aucune'}</span></span></summary>
+      ${pubFixed.length ? `<ul class="where">${pubFixed.map(c => `<li>${esc(c.name)} : ${money(Math.round(win.reduce((u, m) => u + (chargeAt(c, m.month, dates) || 0), 0)))} sur 12 mois</li>`).join('')}</ul>` : ''}
+      <p class="muted">Budget qui ne dépend pas du nombre de clientes (agence, contenus, image). Il se règle dans <a href="#charges" data-goto="charges">Charges</a>, catégorie Publicité. Ne le compte pas en plus d'un budget pub par produit.</p></details>
+    <details class="card" id="acq-ch" ${view.open.has('acq-ch') ? 'open' : ''}><summary><span>Canaux de vente<br><span class="sum-sub">${+ch.store ? `${num(ch.store)} % par les stores à ${num(ch.storeRate)} %` : 'tout par le site'} · ${state.vat.zones.filter(z => +(a.zones || {})[z.id] > 0).map(z => `${esc(z.name.split(' ')[0])} ${num(+a.zones[z.id])} %`).slice(0, 3).join(' · ')}</span></span></summary>
+      <h4>Où paient tes clientes</h4>
+      <div class="grid">${field('Ventes passées par l\'App Store\net Google Play (%)', p + '.channels.store', ch.store)}${field('Commission des stores\n(%)', p + '.channels.storeRate', ch.storeRate)}</div>
+      <p class="muted">15 % pour les petits éditeurs (moins d'un million de dollars par an), 30 % au-delà. Les frais Stripe ne portent que sur la part vendue sur ton site.</p>
+      <h4>Où vivent tes clientes</h4>
+      <div class="grid">${state.vat.zones.map(z => field(z.name + '\n% des ventes', `${p}.zones.${z.id}`, (a.zones || {})[z.id] || 0)).join('')}</div>
+      ${(() => { const t = state.vat.zones.reduce((s2, z) => s2 + (+(a.zones || {})[z.id] || 0), 0); return Math.abs(t - 100) > 0.5 ? `<p class="warn">Total : ${num(t)} %. Les parts sont ramenées à 100 %.</p>` : ''; })()}
+      <p class="muted">La TVA de chaque zone se règle dans <a href="#reglages" data-goto="reglages" data-open="st-vat" data-anchor="st-vat">Réglages › TVA</a>.</p></details>`;
 }
 
 // Compte d'exploitation de la période choisie en haut, présenté comme un compte de résultat différentiel :
@@ -1412,7 +1450,7 @@ function chargesPage(a, i) {
         { label: 'Estimations', value: num(est), hint: `${list.length - est - todo} confirmée${list.length - est - todo > 1 ? 's' : ''}` }
       ] })}
     ${chargesPeriodCard(a, i, r)}
-    ${acquisitionCard(a, p)}
+    <p class="muted"><a href="#acquisition" data-goto="acquisition">Canaux de vente, budget pub et coût par cliente : Acquisition ›</a></p>
     <details class="card" id="ch-ramp" ${view.open.has('ch-ramp') ? 'open' : ''}><summary>Montée en charge de ${esc(a.name)}</summary>${chargeRamp(a.charges || [], dates, a.programs.length ? ['le coaching'] : [])}</details>
     ${chargeFold('ch-var', `Charges variables de ${esc(a.name)}`, `${nV} charge${nV > 1 ? 's' : ''}${tot ? ` · ${money(tot.v)} ${periodName()}` : ''}`,
       `${chargeGroups(a.charges || [], p + '.charges', a, dates, scopes, c => !isFixed(c)) || '<p class="muted">Aucune pour l\'instant.</p>'}
@@ -2024,7 +2062,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { acquisition: () => acquisitionPage(a, i), calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -2083,6 +2121,13 @@ document.addEventListener('change', async e => {
   } else if (t.dataset.userall !== undefined) {
     if (t.checked) usersHidden.clear(); else userSeries(results()).forEach(x => usersHidden.add(x.key));
     saveUsersHidden(); render();
+  } else if (t.dataset.acqshow !== undefined) {
+    if (t.checked) acqHidden.delete(t.dataset.acqshow); else acqHidden.add(t.dataset.acqshow);
+    saveAcqHidden(); render();
+  } else if (t.dataset.acqall !== undefined) {
+    const a0 = state.apps[+view.app || 0];
+    if (t.checked) acqHidden.clear(); else ['sub', ...a0.programs.map(q => q.id)].forEach(k => acqHidden.add(k));
+    saveAcqHidden(); render();
   } else if (t.dataset.calshow !== undefined) {
     if (t.checked) calHidden.delete(t.dataset.calshow); else calHidden.add(t.dataset.calshow);
     saveCalHidden(); render();
