@@ -721,7 +721,12 @@ function alertsCard(r) {
   if (t.low.balance < 0) items.push(['bad', `Trésorerie négative en ${monthName(t.low.month)} : il faut ${money(-t.low.balance)} d'apport ou de prêt.`, { page: 'tresorerie' }]);
   for (const x of r.all) {
     const sf = capacityShortfall(x.a, x.weekly);
-    if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'coaching', app: x.i }]);
+    if (sf) {
+      // Les heures qui manquent sont payées à des coachs (coût horaire de l'appli) et déjà comptées dans les charges.
+      const ms = x.months.find(m => m.month === sf.month), rate = +x.a.coachRate || 0, cost = ms ? (ms.extraHours || 0) * rate : 0;
+      const paid = rate > 0 ? ` Soit environ ${money(Math.round(cost))} / mois de coachs, déjà compté dans tes charges.` : ` Pas encore de coût : règle le coût horaire d'une coach dans l'onglet Coaching.`;
+      items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.${paid}`, { page: 'coaching', app: x.i }]);
+    }
     const a = state.apps[x.i];
     const missed = [null, ...a.programs.map((q, j) => q.enabled ? j : -1).filter(j => j >= 0)].filter(j => { const pl = pubGapCached(a, j); return pl && pl.segs.some(sg => sg.current + 0.5 < sg.count); }).length;
     if (missed) items.push(['mid', `${esc(a.name)} : ${missed} objectif${missed > 1 ? 's' : ''} pas atteint${missed > 1 ? 's' : ''} avec les campagnes actuelles.`, { page: 'acquisition', app: x.i }]);
@@ -2620,3 +2625,53 @@ saveLabel();
   new MutationObserver(set).observe(document.getElementById('page') || document.body, { childList: true });
   set();
 })();
+
+// Page précédente / page suivante, comme dans un navigateur. Chaque page visitée reçoit un numéro dans l'historique :
+// « Précédent » est actif s'il y a une page avant, « Suivant » seulement après un retour en arrière.
+(() => {
+  const back = document.getElementById('navBack'), fwd = document.getElementById('navFwd');
+  if (!back || !fwd) return;
+  const load = k => { try { const v = sessionStorage.getItem(k); return v === null ? null : +v; } catch { return null; } };
+  const save = (k, v) => { try { sessionStorage.setItem(k, String(v)); } catch { /* stockage indisponible */ } };
+  let idx = null, top = load('om-nav-top');
+  const sync = () => {
+    const st = window.history.state;
+    if (st && Number.isInteger(st.navI)) idx = st.navI;
+    else {
+      // Nouvelle page ouverte (lien, menu) : elle se place après la page en cours et efface les pages « suivantes ».
+      // Au premier chargement, on reprend la position mémorisée (rechargement pour une nouvelle version).
+      idx = idx === null ? (load('om-nav-i') ?? 0) : idx + 1;
+      top = idx;
+      window.history.replaceState({ ...(st || {}), navI: idx }, '');
+    }
+    if (top === null || top < idx) top = idx;
+    save('om-nav-i', idx); save('om-nav-top', top);
+    back.disabled = idx <= 0;
+    fwd.disabled = idx >= top;
+  };
+  back.addEventListener('click', () => { if (!back.disabled) window.history.back(); });
+  fwd.addEventListener('click', () => { if (!fwd.disabled) window.history.forward(); });
+  window.addEventListener('hashchange', sync);
+  window.addEventListener('popstate', sync);
+  sync();
+
+  // Appli installée sur l'écran d'accueil (iPhone, iPad) : le glissement depuis le bord gauche revient en arrière,
+  // depuis le bord droit va à la page suivante. Dans Safari, le navigateur le fait déjà lui-même.
+  const standalone = navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+  if (!standalone) return;
+  let sx = 0, sy = 0, edge = 0;
+  document.addEventListener('touchstart', e => {
+    const t = e.touches[0];
+    edge = e.touches.length === 1 && !document.body.classList.contains('menu-open') && !document.body.classList.contains('modal-open')
+      ? (t.clientX < 24 ? -1 : t.clientX > innerWidth - 24 ? 1 : 0) : 0;
+    sx = t.clientX; sy = t.clientY;
+  }, { passive: true });
+  document.addEventListener('touchend', e => {
+    if (!edge) return;
+    const t = e.changedTouches[0], dx = t.clientX - sx, dy = Math.abs(t.clientY - sy);
+    if (dy < 50 && edge < 0 && dx > 70 && !back.disabled) window.history.back();
+    if (dy < 50 && edge > 0 && dx < -70 && !fwd.disabled) window.history.forward();
+    edge = 0;
+  }, { passive: true });
+})();
+
