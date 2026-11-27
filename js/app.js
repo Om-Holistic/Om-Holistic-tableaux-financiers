@@ -117,7 +117,7 @@ function fields(obj, prefix, defs) {
 function linkFields(a, q, path) {
   return '<div class="grid one">' +
     field(`Achat du programme depuis l'abonnement (% par an)\nPart des abonnées ${soloName(a)} qui achètent ${q.name} dans l'année`, path + '.fromSolo', q.fromSolo) +
-    field(+q.giftMonths > 0 ? `Deviennent abonnées payantes après l'offre (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} en payant après ${num(+q.giftMonths)} mois offerts` : `Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
+    field(q.gift ? `Deviennent abonnées payantes après l'offre (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} en payant après l'année offerte` : `Abonnement gardé après le programme (%)\nPart des clientes ${progName(a, q)} qui gardent ${soloName(a)} à la fin`, path + '.toSolo', q.toSolo) +
     '</div>' + linkCount(a, q);
 }
 // Ce que la passerelle représente concrètement : achats par an et abonnées concernées, un an après le lancement du programme.
@@ -174,14 +174,15 @@ function firstYear(from, f) {
 }
 const priceRange = grid => { const xs = phasesOf(grid).map(ph => +ph.price || 0); return xs.length ? (Math.min(...xs) === Math.max(...xs) ? price(xs[0]) : `${price(Math.min(...xs)).replace(/\s?€$/, '')} → ${price(Math.max(...xs))}`) : '—'; };
 
-// CHRYSALISS offert pendant X mois après la fin du programme, puis une part passe au payant.
+// CHRYSALISS offert pendant 1 an depuis le début du programme (oui / non), puis une part passe au payant.
 function giftSection(a, q, j, t) {
-  const g = +q.giftMonths || 0, solo = esc(soloName(a)), total = Math.round((+q.duration || 0) * 12 / 52 + g);
+  const g = Math.round(giftWeeks(q) * 12 / 52), solo = esc(soloName(a));
   const ms = prodSim ? prodSim.months : [], peak = Math.max(0, ...ms.map(m => m.products[j]?.gifted || 0));
-  return section('gift-p' + j, 'sub', `${solo} offert après le programme`, g > 0 ? `${num(g)} mois offerts · ${num(+q.toSolo || 0)} % payantes ensuite` : `pas d'offre · ${num(+q.toSolo || 0)} % s'abonnent à la fin`, `
-    <div class="grid">${field(`Mois offerts\naprès la fin du programme (0 = aucun)`, t + '.giftMonths', q.giftMonths)}${field(`Deviennent payantes\naprès l'offre (%)`, t + '.toSolo', q.toSolo)}</div>
-    <p class="muted">${g > 0
-      ? `Les clientes de ${esc(q.name)} gardent ${solo} gratuitement ${num(g)} mois après le programme, soit environ ${num(total)} mois depuis leur début. Pendant l'offre, elles comptent dans Utilisatrices et dans les charges par cliente, sans chiffre d'affaires${peak >= 1 ? ` (jusqu'à ${num(Math.round(peak))} en même temps)` : ''}. À la fin de l'offre, ${num(+q.toSolo || 0)} % s'abonnent en payant et les autres partent.`
+  return section('gift-p' + j, 'sub', `${solo} offert après le programme`, q.gift ? `offert 1 an · ${num(+q.toSolo || 0)} % payantes ensuite` : `pas d'offre · ${num(+q.toSolo || 0)} % s'abonnent à la fin`, `
+    ${check(`${soloName(a)} offert pendant 1 an (programme inclus)`, t + '.gift', q.gift)}
+    <div class="grid one">${field(q.gift ? `Deviennent payantes\naprès l'année offerte (%)` : `Deviennent payantes\nà la fin du programme (%)`, t + '.toSolo', q.toSolo)}</div>
+    <p class="muted">${q.gift
+      ? `Soit <b>${num(g)} mois offerts après le programme</b> (1 an moins ${num(+q.duration || 0)} semaines de programme), recalculé si tu changes la durée. Les clientes de ${esc(q.name)} gardent ${solo} gratuitement pendant ce temps. Pendant l'offre, elles comptent dans Utilisatrices et dans les charges par cliente, sans chiffre d'affaires${peak >= 1 ? ` (jusqu'à ${num(Math.round(peak))} en même temps)` : ''}. À la fin de l'offre, ${num(+q.toSolo || 0)} % s'abonnent en payant et les autres partent.`
       : `Sans offre, ${num(+q.toSolo || 0)} % des clientes s'abonnent en payant dès la fin du programme.`} Les clientes déjà abonnées à ${solo} continuent de payer.</p>`);
 }
 function programCard(a, q, j, p) {
