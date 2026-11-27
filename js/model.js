@@ -585,6 +585,8 @@ function migrate(state) {
     else if (!g.steps) { g.steps = g.months > 12 ? [...defaultGoal().steps.filter(s => s.months < g.months), { months: g.months, count: g.count }] : [{ months: g.months, count: g.count }]; delete g.months; delete g.count; }
     if (!a.sub.paliers) { a.sub.paliers = []; a.sub.palierMode = false; }
     for (const p of a.programs) if (!p.goal) p.goal = defaultProgramGoal();
+    // Pub automatique : le budget suit l'objectif, sauf si des campagnes ont déjà été saisies à la main.
+    for (const q of [a.sub, ...a.programs]) if (q.goal && q.goal.auto === undefined) q.goal.auto = !(q.campaigns || []).length;
   }
   // Version 8 : catégories, démarrage relatif au calendrier, paliers. Les anciennes charges d'exemple sont remplacées.
   if ((state.version || 1) < 8) {

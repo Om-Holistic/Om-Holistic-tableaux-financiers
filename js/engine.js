@@ -8,7 +8,9 @@ if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, coachAt,
 const DAY = 86400000, WEEK = 7 * DAY;
 const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
 const monthDate = k => new Date(k + '-01T00:00:00Z');
-const monthKey = d => d.toISOString().slice(0, 7);
+// Clé « AAAA-MM » d'une date, mise en cache : la simulation la demande des centaines de milliers de fois.
+const monthKeys = new Map();
+const monthKey = d => { const t = +d; let k = monthKeys.get(t); if (k === undefined) { k = d.toISOString().slice(0, 7); if (monthKeys.size > 50000) monthKeys.clear(); monthKeys.set(t, k); } return k; };
 const addWeeks = (d, k) => new Date(+d + k * WEEK);
 const shiftMonth = (d, k) => new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + k, 1));
 // Premier lundi à partir de la date (la date elle-même si c'est un lundi).
@@ -60,10 +62,13 @@ function pointsAt(points, month, before) {
   return pos(ps.at(-1).n);
 }
 let audCache = { key: '', map: null };
+// Pendant une simulation, le vivier ne change pas : sa clé de cache n'est calculée qu'une fois.
+let simAud = null;
+const audKey = au => simAud && simAud.au === au ? simAud.key : JSON.stringify(au);
 function audienceSeries(a) {
   const au = a.audience;
   if (!au || !au.insta) return new Map();
-  const key = JSON.stringify(au);
+  const key = audKey(au);
   if (audCache.key === key) return audCache.map;
   const map = new Map(), from = au.from || '2026-11', last = HORIZON_END + '-12';
   let insta = pos(au.insta.count), news = pos(au.newsletter?.count), stores = 0;
@@ -93,7 +98,7 @@ const prodCache = new Map();
 function audienceBuyers(a, p, month) {
   const ser = audienceSeries(a), start = p.start || a.sub.start;
   if (!ser.size || !start || month < start) return 0;
-  const key = JSON.stringify([a.audience, start, p.audienceRate, p.audienceNew]);
+  const key = audKey(a.audience) + '|' + start + '|' + p.audienceRate + '|' + p.audienceNew;
   let map = prodCache.get(key);
   if (!map) {
     map = new Map();
@@ -137,6 +142,11 @@ function emptyMonth(month, a) {
 // Abonnées CHRYSALISS seul qui achètent un programme : il faut connaître le nombre d'abonnées de chaque mois.
 // On fait donc un premier passage sans ces achats (ils ne modifient pas ce nombre), puis le passage complet.
 function simulate(a, soloStock) {
+  const before = simAud;
+  simAud = { au: a.audience, key: JSON.stringify(a.audience) };
+  try { return simulateRun(a, soloStock); } finally { simAud = before; }
+}
+function simulateRun(a, soloStock) {
   if (!soloStock && a.programs.some(p => p.enabled && pos(p.fromSolo) > 0)) {
     const first = simulate(a, new Map());
     soloStock = new Map(first.months.map(m => [m.month, m.direct + m.post]));
@@ -150,6 +160,7 @@ function simulate(a, soloStock) {
   const credit = (d, fn) => { for (const [k, share] of weekShares(d)) { const m = months.get(k); if (m) fn(m, share); } };
 
   const events = [], weekly = [], pending = a.programs.map(() => 0);
+  let live = [];
   const coaching = a.programs.length > 0;
 
   // Calendrier de chaque programme : cohortes de test (premier lundi de leur mois), puis lancement commercial.
@@ -165,7 +176,9 @@ function simulate(a, soloStock) {
   for (let d = firstMonday(start); d <= end; d = addWeeks(d, 1)) {
     const m = months.get(monthKey(d));
     if (!m) continue;
-    const active = events.filter(e => e.end > d);
+    // Clientes encore dans leur programme : on retire celles qui ont fini, sans reparcourir tout l'historique.
+    live = live.filter(e => e.end > d);
+    const active = live;
     const step = capacityAt(a, monthKey(d));
     // Heures par cliente ce mois-ci : le temps de coaching peut baisser avec le temps (paliers du programme).
     const perH = i => coachAt(a.programs[i], monthKey(d)) / 60;
@@ -375,6 +388,8 @@ function pubGap(a, j) {
   const span = (u, w) => monthsBetween(u, w) + 1;
   const s = survival(a.sub.duration);
   const toCampaign = sg => ({ start: sg.start, end: sg.end, budget: Math.round(sg.perMonth * cac), cac });
+  // Ajuste les clientes par mois venues de la pub ; on s'arrête dès que l'objectif est atteint à une demi-cliente près.
+  const solve = (sg, run, count, per) => { for (let it = 0; it < 3; it++) { const gap = count - run(); if (Math.abs(gap) < 0.5 || (gap < 0 && sg.perMonth === 0)) break; sg.perMonth = Math.max(0, sg.perMonth + gap / per / (1 + pos(q.viral) / 100)); } };
   cq.campaigns = [];
   const base = simulate(copy), segs = [];
   let prev = start;
@@ -385,8 +400,8 @@ function pubGap(a, j) {
     if (kind === 'active') {
       // Une abonnée de plus par mois pendant L mois en laisse 1 + s + s² + … à la fin, à cause des résiliations.
       const L = span(prev, st.at), keep = s < 1 ? (1 - Math.pow(s, L)) / (1 - s) : L;
-      for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / keep / (1 + pos(q.viral) / 100));
-    } else for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / 12 / (1 + pos(q.viral) / 100));
+      solve(sg, run, st.count, keep);
+    } else solve(sg, run, st.count, 12);
     sg.free = value(base, st.at);
     // Part des arrivées gratuites venue de l'abonnement (passerelle), le reste vient du sans pub.
     const bm = j === null ? null : base.months.find(x => x.month === st.at);
@@ -395,7 +410,10 @@ function pubGap(a, j) {
   }
   if (segs.length) segs.at(-1).end = '';
   cq.campaigns = segs.map(toCampaign).filter(c => c.budget > 0);
-  const planned = simulate(copy), now = simulate(a);
+  const planned = simulate(copy);
+  // Campagnes déjà identiques au plan (mode automatique) : pas besoin de simuler une deuxième fois.
+  const sameCamps = JSON.stringify((q.campaigns || []).map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(cq.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
+  const now = sameCamps ? planned : simulate(a);
   segs.forEach(sg => { sg.reached = value(planned, sg.at); sg.current = value(now, sg.at); sg.budget = Math.round(sg.perMonth * cac); });
   return { kind, cac, segs, campaigns: cq.campaigns };
 }
