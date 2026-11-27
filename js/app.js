@@ -179,8 +179,7 @@ function programCard(a, q, j, p) {
   const open = view.open.has('p' + j) ? 'open' : '';
   const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
-  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span>${(() => { const gp = q.enabled && (q.goal?.steps || []).length ? programGoalPlan(a, j, (prodSim || simulate(a)).months) : null;
-        return gp && gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">${calSummary}</span>
+  return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span><br><span class="sum-sub">${calSummary}</span>
       ${pstats([['Prix', priceRange(q.pricing)], ['Durée', `${num(q.duration)} sem.`], ['Coaching', `${num(+q.coach || 0)}${(q.coachSteps || []).length ? ' → ' + num(coachAt(q, '9999-12')) : ''} min`],
         q.enabled && q.start ? ['1re année', `${num(firstYear(q.start, m => m.products[j].admissions) || 0)} inscr.`, 'hi'] : null,
         q.enabled && q.start ? ['CA 1re année', money(firstYear(q.start, m => m.products[j].sales) || 0), 'hi'] : null])}</span></summary>
@@ -201,85 +200,12 @@ function programCard(a, q, j, p) {
     </details>`;
 }
 
-// Objectif d'inscriptions d'un programme : rythme nécessaire et capacité de coaching qu'il demande.
-function programGoalSection(a, q, j, t) {
-  const g = q.goal, sim = simulate(a).months, plan = programGoalPlan(a, j, sim);
-  const byStep = new Map(plan.steps.map(s => [s.months + ':' + s.count, s]));
-  const rows = g.steps.map((st, k) => {
-    const r = byStep.get(+st.months + ':' + +st.count);
-    let res = '<div class="goal-res"><span class="muted">à compléter</span></div>';
-    if (r) {
-      const overH = r.capHours !== null && r.hours > r.capHours;
-      res = `<div class="goal-res"><b>${num(r.rate)} inscription${r.rate > 1 ? 's' : ''} / semaine</b><span>${monthName(r.at)} · plan actuel : ${num(Math.round(r.planYear))} / an${r.fromSoloYear >= 1 ? ` · dont ${num(Math.round(r.fromSoloYear))} / an venues de ${esc(soloName(a))}` : ''}</span></div>
-        <div class="goal-cap ${overH ? 'bad' : 'ok'}">${num(Math.round(r.hours * 10) / 10)} h de coaching par semaine pour ce programme (${num(Math.ceil(r.parallel))} clientes en même temps à ${num(r.minutes)} min).
-        ${r.capHours === null ? 'Capacité illimitée.' : `Heures disponibles à cette date, tous programmes : ${num(r.capHours)} h.${overH ? ' <b>Insuffisant.</b>' : ''}`}</div>
-        ${overH ? (() => {
-          // Besoin total à cette date : ce programme à l'objectif, plus les autres programmes tels que simulés.
-          const m = sim.find(x => x.month === r.at);
-          const othersH = a.programs.reduce((s2, p2, k2) => s2 + (k2 !== j && m ? m.products[k2].active * coachAt(p2, r.at) / 60 : 0), 0);
-          const hours = Math.ceil((r.hours + othersH) * 10) / 10;
-          return capacityAlert(a, state.apps.indexOf(a), { month: r.at, next: '', hours, limit: r.capHours, missingHours: Math.max(0, hours - r.capHours) }, `goal-alert-${j}-${k}`);
-        })() : ''}`;
-    }
-    return `<div class="goal-step"><span class="badge">${k + 1}</span><div>${lineEditor(st, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', 'Inscriptions par an']], 'Supprimer ce palier')}${res}</div></div>`;
-  }).join('');
-  const applied = q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(plan.segs);
-  const last = plan.segs[plan.segs.length - 1];
-  return section('goal-p' + j, 'ins', 'Objectif d\'inscriptions', g.steps.map(st => `${num(+st.count || 0)} / an à ${num(+st.months || 0)} mois`).join(' · ') + (last && !applied ? ' · <b class="neg">pas encore appliqué</b>' : ''), `
-    ${last && !applied ? `<div class="goal-pending"><p><b>Objectif pas encore appliqué.</b> Les résultats suivent toujours ton rythme actuel. Un objectif est un calcul : il ne change rien tant que tu ne l'appliques pas.</p>
-      <div class="row"><button data-pgoal="${t}">Appliquer maintenant</button></div></div>` : ''}
-    <h4>Paliers, comptés depuis le lancement commercial (${q.start ? monthName(q.start) : 'date à fixer'})</h4>
-    ${rows}
-    <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
-    <p class="muted">Une cliente reste ${num(q.duration)} semaines : le nombre de clientes en même temps est le rythme d'inscriptions multiplié par la durée. Les cohortes de test ne comptent pas dans l'objectif.</p>
-    ${last ? `<p class="muted"><b>Appliquer</b> remplace le rythme sans pub : il décoche le rythme spécifique au démarrage, coche « Paliers personnalisés » et y écrit ${plan.segs.map(x => `${num(x.rate)} / sem. pendant ${num(x.weeks)} sem.`).join(', puis ')}, puis ${num(last.rate)} / sem. ensuite. Ton ancien rythme reste enregistré : décoche « Paliers personnalisés » et recoche le démarrage pour y revenir.</p>
-    <div class="row"><button data-pgoal="${t}" ${applied ? 'disabled' : ''}>${applied ? 'Rythme appliqué' : 'Appliquer ces paliers aux inscriptions'}</button></div>` : ''}`);
-}
-
-// Objectif d'abonnées par paliers : quel rythme d'abonnements faut-il, palier après palier ?
-let goalCache = { key: '', plan: null };
-function cachedGoalPlan(a) {
-  const key = JSON.stringify([a.sub, a.programs.length]);
-  if (goalCache.key !== key) goalCache = { key, plan: goalPlan(a) };
-  return goalCache.plan;
-}
-function goalSection(a, p) {
-  const g = a.sub.goal, plan = cachedGoalPlan(a), d = +a.sub.duration || 0;
-  const sim = simulate(a).months;
-  const byStep = new Map(plan.steps.map(s => [s.months + ':' + s.count, s]));
-  const unit = g.kind === 'new' ? 'nouvelles / an' : 'abonnées';
-  const rows = g.steps.map((st, k) => {
-    const r = byStep.get(+st.months + ':' + +st.count);
-    const m = r && sim.find(x => x.month === r.at);
-    const now = !m ? '' : g.kind === 'new' ? `${num(Math.round(m.newDirect.reduce((s, x) => s + x, 0) * 12))} nouvelles / an` : `${num(Math.round(m.direct))} abonnées`;
-    const res = r ? `<div class="goal-res"><b>${num(r.rate)} ${plan.conv < 1 ? 'essais' : 'abonnées'} / semaine</b><span>${monthName(r.at)} · plan actuel : ${now}</span></div>` : '<div class="goal-res"><span class="muted">à compléter</span></div>';
-    return `<div class="goal-step"><span class="badge">${k + 1}</span><div>${lineEditor(st, `${p}.sub.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', g.kind === 'new' ? 'Nouvelles abonnées / an' : 'Abonnées en même temps']], 'Supprimer ce palier')}${res}</div></div>`;
-  }).join('');
-  const last = plan.steps[plan.steps.length - 1];
-  const priceAt = last ? phaseAt(a.sub.directPricing, last.at).price : 0;
-  const stable = last && d > 0 ? last.paid * 52 / 12 * d : null;
-  const after = !last ? '' : `<div class="goal"><div><span>Rythme final</span><b>${num(last.rate)} / semaine</b><small>${num(Math.round(last.paid * 52))} nouvelles abonnées payantes par an</small></div>
-      ${stable ? `<div><span>Abonnées une fois stabilisé</span><b>${num(Math.round(stable))}</b><small>soit environ ${money(stable * priceAt)} de CA par mois au prix de ${price(priceAt)}</small></div>` : ''}</div>`;
-  const applied = a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(plan.segs);
-  return section('goal-sd', 'ins', 'Objectif d\'abonnées', g.steps.map(st => `${num(+st.count || 0)} à ${num(+st.months || 0)} mois`).join(' · ') + (g.kind === 'new' ? ' (nouvelles / an)' : '') + (plan.segs.length && !applied ? ' · <b class="neg">pas encore appliqué</b>' : ''), `
-    ${plan.segs.length && !applied ? `<div class="goal-pending"><p><b>Objectif pas encore appliqué.</b> Les résultats suivent toujours ton rythme actuel. Un objectif est un calcul : il ne change rien tant que tu ne l'appliques pas.</p>
-      <div class="row"><button data-goal="${p}">Appliquer maintenant</button></div></div>` : ''}
-    <div class="grid">${select('Je vise', p + '.sub.goal.kind', g.kind, [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>
-    <h4>Paliers, comptés depuis l'ouverture (${a.sub.start ? monthName(a.sub.start) : 'date à fixer'})</h4>
-    ${rows}
-    <div class="row"><button data-add="${p}.sub.goal.steps">Ajouter un palier</button></div>
-    ${after}
-    <p class="muted">Pour chaque palier, l'outil cherche le plus petit rythme qui l'atteint à la date voulue, en tenant compte des résiliations${plan.conv < 1 ? ' et de l\'essai gratuit' : ''}. Les abonnées qui viennent d'un programme s'ajoutent en plus.</p>
-    ${plan.segs.length ? `<p class="muted"><b>Appliquer</b> coche « Paliers personnalisés » dans le rythme sans pub et y écrit ces rythmes (${plan.segs.map(x => `${num(x.rate)} / sem. pendant ${num(x.weeks)} sem.`).join(', puis ')}, puis ${num(plan.segs[plan.segs.length - 1].rate)} / sem. ensuite). Toutes les pages sont recalculées. Ton ancien rythme reste enregistré : décoche « Paliers personnalisés » pour y revenir.</p>` : ''}
-    ${plan.segs.length ? `<div class="row"><button data-goal="${p}" ${applied ? 'disabled' : ''}>${applied ? 'Rythme appliqué' : 'Appliquer ces paliers au rythme d\'abonnements'}</button></div>` : ''}`);
-}
-
 function productsPage(a, i) {
   prodSim = simulate(a);
   const p = 'apps.' + i;
   const g = a.sub.directPricing;
   // Le produit « seul » : l'abonnement, avec en option ce qui se passe après un programme.
-  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}${(() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
+  const solo = `<details class="card product solo" id="sd" ${view.open.has('sd') ? 'open' : ''}><summary><span>${esc(soloName(a))}<br><span class="sum-sub">Abonnement mensuel · ${a.sub.start ? 'ouverture ' + monthName(a.sub.start) : 'pas encore ouvert'}</span>
       ${pstats([['Prix', priceRange(g) + ' / mois'], ['Durée', +a.sub.duration > 0 ? `${num(a.sub.duration)} mois` : 'illimitée'], +a.sub.trialDays > 0 ? ['Essai', `${num(a.sub.trialDays)} j`] : null,
         a.sub.start ? ['Abonnées à 1 an', num(((m => m ? m.direct + m.post : 0)(prodSim && prodSim.months.find(m => m.month === addMonths(a.sub.start, 11))))), 'hi'] : null,
         a.sub.start ? ['CA 1re année', money(firstYear(a.sub.start, m => m.directCA + m.postCA) || 0), 'hi'] : null])}</span></summary>
@@ -782,9 +708,8 @@ function alertsCard(r) {
     const sf = capacityShortfall(x.a, x.weekly);
     if (sf) items.push(['bad', `${esc(x.a.name)} : il manque ${num(Math.ceil(sf.missingHours))} h de coaching par semaine dès ${monthName(sf.month)}.`, { page: 'coaching', app: x.i }]);
     const a = state.apps[x.i];
-    const pending = a.programs.filter((q, j) => { if (!q.enabled || !(q.goal?.steps || []).length) return false; const gp = programGoalPlan(a, j, simulate(a).months); return gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)); }).length
-      + (() => { const gp = cachedGoalPlan(a); return gp.segs.length && !(a.sub.palierMode && JSON.stringify(a.sub.paliers) === JSON.stringify(gp.segs)) ? 1 : 0; })();
-    if (pending) items.push(['mid', `${esc(a.name)} : ${pending} objectif${pending > 1 ? 's' : ''} pas encore appliqué${pending > 1 ? 's' : ''}.`, { page: 'acquisition', app: x.i }]);
+    const missed = [null, ...a.programs.map((q, j) => q.enabled ? j : -1).filter(j => j >= 0)].filter(j => { const pl = pubGapCached(a, j); return pl && pl.segs.some(sg => sg.current + 0.5 < sg.count); }).length;
+    if (missed) items.push(['mid', `${esc(a.name)} : ${missed} objectif${missed > 1 ? 's' : ''} pas atteint${missed > 1 ? 's' : ''} avec les campagnes actuelles.`, { page: 'acquisition', app: x.i }]);
     const todo = (a.charges || []).filter(c => badge(c).includes('todo')).length;
     if (todo) items.push(['mid', `${esc(a.name)} : ${todo} charge${todo > 1 ? 's' : ''} à compléter.`, { page: 'charges', app: x.i }]);
   }
@@ -1303,8 +1228,9 @@ function growthEditor(q, t, unit) {
   const pick = `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${[['s', 'En S (notoriété)'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']].map(([v, l]) => `<option value="${v}" ${v === kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
   const body = kind === 'manual'
     ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', unit + ' / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier : ${num(q.target)} / semaine.</p>`
-    : fields(q, t, kind === 's' ? [['initial', 'Au départ\n' + unit.toLowerCase() + ' / semaine'], ['target', 'À maturité\n' + unit.toLowerCase() + ' / semaine'], ['months', 'Temps pour y arriver\nmois']] : growth);
-  return pick + (kind === 's' ? '<p class="muted">Lente au début (appli inconnue), elle accélère avec les avis puis se stabilise au rythme de maturité.</p>' : '') + body;
+    : fields(q, t, kind === 's' ? [['initial', 'Au départ : ton audience\n' + unit.toLowerCase() + ' / semaine'], ['target', 'À maturité\n' + unit.toLowerCase() + ' / semaine'], ['months', 'Temps pour y arriver\nmois']] : growth);
+  const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. Par exemple 2 000 abonnées Instagram et email, dont 1 % s'inscrivent dans le mois : 20 par mois, soit 5 par semaine. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche dans les stores, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
+  return pick + body + est;
 }
 function subRhythm(a, p) { return growthEditor(a.sub, p + '.sub', 'Abonnées'); }
 function progRhythm(q, t) {
@@ -1320,6 +1246,42 @@ function acqChart(rows) {
   const ticks = rows.map((r, k) => r.month.endsWith('-01') ? `<text x="${(k * bw + 1).toFixed(1)}" y="${H + 12}" font-size="9" fill="var(--ink-soft)">${r.month.slice(0, 4)}</text>` : '').join('');
   return `<figure class="acq-chart"><svg viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Nouvelles clientes par mois">${bars}${ticks}<text x="${W}" y="10" font-size="9" text-anchor="end" fill="var(--ink-soft)">max ${num(Math.round(max))} / mois</text></svg>
     <figcaption><span><i style="background:var(--k-ins)"></i>Sans pub</span><span><i style="background:var(--k-promo)"></i>Pub</span>${rows.some(r => r.solo) ? '<span><i style="background:var(--k-sub)"></i>Abonnées</span>' : ''}</figcaption></figure>`;
+}
+
+// Objectif total d'un produit, toutes sources confondues : le sans pub et les passerelles d'abord, la pub comble l'écart.
+// Le calcul relance plusieurs simulations : on le garde tant que l'application ne change pas.
+const gapCache = new Map();
+function pubGapCached(a, j) {
+  const key = JSON.stringify(a) + '|' + j;
+  if (!gapCache.has(key)) { if (gapCache.size > 40) gapCache.clear(); gapCache.set(key, pubGap(a, j)); }
+  return gapCache.get(key);
+}
+function goalBlock(a, st, p) {
+  const o = st.o, prog = st.key !== 'sub', g = o.goal || { steps: [] }, t = st.t;
+  const kind = prog ? 'year' : g.kind === 'new' ? 'new' : 'active';
+  const unit = kind === 'active' ? 'abonnées' : kind === 'new' ? 'nouvelles abonnées / an' : 'inscriptions / an';
+  const plan = pubGapCached(a, prog ? st.j : null), who = prog ? 'clientes' : 'abonnées';
+  const res = !plan ? '' : plan.segs.map((sg, k) => `<div class="gap">
+      <div class="gap-h"><span class="badge">${k + 1}</span><b>${num(sg.count)} ${unit}</b> en ${monthName(sg.at)}</div>
+      <dl class="gap-l">
+        <div><dt>Sans pub${prog ? ' et passerelles' : ''}</dt><dd>${num(Math.round(sg.free))}</dd></div>
+        <div class="${sg.count > sg.free ? 'neg' : 'pos'}"><dt>À combler par la pub</dt><dd>${num(Math.max(0, Math.round(sg.count - sg.free)))}</dd></div>
+        <div><dt>Pub nécessaire</dt><dd>${sg.budget ? `<b>${money(sg.budget)} / mois</b>` : 'aucune'}</dd></div>
+        ${sg.budget ? `<p class="gap-n">${sg.end ? `De ${monthShort(sg.start)} à ${monthShort(sg.end)}` : `Dès ${monthShort(sg.start)}`} : ${num(Math.round(sg.perMonth))} ${who} par mois × ${money(plan.cac)}</p>` : ''}
+        <div class="${sg.current + 0.5 >= sg.count ? 'pos' : 'neg'}"><dt>Avec tes campagnes</dt><dd>${num(Math.round(sg.current))} ${sg.current + 0.5 >= sg.count ? '✓' : '✗'}</dd></div>
+      </dl></div>`).join('');
+  const same = plan && JSON.stringify((o.campaigns || []).map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(plan.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
+  const sum = !(g.steps || []).length ? 'aucun : campagnes saisies à la main' : g.steps.map(x => `${num(+x.count || 0)} à ${num(+x.months || 0)} mois`).join(' · ') + (plan && !same && plan.segs.some(sg => sg.current + 0.5 < sg.count) ? ' · <b class="neg">pas atteint</b>' : '');
+  return section(st.id + '-goal', 'cal', prog ? 'Objectif d\'inscriptions' : 'Objectif d\'abonnées', sum, `
+    ${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
+    <h4>Paliers, comptés depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'})</h4>
+    ${(g.steps || []).map((x, k) => lineEditor(x, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', kind === 'active' ? 'Abonnées en même temps' : kind === 'new' ? 'Nouvelles abonnées / an' : 'Inscriptions / an']], 'Supprimer ce palier')).join('')}
+    <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
+    ${(g.steps || []).length ? `<div class="grid">${field(`Coût par ${prog ? 'cliente' : 'abonnée payante'} venue de la pub\n€, pour le calcul`, t + '.goal.cac', g.cac || plan?.cac || 50)}</div>
+    ${res}
+    ${plan ? `<div class="row"><button data-pubgap="${esc(t)}" ${same ? 'disabled' : ''}>${same ? 'Campagnes en place' : 'Créer ces campagnes pub'}</button></div>
+    <p class="muted">${same ? 'Tes campagnes correspondent à cet objectif.' : 'Remplace tes campagnes actuelles par celles qui atteignent l\'objectif. Tu pourras ensuite les modifier dans « Avec pub ».'}</p>` : ''}`
+    : '<p class="muted">Sans objectif, tu saisis toi-même tes campagnes dans « Avec pub ».</p>'}`);
 }
 
 function acquisitionPage(a, i) {
@@ -1366,19 +1328,22 @@ function acquisitionPage(a, i) {
     return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
       ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))); return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); return { month: m.month, pub: Math.min(c, f), org: Math.max(0, f - c), solo: prog ? st.solo(m) : 0 }; })); })()}
+      ${goalBlock(a, st, p)}
       ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
         ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
         ${orgOn ? (prog ? progRhythm(o, st.t) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
+        <h4>Effet boule de neige de la pub</h4>
+        <div class="grid">${field('Bouche-à-oreille et avis\n% de clientes en plus pour 100 venues de la pub', st.t + '.viral', o.viral ?? 20)}</div>
+        <p class="muted">20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
         ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`)}
-      ${orgOn ? (prog ? programGoalSection(a, o, st.j, st.t) : goalSection(a, p)) : ''}
+      ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
+        ${linkFields(a, o, st.t)}
+        <p class="muted">Ces clientes sont déjà abonnées : elles ne coûtent rien à acquérir et gardent leur abonnement.</p>`) : ''}
       ${section(st.id + '-pub', 'promo', 'Avec pub', `${camps.length ? `${camps.length} campagne${camps.length > 1 ? 's' : ''} · ${short(st.pubB)} sur 12 mois` : 'aucune campagne'} · ${num(Math.round(st.pubN))} ${who}s`, `
         ${camps.map((c, k) => campaign(c, `${st.t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>'}
         <div class="row"><button data-add="${st.t}.campaigns">Ajouter une campagne</button></div>
         ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
         <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub ».</p>`)}
-      ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
-        ${linkFields(a, o, st.t)}
-        <p class="muted">Ces clientes sont déjà abonnées : elles ne coûtent rien à acquérir et gardent leur abonnement.</p>`) : ''}
       ${section(st.id + '-mois', 'cal', 'Mois par mois', `${num(Math.round(st.all))} ${who}s · ${short(st.pubB)} de pub sur 12 mois`, `<table class="acq-tab"><thead><tr><th>Mois</th><th>Sans pub</th><th>Pub</th>${prog ? '<th>Abonnées</th>' : ''}<th>Total</th><th>Budget</th></tr></thead><tbody>${rows}</tbody></table>`)}
       <dl class="pal-sum">
         <div><dt>Valeur d'une ${who}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
@@ -2288,14 +2253,10 @@ document.addEventListener('click', e => {
     save();
     view.app = t.dataset.coachfix;
     if (location.hash === '#coaching') route(); else location.hash = 'coaching';
-  } else if (t.dataset.pgoal) {
-    const [o, k] = resolve(t.dataset.pgoal), q = o[k], a = state.apps[+t.dataset.pgoal.split('.')[1]];
-    const plan = programGoalPlan(a, a.programs.indexOf(q), simulate(a).months);
-    if (plan.segs.length) { q.launch = false; q.palierMode = true; q.paliers = plan.segs; q.target = plan.segs[plan.segs.length - 1].rate; }
-    save(); render();
-  } else if (t.dataset.goal) {
-    const [o, k] = resolve(t.dataset.goal), a = o[k], plan = goalPlan(a);
-    if (plan.segs.length) { a.sub.palierMode = true; a.sub.paliers = plan.segs; a.sub.target = plan.segs[plan.segs.length - 1].rate; }
+  } else if (t.dataset.pubgap) {
+    const [o, k] = resolve(t.dataset.pubgap), q = o[k], a = state.apps[+t.dataset.pubgap.split('.')[1]];
+    const plan = pubGap(a, q === a.sub ? null : a.programs.indexOf(q));
+    if (plan) { q.campaigns = plan.campaigns.map(c => ({ ...c })); view.open.add(t.dataset.pubgap === `apps.${state.apps.indexOf(a)}.sub` ? 'acq-sd-pub' : 'acq-p' + a.programs.indexOf(q) + '-pub'); }
     save(); render();
   } else if (t.id === 'updateApp') {
     location.replace(location.pathname + '?v=' + encodeURIComponent(newVersion) + location.hash);
