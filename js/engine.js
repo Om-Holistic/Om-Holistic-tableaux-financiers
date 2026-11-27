@@ -388,6 +388,9 @@ function pubGap(a, j) {
       for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / keep / (1 + pos(q.viral) / 100));
     } else for (let it = 0; it < 3; it++) sg.perMonth = Math.max(0, sg.perMonth + (st.count - run()) / 12 / (1 + pos(q.viral) / 100));
     sg.free = value(base, st.at);
+    // Part des arrivées gratuites venue de l'abonnement (passerelle), le reste vient du sans pub.
+    const bm = j === null ? null : base.months.find(x => x.month === st.at);
+    sg.solo = bm ? (bm.products[j].fromSolo || 0) * 12 : 0;
     segs.push(sg); prev = addMonths(st.at, 1);
   }
   if (segs.length) segs.at(-1).end = '';
