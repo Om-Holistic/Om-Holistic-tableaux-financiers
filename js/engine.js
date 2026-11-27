@@ -49,7 +49,16 @@ function weeklyRate(p, w) {
 
 // Notoriété en entonnoir, mois par mois : nouvelles abonnées Instagram (seule et par les relais),
 // passage à la newsletter, découvertes dans les stores, et la taille du vivier qui en résulte.
-const sCurve = (initial, target, months, k) => weeklyRate({ initial, target, months, shape: 's' }, Math.max(0, k) * 52 / 12);
+// Paliers datés [{ month, n }] : avant le premier, before ; en S d'un palier au suivant ; après le dernier, le dernier.
+function pointsAt(points, month, before) {
+  const ps = (points || []).filter(q => q.month).slice().sort((x, y) => x.month.localeCompare(y.month));
+  if (!ps.length || month < ps[0].month) return before ?? (ps[0] ? pos(ps[0].n) : 0);
+  for (let k = 1; k < ps.length; k++) if (month < ps[k].month) {
+    const t = monthsBetween(ps[k - 1].month, month) / Math.max(1, monthsBetween(ps[k - 1].month, ps[k].month)), sm = t * t * (3 - 2 * t);
+    return pos(ps[k - 1].n) + (pos(ps[k].n) - pos(ps[k - 1].n)) * sm;
+  }
+  return pos(ps.at(-1).n);
+}
 let audCache = { key: '', map: null };
 function audienceSeries(a) {
   const au = a.audience;
@@ -59,9 +68,9 @@ function audienceSeries(a) {
   const map = new Map(), from = au.from || '2026-11', last = HORIZON_END + '-12';
   let insta = pos(au.insta.count), news = pos(au.newsletter?.count), stores = 0;
   for (let m = from, k = 0; m <= last; m = addMonths(m, 1), k++) {
-    const own = k > 0 ? sCurve(au.insta.initial, au.insta.target, au.insta.months, k - 1) : 0;
+    const own = k > 0 ? pointsAt(au.insta.points, m) : 0;
     const relays = k > 0 ? (au.relays || []).filter(r => (!r.start || m >= r.start) && (!r.end || m <= r.end)).reduce((t, r) => t + pos(r.audience) * pos(r.rate) / 100, 0) : 0;
-    const st = au.stores?.on && au.stores.start && m >= au.stores.start ? sCurve(au.stores.initial, au.stores.target, au.stores.months, monthsBetween(au.stores.start, m)) : 0;
+    const st = au.stores?.on ? pointsAt(au.stores.points, m, 0) : 0;
     const toNews = (own + relays) * pos(au.newsletter?.fromInsta) / 100;
     insta += own + relays; news += toNews; stores += st;
     map.set(m, { insta, news, stores, own, relays, toNews, st, pool: insta + news + stores });
@@ -373,4 +382,4 @@ function pubGap(a, j) {
   return { kind, cac, segs, campaigns: cq.campaigns };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, audienceSeries, audienceAt, audienceBuyers, weekShares, goalPlan, programGoalPlan, pubGap };
+if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, pointsAt, audienceSeries, audienceAt, audienceBuyers, weekShares, goalPlan, programGoalPlan, pubGap };

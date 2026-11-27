@@ -85,7 +85,7 @@ function field(label, path, value, type = 'number') {
   const text = more ? `<span class="lh">${esc(head)}</span><span class="lx">${esc(more)}</span>` : esc(label);
   // Grands nombres : la valeur mise en forme sous le champ (1000000 → 1 000 000).
   const echo = type === 'number' && Math.abs(+value) >= 10000 ? `<span class="echo">${num(+value)}</span>` : '';
-  return `<label${more ? ' class="two"' : ''}>${text}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}">${echo}</label>`;
+  return `<label${more ? ' class="two"' : ''}>${text}${echo}<input data-path="${esc(path)}" type="${type}"${extra} value="${esc(value)}"></label>`;
 }
 function check(label, path, value) {
   return `<label class="line"><input data-path="${esc(path)}" type="checkbox" ${value ? 'checked' : ''}>${esc(label)}</label>`;
@@ -1257,7 +1257,7 @@ function growthEditor(q, t, unit, a) {
     // Le sans pub suit le vivier : nouvelles venues et vivier déjà là, chacune à son taux.
     const from = q.start || appStart(a), y1 = addMonths(from, 12), y3 = addMonths(from, 36), b = m => num(Math.round(audienceBuyers(a, q, m)));
     return pick + `<div class="grid">${field('Nouvelles venues du mois\n% qui achètent', t + '.audienceNew', q.audienceNew)}${field('Vivier déjà là\n% qui achètent chaque mois', t + '.audienceRate', q.audienceRate)}</div>
-      <p class="muted">Une personne qui vient de découvrir ton travail achète plus facilement que celle qui te suit depuis deux ans sans acheter. Et une acheteuse sort du compte : on ne la compte pas deux fois. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard) : <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans</b>.</p>`;
+      <p class="muted">Une personne qui vient de découvrir ton travail achète plus facilement que celle qui te suit depuis deux ans sans acheter. Et une acheteuse sort du compte : on ne la compte pas deux fois. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard) : <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans, ${b(PLAN_END)} fin ${PLAN_END.slice(0, 4)}</b>.</p>`;
   }
   const body = kind === 'manual'
     ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', unit + ' / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier : ${num(q.target)} / semaine.</p>`
@@ -1272,7 +1272,7 @@ function progRhythm(q, t, a) {
     <h4>Ensuite</h4>${growthEditor(q, t, 'Clientes', a)}`;
 }
 const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.shape === 'brand' && !q.palierMode ? `part de ton vivier (${fmtN(+q.audienceNew || 0, 2)} % des nouvelles, ${fmtN(+q.audienceRate || 0, 2)} % des autres)` : q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
-// Nouvelles clientes par mois sur 3 ans, empilées : sans pub, pub, venues de l'abonnement.
+// Nouvelles clientes par mois jusqu'à fin 2032, empilées : sans pub, pub, venues de l'abonnement.
 // Pic du lancement d'un programme, mois par mois : le rythme spécifique des premières semaines, à part du flux régulier.
 function launchByMonth(a, q) {
   const out = {};
@@ -1336,6 +1336,8 @@ function audienceLink(a, p) {
 }
 // ---------- Notoriété : ton vivier, et ce qui le fait grandir (relais → Instagram → newsletter, puis stores) ----------
 const pos0 = x => Math.max(0, +x || 0);
+// Horizon des projections : fin 2032 (plan sur 6 ans).
+const PLAN_END = '2032-12';
 const lastActual = o => { const k = Object.keys(o?.actuals || {}).filter(m => (o.actuals[m] ?? '') !== '').sort().at(-1); return k ? [k, +o.actuals[k]] : null; };
 // Barres empilées sur 3 ans : séries [{ key, label, color }], points facultatifs (vrais chiffres).
 function stackChart(rows, series, aria, unit, dots = []) {
@@ -1349,8 +1351,10 @@ function stackChart(rows, series, aria, unit, dots = []) {
 function notorietePage(a, i) {
   migrateAudience(a);
   const au = a.audience, p = `apps.${i}.audience`, ser = audienceSeries(a), from = au.from || thisMonth;
-  const now = [thisMonth, from].sort().at(-1), end = addMonths(from, 36), at = m => ser.get(m) || ser.get(from);
-  const months = []; for (let k = 0; k <= 36; k++) months.push(addMonths(from, k));
+  const now = [thisMonth, from].sort().at(-1), end = PLAN_END, at = m => ser.get(m) || ser.get(from);
+  const months = []; for (let m = from; m <= end; m = addMonths(m, 1)) months.push(m);
+  // Paliers datés : nouvelles personnes par mois, en S d'un palier au suivant.
+  const steps = (o, t, unit) => `${(o.points || []).map((q, k) => lineEditor(q, `${t}.points.${k}`, [['month', 'Mois', 'month'], ['n', unit]], (o.points || []).length > 1 ? 'Retirer ce palier' : '')).join('')}<div class="row"><button data-add="${t}.points">Ajouter un palier</button></div>`;
   // Vrais chiffres : abonnées Instagram et inscrites newsletter relevées à la main (plus tard, lues automatiquement).
   const li = lastActual(au.insta), ln = lastActual(au.newsletter);
   const realInsta = li ? li[1] : at(now).insta, realNews = ln ? ln[1] : at(now).news;
@@ -1369,29 +1373,29 @@ function notorietePage(a, i) {
         { label: 'Newsletter', mini: 'Lettre', value: num(Math.round(realNews)), hint: ln ? 'relevé' : 'prévu' },
         { label: 'Face au plan', mini: false, value: hasReal ? `${num(Math.round(vsPlan))} %` : '—', cls: hasReal ? (vsPlan >= 100 ? 'ok' : 'bad') : '', hint: hasReal ? `plan de ${monthName(now)} : ${num(Math.round(planNow))}` : 'saisis tes vrais chiffres' }
       ] })}
-    ${card('au-pool', 'Ton vivier sur 3 ans', `${num(Math.round(at(from).pool))} → ${num(Math.round(poolEnd))} personnes`, `
+    ${card('au-pool', `Ton vivier jusqu'en ${end.slice(0, 4)}`, `${num(Math.round(at(from).pool))} → ${num(Math.round(poolEnd))} personnes`, `
       <p class="muted">Le chemin de tes clientes sans pub : les relais (ta sœur…) font grandir ton <b>Instagram</b>, une part de tes abonnées s'inscrit à ta <b>newsletter</b>, puis elles achètent sur ton <b>site</b>. Chaque mois, une petite part de ce vivier achète chaque produit (page <a href="#acquisition" data-goto="acquisition" data-open="acq-brand" data-anchor="acq-brand">Acquisition</a>).</p>
       <h4>Taille du vivier, fin de chaque mois</h4>
       ${stackChart(rows, [{ key: 'insta', label: 'Abonnées Instagram', color: 'var(--k-ins)' }, { key: 'news', label: 'Newsletter', color: 'var(--k-promo)' }, { key: 'stores', label: 'Venues des stores', color: 'var(--k-cal)' }], 'Taille du vivier par mois', '', dots)}
       <h4>Nouvelles personnes chaque mois</h4>
       ${stackChart(rows, [{ key: 'own', label: 'Instagram, par toi', color: 'var(--k-ins)' }, { key: 'relays', label: 'Par les relais', color: 'var(--k-sub)' }, { key: 'st', label: 'Stores', color: 'var(--k-cal)' }], 'Nouvelles personnes par mois', ' / mois')}`)}
     ${card('au-insta', 'Instagram', `${num(pos0(au.insta.count))} abonnées au départ · ${num(Math.round(at(end).insta))} prévues en ${monthName(end)}`, `
-      <div class="lrow">${field('Abonnées au départ', p + '.insta.count', au.insta.count)}${monthField('Au mois de', p + '.from', au.from)}</div>
-      <h4>Nouvelles abonnées gagnées par toi</h4>
-      ${fields(au.insta, p + '.insta', [['initial', 'Au départ\nnouvelles / mois'], ['target', 'À maturité\nnouvelles / mois'], ['months', 'Temps pour y arriver\nmois']])}
-      <p class="muted">Tes publications, reels et partages. Les relais s'ajoutent en plus, dans leur carte.</p>
+      <div class="lrow">${field('Abonnées au départ\nnombre', p + '.insta.count', au.insta.count)}${monthField('Au mois de', p + '.from', au.from)}</div>
+      <h4>Nouvelles abonnées gagnées par toi, par paliers</h4>
+      ${steps(au.insta, p + '.insta', 'Nouvelles / mois')}
+      <p class="muted">Tes publications, reels et partages. Entre deux paliers, la croissance suit une courbe douce. Les relais s'ajoutent en plus, dans leur carte. Ajoute des paliers pour projeter ta croissance jusqu'en ${end.slice(0, 4)}.</p>
       ${realField(au.insta, p + '.insta')}${realNote(au.insta, m => at(m).insta)}`)}
     ${card('au-relays', 'Relais', `${(au.relays || []).length ? `${(au.relays || []).map(r => esc(r.name)).join(', ')} · ≈ ${num(Math.round(relayN))} nouvelles abonnées / mois` : 'aucun'}`, `
       <p class="muted">Des comptes qui montrent ton travail. Leurs abonnées passent par ton Instagram : chaque mois, une part d'entre elles te suit.</p>
-      ${(au.relays || []).map((r, k) => { const t = `${p}.relays.${k}`; return `<div class="camp">${lineEditor(r, t, [['name', 'Nom', 'text'], ['audience', 'Ses abonnées'], ['rate', 'Te suivent / mois\n%']], 'Retirer ce relais')}<div class="lrow">${monthField('Début', t + '.start', r.start)}${monthField('Fin', t + '.end', r.end, 'sans fin')}</div><p class="pal-ok acq-res">${num(pos0(r.audience))} × ${fmtN(pos0(r.rate), 2)} % = <b>${num(Math.round(pos0(r.audience) * pos0(r.rate) / 100))} nouvelles abonnées par mois</b></p></div>`; }).join('')}
+      ${(au.relays || []).map((r, k) => { const t = `${p}.relays.${k}`; return `<div class="camp"><div class="grid one">${field('Nom du relais', t + '.name', r.name, 'text')}</div>${lineEditor(r, t, [['audience', 'Ses abonnées\nnombre'], ['rate', 'Te suivent chaque mois\n%']], 'Retirer ce relais')}<div class="lrow">${monthField('Début', t + '.start', r.start)}${monthField('Fin', t + '.end', r.end, 'sans fin')}</div><p class="pal-ok acq-res">${num(pos0(r.audience))} × ${fmtN(pos0(r.rate), 2)} % = <b>${num(Math.round(pos0(r.audience) * pos0(r.rate) / 100))} nouvelles abonnées par mois</b></p></div>`; }).join('')}
       <div class="row"><button data-add="${p}.relays">Ajouter un relais</button></div>`)}
     ${card('au-news', 'Newsletter', `${num(pos0(au.newsletter.count))} inscrites au départ · ${num(Math.round(at(end).news))} prévues en ${monthName(end)}`, `
-      <div class="grid">${field('Inscrites au départ', p + '.newsletter.count', au.newsletter.count)}${field('Nouvelles abonnées Instagram\nqui s\'inscrivent (%)', p + '.newsletter.fromInsta', au.newsletter.fromInsta)}</div>
+      <div class="grid">${field('Inscrites au départ\nnombre', p + '.newsletter.count', au.newsletter.count)}${field('Nouvelles abonnées Insta\nqui s\'inscrivent (%)', p + '.newsletter.fromInsta', au.newsletter.fromInsta)}</div>
       ${realField(au.newsletter, p + '.newsletter')}${realNote(au.newsletter, m => at(m).news)}`)}
-    ${card('au-stores', 'Stores (applis natives)', au.stores?.on ? `dès ${monthName(au.stores.start)} · ${num(pos0(au.stores.target))} découvertes / mois à maturité` : 'pas encore', `
+    ${card('au-stores', 'Stores (applis natives)', au.stores?.on && au.stores.points?.length ? `dès ${monthName([...au.stores.points].sort((x, y) => x.month.localeCompare(y.month))[0].month)} · ${num(Math.round(pointsAt(au.stores.points, end, 0)))} découvertes / mois en ${end.slice(0, 4)}` : 'pas encore', `
       ${check('Compter les découvertes dans l\'App Store et Google Play', p + '.stores.on', au.stores?.on)}
-      ${au.stores?.on ? `<div class="grid one">${monthField('À partir de', p + '.stores.start', au.stores.start)}</div>${fields(au.stores, p + '.stores', [['initial', 'Au départ\npersonnes / mois'], ['target', 'À maturité\npersonnes / mois'], ['months', 'Temps pour y arriver\nmois']])}
-      <p class="muted">Aujourd'hui ton site est une appli web : on ne t'y trouve que par Instagram. Avec de vraies applis sur les stores, des personnes te découvrent en cherchant.</p>` : ''}`)}`;
+      ${au.stores?.on ? `${steps(au.stores, p + '.stores', 'Personnes / mois')}
+      <p class="muted">Le premier palier est la sortie de tes applis natives. Aujourd'hui ton site est une appli web : on ne t'y trouve que par Instagram. Sur les stores, des personnes te découvrent en cherchant.</p>` : ''}`)}`;
 }
 function acquisitionPage(a, i) {
   prodSim = simulate(a);
@@ -1436,7 +1440,7 @@ function acquisitionPage(a, i) {
     const orgOn = o.organic !== false;
     return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
-      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
+      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1).filter(m => m.month <= PLAN_END).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
       ${goalBlock(a, st, p)}
       ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
         ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
@@ -2406,6 +2410,7 @@ document.addEventListener('click', e => {
         if (o.type) return l ? { after: +l.after + 12, amount: +l.amount } : { after: 12, amount: +o.amount || 0 };
         return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
       relays: () => relay('Nouveau relais', 5000, 0.2, thisMonth),
+      points: () => { const l = [...o[k]].sort((x, y) => x.month.localeCompare(y.month)).at(-1); return l ? { month: addMonths(l.month, 12), n: Math.round((+l.n || 0) * 1.5) } : { month: thisMonth, n: 10 }; },
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
       // Nouvelle campagne : elle prend la suite de la dernière, qui s'arrête alors le mois d'avant.
       campaigns: () => { const l = o[k][o[k].length - 1]; if (!l) return { start: [o.start || thisMonth, thisMonth].sort().at(-1), end: '', budget: 500, cac: 50 };
