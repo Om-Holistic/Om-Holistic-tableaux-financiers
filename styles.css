@@ -268,7 +268,7 @@ details.sec[open] > summary::after { transform: rotate(225deg); }
 @keyframes flash { 0%, 40% { box-shadow: 0 0 0 3px var(--k, var(--sage)); } 100% { box-shadow: 0 0 0 0 transparent; } }
 
 /* ---------- Lignes compactes (paliers, cohortes, phases, promotions) ---------- */
-.lrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; background: var(--surface); border-radius: 12px; padding: 10px; flex: 1; min-width: 0; }
+.lrow { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; background: var(--surface); border-radius: 12px; padding: 10px; flex: 1; min-width: 0; }
 .lrow > label { flex: 1 1 110px; }
 .lrow > label.wide { flex: 2 1 220px; }
 .lrow > .icon { flex: 0 0 auto; }
@@ -790,3 +790,11 @@ main, #page, .card { min-width: 0; max-width: 100%; }
 /* Notoriété : barre d'avancement vers l'objectif d'un canal. */
 .aud-bar { height: 8px; border-radius: 999px; background: var(--line, #e5e1f0); overflow: hidden; margin: 4px 0 12px; }
 .aud-bar i { display: block; height: 100%; background: var(--k-ins); border-radius: inherit; }
+
+/* Règle d'alignement : deux champs côte à côte gardent leurs libellés alignés en haut
+   (une ligne vide sous un libellé plus court) et leurs cases alignées en bas, à la même hauteur. */
+.grid > label, .lrow > label { justify-content: flex-start; }
+.grid > label > input, .grid > label > select, .grid > label > .monthpick,
+.lrow > label > input, .lrow > label > select, .lrow > label > .monthpick { margin-top: auto; }
+.lrow > .icon { align-self: flex-end; }
+.grid > label.two > :nth-last-child(2), .lrow > label.two > :nth-last-child(2) { margin-bottom: 4px; }
