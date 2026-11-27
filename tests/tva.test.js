@@ -117,10 +117,17 @@ test('croissance en S : départ au rythme initial, maturité au rythme visé, ac
   assert.ok(q1 < 10, String(q1)); assert.ok(Math.abs(mid - 51) < 1, String(mid));
 });
 
-test('ancien rythme : il garde sa forme en paliers réguliers', () => {
+test('ancien rythme : il passe sur le vivier, sauf les paliers saisis à la main', () => {
   const old = M.defaultState(); for (const q of [old.apps[0].sub, ...old.apps[0].programs]) delete q.shape;
+  delete old.apps[0].audience;
+  old.apps[0].programs[1].palierMode = true;
   const s = M.migrate(old);
-  assert.strictEqual(s.apps[0].sub.shape, 'lin'); assert.strictEqual(s.apps[0].programs[0].shape, 'lin');
+  assert.strictEqual(s.apps[0].sub.shape, 'brand'); assert.strictEqual(s.apps[0].programs[0].shape, 'brand');
+  assert.ok(s.apps[0].programs[0].audienceNew > 0);
+  assert.strictEqual(s.apps[0].programs[1].palierMode, true);
+  // Une seule fois : un rythme remis en courbe propre ensuite est respecté.
+  s.apps[0].sub.shape = 's'; M.migrate(s);
+  assert.strictEqual(s.apps[0].sub.shape, 's');
 });
 
 test('boule de neige : 20 % de clientes en plus, sans coût', () => {

@@ -27,7 +27,7 @@ test('CA des programmes = inscriptions × prix de phase', () => {
   a.programs = [a.programs[0]];
   a.programs[0].launch = false;
   a.programs[0].cohorts = [];
-  a.programs[0].initial = a.programs[0].target = 2;
+  a.programs[0].initial = a.programs[0].target = 2; a.programs[0].shape = 'lin';
   a.programs[0].pricing = [{ label: 'P1', start: '2026-11', price: 100 }, { label: 'P2', start: '', price: 0 }, { label: 'P3', start: '', price: 0 }];
   a.sub.initial = a.sub.target = 0;
   const { months } = simulate(a);
@@ -152,8 +152,8 @@ test('passerelles : programme → abonnement seul, abonnement seul → programme
     const a = model.defaultState().apps[0];
     a.programs = [a.programs[0]];
     const p = a.programs[0];
-    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.toSolo = 50; p.fromSolo = 0;
-    a.sub.start = '2027-01'; a.sub.initial = a.sub.target = 5; a.sub.duration = 0; a.sub.postDuration = 0; a.capacitySteps = [];
+    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.shape = 'lin'; p.toSolo = 50; p.fromSolo = 0;
+    a.sub.start = '2027-01'; a.sub.initial = a.sub.target = 5; a.sub.shape = 'lin'; a.sub.duration = 0; a.sub.postDuration = 0; a.capacitySteps = [];
     return a;
   };
   const sum = (ms, f) => ms.reduce((s, m) => s + f(m), 0);
@@ -181,7 +181,7 @@ test('objectif : le rythme appliqué donne le nombre d\'abonnées visé', () => 
   const s = defaultState();
   const a = s.apps[0];
   a.programs.forEach(p => { p.enabled = false; });
-  Object.assign(a.sub, { start: '2027-01', duration: 12, initial: 1, months: 12, trialDays: 0 });
+  Object.assign(a.sub, { start: '2027-01', duration: 12, initial: 1, months: 12, trialDays: 0, shape: 'lin' });
   // 1000 abonnées en même temps avec 12 mois de durée : 1000 / 12 par mois, soit 20 par semaine.
   const weekly = Math.ceil(1000 / 12 * 12 / 52);
   a.sub.target = weekly;
