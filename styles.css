@@ -93,7 +93,7 @@ main {
 /* Bandeau fixe : l'application en cours reste toujours visible */
 .toolbar {
   position: sticky; top: env(safe-area-inset-top, 0px); z-index: 15;
-  display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, .9fr) minmax(0, 1.1fr); gap: 6px;
+  display: grid; gap: 6px;
   margin-inline: -6px; padding: 8px 6px; background: var(--ground);
   border-bottom: 1px solid transparent;
 }
@@ -102,7 +102,7 @@ main {
 .toolbar select { padding-block: 9px; font-size: 14px; }
 .toolbar .appsel select { font-family: var(--display); font-weight: 600; font-size: 16px; letter-spacing: .02em; color: var(--ink); border: 2px solid var(--sage); }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-@media (min-width: 768px) { .toolbar { grid-template-columns: 2fr 1fr 1.3fr; } .toolbar .appsel select { font-size: 19px; } }
+@media (min-width: 768px) { .toolbar .appsel select { font-size: 19px; } }
 
 /* ---------- Formulaires ---------- */
 label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--ink-soft); min-width: 0; }
@@ -577,9 +577,6 @@ dl.pl-lines dd { margin: 0; text-align: right; font-weight: 600; white-space: no
 .kpi-h { margin: 14px 0 8px; font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--ink-soft); }
 @media (min-width: 900px) { #r-kpi .kpis { grid-template-columns: repeat(4, 1fr); } }
 /* Trésorerie : application, découpage, année, période */
-.toolbar.four { grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr) minmax(0, 1fr); }
-.toolbar.four .appsel { grid-column: 1 / -1; }
-@media (min-width: 768px) { .toolbar.four { grid-template-columns: 1.6fr 1.2fr .9fr 1fr; } .toolbar.four .appsel { grid-column: auto; } }
 /* Repère investisseur : jauge sous la valeur */
 .gauge { margin-top: 8px; }
 .g-track { position: relative; display: flex; height: 6px; border-radius: 3px; overflow: visible; }
@@ -658,8 +655,6 @@ ul.hist li { display: flex; align-items: center; justify-content: space-between;
 .toolbar select:disabled { opacity: .45; }
 .toolbar label[hidden] { display: none; }
 @media (max-width: 767px) {
-  .toolbar { grid-template-columns: minmax(0, 1.25fr) minmax(0, .75fr) minmax(0, 1.25fr); }
-  .toolbar.four { grid-template-columns: minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .9fr); }
   .toolbar select { padding-left: 10px; }
 }
 
@@ -855,31 +850,26 @@ body.modal-open { overflow: hidden; }
 .modal-acts button { border-radius: 14px; padding: 12px; font-weight: 600; }
 .modal-acts button.primary { background: var(--sage); color: #fff; border: 0; }
 
-/* Téléphone et iPad en hauteur, bandeau replié : 1re ligne = intitulé et période, 2e ligne = chiffre clé à gauche, repères alignés à côté.
-   iPad en largeur : la place suffit, le bandeau replié reste sur une ligne comme sur ordinateur. */
-@media (max-width: 1023px) {
-  .b-sum { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lab lab chev" "big minis chev"; column-gap: 12px; row-gap: 6px; align-items: end; }
-  .b-head { display: contents; }
-  .b-head .b-label { grid-area: lab; gap: 4px 8px; }
-  .b-head .chip { white-space: nowrap; }
-  .b-big { grid-area: big; }
-  .b-minis { grid-area: minis; justify-self: end; align-self: end; margin-left: 0; flex-shrink: 1; max-width: 100%; gap: 8px; }
-  .b-mini { justify-content: flex-end; padding-left: 8px; }
-  .b-mini small { letter-spacing: .02em; }
-  .b-sum::after { grid-area: chev; align-self: center; margin-left: 0; }
-  details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"; }
-}
+/* Deux versions seulement : téléphone, et grand écran (iPad et ordinateur identiques).
+   Bandeau replié, partout : 1re ligne = intitulé et période, 2e ligne = chiffre clé à gauche, repères alignés à droite. */
+.b-sum { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lab lab chev" "big minis chev"; column-gap: 12px; row-gap: 6px; align-items: end; }
+.b-head { display: contents; }
+.b-head .b-label { grid-area: lab; gap: 4px 8px; }
+.b-head .chip { white-space: nowrap; }
+.b-big { grid-area: big; }
+.b-minis { grid-area: minis; justify-self: end; align-self: end; margin-left: 0; flex-shrink: 1; max-width: 100%; }
+.b-mini { justify-content: flex-end; }
+.b-sum::after { grid-area: chev; align-self: center; margin-left: 0; }
+details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"; }
+@media (max-width: 767px) { .b-minis { gap: 8px; } .b-mini { padding-left: 8px; } .b-mini small { letter-spacing: .02em; } }
 
-/* Téléphone et iPad : même haut de page partout (comme Trésorerie). 1re ligne : le produit en pleine largeur ;
-   2e ligne : Année, Période (et Détail par) ; puis le bandeau. Marges resserrées pour la ligne en plus. */
-@media (max-width: 1199px) {
-  .toolbar, .toolbar.four { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 4px; padding-block: 6px; }
+/* Haut de page, partout (comme Trésorerie) : 1re ligne, le produit en pleine largeur ;
+   2e ligne, Année, Période (et Détail par) ; puis le bandeau. Téléphone : 2 ou 3 colonnes ; grand écran : 4 colonnes. */
+.toolbar, .toolbar.four { grid-template-columns: repeat(4, minmax(0, 1fr)); row-gap: 4px; padding-block: 6px; }
+.toolbar .appsel, .toolbar.four .appsel { grid-column: 1 / -1; }
+@media (max-width: 767px) {
+  .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .toolbar.four { grid-template-columns: minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .9fr); }
-  .toolbar .appsel, .toolbar.four .appsel { grid-column: 1 / -1; }
   .toolbar select { padding-block: 8px; }
   .toolbar .appsel select { padding-block: 7px; }
-}
-@media (min-width: 1024px) and (max-width: 1199px) {
-  /* iPad en largeur : Année, Période (et Détail par) gardent une largeur raisonnable au lieu de s'étirer. */
-  .toolbar, .toolbar.four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
 }
