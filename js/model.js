@@ -60,25 +60,39 @@ function program(name, start, prices, duration) {
 }
 
 // Notoriété en entonnoir : relais → Instagram → newsletter → site → produits.
-// - insta : abonnées au départ (count, au mois from), et nouvelles abonnées gagnées seule chaque mois (initial → target en months mois, en S).
+// - insta : abonnées au départ (count, au mois from), et nouvelles abonnées gagnées seule chaque mois, par paliers datés (points),
+//   en S d'un palier à l'autre, jusqu'en 2032 et au-delà.
 // - relays : d'autres comptes qui montrent ton travail ; chaque mois, rate % de leurs abonnées te suivent sur Instagram.
 // - newsletter : inscrites au départ, puis fromInsta % des nouvelles abonnées Instagram qui s'inscrivent.
-// - stores : à partir de start (applis natives), personnes qui te découvrent dans les stores chaque mois.
+// - stores : à partir du premier palier (applis natives), personnes qui te découvrent dans les stores chaque mois.
 // Le vivier = abonnées Instagram + inscrites newsletter + venues des stores : c'est la base du sans pub.
 // actuals : vrais chiffres relevés { 'AAAA-MM': nombre } ; source 'manuel' pour l'instant (branchement automatique plus tard).
 const relay = (name, audience, rate, start, end = '') => ({ id: 'rl-' + Math.random().toString(36).slice(2, 8), name, audience, rate, start, end });
+const defaultInstaPoints = from => [{ month: from, n: 30 }, { month: addMonths(from, 12), n: 80 }, { month: addMonths(from, 36), n: 300 }, { month: '2032-12', n: 600 }];
+const defaultStorePoints = () => [{ month: '2028-01', n: 10 }, { month: '2030-01', n: 150 }, { month: '2032-12', n: 400 }];
 function defaultAudience(from = '2026-11') {
   return {
     from,
-    insta: { count: 1000, initial: 30, target: 300, months: 36, actuals: {}, source: 'manuel' },
+    insta: { count: 1000, points: defaultInstaPoints(from), actuals: {}, source: 'manuel' },
     relays: [relay('Ma sœur', 30000, 0.2, addMonths(from, 2))],
     newsletter: { count: 40, fromInsta: 10, actuals: {}, source: 'manuel' },
-    stores: { on: true, start: '2028-01', initial: 10, target: 150, months: 24 }
+    stores: { on: true, points: defaultStorePoints() }
   };
 }
 // Ancienne page Notoriété (canaux en parallèle) → entonnoir : on garde les chiffres de départ et les relevés.
 function migrateAudience(a) {
   const old = a.audience;
+  // Croissance en départ → maturité : convertie en paliers datés (valeurs d'origine : nouveaux paliers jusqu'en 2032).
+  if (old && old.insta && !old.insta.points) {
+    const i = old.insta, f = old.from || '2026-11';
+    i.points = +i.initial === 30 && +i.target === 300 && +i.months === 36 ? defaultInstaPoints(f) : [{ month: f, n: +i.initial || 0 }, { month: addMonths(f, +i.months || 36), n: +i.target || 0 }];
+    ['initial', 'target', 'months'].forEach(k => delete i[k]);
+  }
+  if (old && old.stores && !old.stores.points) {
+    const st = old.stores;
+    st.points = +st.initial === 10 && +st.target === 150 ? defaultStorePoints() : [{ month: st.start || '2028-01', n: +st.initial || 0 }, { month: addMonths(st.start || '2028-01', +st.months || 24), n: +st.target || 0 }];
+    ['start', 'initial', 'target', 'months'].forEach(k => delete st[k]);
+  }
   if (old && !Array.isArray(old.channels)) return;
   const fresh = defaultAudience();
   for (const c of old?.channels || []) {
