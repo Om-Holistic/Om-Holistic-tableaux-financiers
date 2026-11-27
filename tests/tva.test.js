@@ -75,24 +75,50 @@ test('ancien fichier : les zones et réglages de TVA sont ajoutés', () => {
   assert.ok(s.apps[0].zones && s.apps[0].zones.us > 0);
 });
 
-test('budget pub : inscriptions = budget ÷ coût par cliente, et le coût d\'acquisition vaut le budget', () => {
+test('campagnes pub : inscriptions = budget ÷ coût par cliente, et le budget va dans les charges', () => {
   const s = M.defaultState(), a = s.apps[0], q = a.programs[0];
   a.programs.forEach((p, i) => { if (i) p.enabled = false; p.fromSolo = 0; });
-  q.cohorts = []; q.adMode = true; q.acq = 50; q.adSteps = [{ start: q.start, budget: 1000 }, { start: '2029-01', budget: 3000 }];
+  q.cohorts = []; q.organic = false;
+  q.campaigns = [{ start: q.start, end: '2028-12', budget: 1000, cac: 50 }, { start: '2029-01', end: '', budget: 3000, cac: 60 }];
   const sim = E.simulate(a);
   const year = y => sim.months.filter(m => m.month.startsWith(y)).reduce((t, m) => t + m.products[0].admissions, 0);
   assert.ok(Math.abs(year('2028') - 1000 / 50 * 12) < 2, String(year('2028')));
-  assert.ok(Math.abs(year('2029') - 3000 / 50 * 12) < 3, String(year('2029')));
+  assert.ok(Math.abs(year('2029') - 3000 / 60 * 12) < 3, String(year('2029')));
   const pnl = P.buildPnl(s, s.apps.map(x => E.simulate(x)));
-  const acq = pnl[0].filter(e => e.month.startsWith('2029')).reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
-  assert.ok(Math.abs(acq - 3000 * 12) < 150, String(acq));
+  const acq = y => pnl[0].filter(e => e.month.startsWith(y)).reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
+  assert.ok(Math.abs(acq('2028') - 1000 * 12) < 1e-6, String(acq('2028')));
+  assert.ok(Math.abs(acq('2029') - 3000 * 12) < 1e-6, String(acq('2029')));
 });
 
-test('budget pub sur l\'abonnement : nouvelles abonnées payantes = budget ÷ coût par abonnée', () => {
+test('campagnes pub : elles s\'ajoutent au rythme sans pub et s\'arrêtent à leur fin', () => {
   const s = M.defaultState(), a = s.apps[0];
   a.programs.forEach(p => { p.enabled = false; });
-  a.sub.adMode = true; a.sub.acq = 20; a.sub.adSteps = [{ start: '2028-01', budget: 2000 }];
+  const base = E.simulate(a);
+  a.sub.campaigns = [{ start: '2029-01', end: '2029-06', budget: 2000, cac: 20 }];
   const sim = E.simulate(a);
-  const paid = sim.months.filter(m => m.month.startsWith('2029')).reduce((t, m) => t + m.newDirect.reduce((u, v) => u + v, 0), 0);
-  assert.ok(Math.abs(paid - 2000 / 20 * 12) < 8, String(paid));
+  const paid = (r, y) => r.months.filter(m => m.month.startsWith(y)).reduce((t, m) => t + m.newDirect.reduce((u, v) => u + v, 0), 0);
+  assert.ok(Math.abs(paid(sim, '2029') - paid(base, '2029') - 2000 / 20 * 6) < 4, String(paid(sim, '2029') - paid(base, '2029')));
+  assert.ok(Math.abs(paid(sim, '2030') - paid(base, '2030')) < 1e-6);
+});
+
+test('ancien budget pub par paliers : converti en campagnes datées', () => {
+  const old = M.defaultState(), q = old.apps[0].programs[0];
+  delete q.campaigns; delete q.organic; q.adMode = true; q.acq = 40; q.adSteps = [{ start: '2028-01', budget: 1000 }, { start: '2028-07', budget: 2000 }];
+  const n = M.migrate(old).apps[0].programs[0];
+  assert.strictEqual(n.organic, false);
+  assert.deepStrictEqual(n.campaigns, [{ start: '2028-01', end: '2028-06', budget: 1000, cac: 40 }, { start: '2028-07', end: '', budget: 2000, cac: 40 }]);
+});
+
+test('croissance en S : départ au rythme initial, maturité au rythme visé, accélération au milieu', () => {
+  const p = { initial: 2, target: 100, months: 36, shape: 's' }, d = Math.round(36 * 52 / 12);
+  assert.ok(Math.abs(E.weeklyRate(p, 0) - 2) < 1e-9);
+  assert.ok(Math.abs(E.weeklyRate(p, d) - 100) < 1e-9 && E.weeklyRate(p, d + 50) === 100);
+  const q1 = E.weeklyRate(p, d / 4) - 2, mid = E.weeklyRate(p, d / 2);
+  assert.ok(q1 < 10, String(q1)); assert.ok(Math.abs(mid - 51) < 1, String(mid));
+});
+
+test('ancien rythme : il garde sa forme en paliers réguliers', () => {
+  const old = M.defaultState(); for (const q of [old.apps[0].sub, ...old.apps[0].programs]) delete q.shape;
+  const s = M.migrate(old);
+  assert.strictEqual(s.apps[0].sub.shape, 'lin'); assert.strictEqual(s.apps[0].programs[0].shape, 'lin');
 });

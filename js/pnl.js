@@ -3,7 +3,7 @@
 // produit par produit, puis répartit les charges de structure Om Holistic entre les applications.
 
 const pnlPos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
-if (typeof module !== 'undefined') var { chargeAt, appDates } = require('./model.js');
+if (typeof module !== 'undefined') var { chargeAt, appDates, campaignBudget } = require('./model.js');
 
 // Noms des produits : « CHRYSALISS seul » pour l'abonnement, « CHRYSALISS Refit » pour un programme.
 const soloName = a => a.programs.length ? a.name + ' seul' : a.name;
@@ -79,11 +79,11 @@ function monthPnl(a, m, vat, ctx = { mode: 'fr', ex: {} }) {
   // TVA récupérable : en société française, et en micro-entreprise une fois la franchise perdue.
   const fr = vat?.zones?.length ? pnlPos(vat.rate, 20) / 100 : 0;
   const deduct = ctx.mode === 'fr' || (ctx.mode === 'franchise' && !ctx.ex.fr) ? Math.min(100, pnlPos(vat?.recover)) / 100 * fr / (1 + fr) : 0;
-  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: pnlPos(a.sub.acq) } };
+  const units = { sub: { ca: m.directCA + m.postCA, clients: m.direct + m.post, inscriptions: 0, hours: 0, fresh: (m.newDirect || []).reduce((t, x) => t + x, 0), acq: campaignBudget(a.sub, m.month) } };
   a.programs.forEach((p, i) => {
     const q = m.products[i];
     // Nouvelles clientes à acquérir : les inscriptions, sauf celles venues de l'abonnement (déjà clientes).
-    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours, fresh: q.admissions - (q.fromSolo || 0), acq: pnlPos(p.acq) };
+    units[p.id] = { ca: q.sales, clients: q.clients, inscriptions: q.admissions, hours: q.coachHours, fresh: q.admissions - (q.fromSolo || 0), acq: campaignBudget(p, m.month) };
   });
   const cols = {}, storeHT = {};
   for (const k in units) {
@@ -108,8 +108,8 @@ function monthPnl(a, m, vat, ctx = { mode: 'fr', ex: {} }) {
   for (const k in cols) {
     const fee = storeHT[k] * storeRate;
     cols[k].fees += fee; addCat(cats, 'paiement', fee); addCat(lines, ':store', fee);
-    // Coût d'acquisition : par nouvelle cliente (inscription ou nouvelle abonnée payante).
-    const acq = Math.max(0, units[k].fresh || 0) * (units[k].acq || 0);
+    // Campagnes pub : leur budget du mois, imputé au produit qu'elles promeuvent.
+    const acq = units[k].acq || 0;
     cols[k].variable += acq; addCat(cats, 'marketing', acq); addCat(lines, ':acq', acq);
   }
   for (const c of a.charges || []) {
