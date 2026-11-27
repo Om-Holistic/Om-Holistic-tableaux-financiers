@@ -179,8 +179,8 @@ function programCard(a, q, j, p) {
   const open = view.open.has('p' + j) ? 'open' : '';
   const launch = q.start ? 'lancement ' + monthName(q.start) : 'sans lancement prévu';
   const calSummary = [q.cohorts.length ? `${q.cohorts.length} cohorte${q.cohorts.length > 1 ? 's' : ''} de test` : 'pas de cohorte de test', launch].join(' · ');
-  const adNow = (q.adSteps || []).filter(x => x.start).sort((x, y) => x.start.localeCompare(y.start));
-  const insSummary = q.adMode ? `budget pub ${adNow.length ? adNow.map(x => money(+x.budget || 0)).join(' → ') + ' / mois' : 'à saisir'} · ${+q.acq > 0 ? money(+q.acq) + ' par cliente' : 'coût par cliente à saisir'}` : `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
+  const nCamp = (q.campaigns || []).length, pubTxt = nCamp ? `${nCamp} campagne${nCamp > 1 ? 's' : ''} pub` : '';
+  const insSummary = q.organic === false ? (pubTxt || 'aucune inscription : rythme non compté') : (pubTxt ? pubTxt + ' + ' : '') + `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(q.initial) + ' → ' + num(q.target) + ' / sem.'}`;
   return `<details class="card product" id="p${j}" ${open}><summary><span>${esc(progName(a, q))} <span class="tag ${q.enabled ? 'on' : ''}">${q.enabled ? 'Actif' : 'Inactif'}</span>${(() => { const gp = q.enabled && (q.goal?.steps || []).length ? programGoalPlan(a, j, (prodSim || simulate(a)).months) : null;
         return gp && gp.segs.length && !(q.palierMode && !q.launch && JSON.stringify(q.paliers) === JSON.stringify(gp.segs)) ? ' <span class="tag todo">Objectif à appliquer</span>' : ''; })()}<br><span class="sum-sub">${calSummary}</span>
       ${pstats([['Prix', priceRange(q.pricing)], ['Durée', `${num(q.duration)} sem.`], ['Coaching', `${num(+q.coach || 0)}${(q.coachSteps || []).length ? ' → ' + num(coachAt(q, '9999-12')) : ''} min`],
@@ -195,7 +195,7 @@ function programCard(a, q, j, p) {
       ${pricingEditor(q.pricing, t + '.pricing', 'Prix (total payé à l\'inscription)', 'price-p' + j, `<div class="grid">${field('Paiement en\nnombre de mensualités (1 = comptant)', t + '.installments', q.installments || 1)}</div>
         <p class="muted">Le chiffre d'affaires compte toujours au mois de l'inscription ; seule la trésorerie reçoit l'argent mensualité par mensualité.</p>`)}
       ${section('ins-p' + j, 'ins', 'Inscriptions après le lancement', insSummary, `
-        ${q.adMode ? `<p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="acq-p${j}" data-anchor="acq-p${j}">Inscriptions calculées à partir de ton budget pub : Acquisition ›</a></p>` : `
+        ${acqLink(q, 'acq-p' + j, 'inscriptions')}${q.organic === false ? '' : `
         <h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
         ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
         <h4>Ensuite, montée en puissance</h4>${fields(q, t, growth)}
@@ -299,7 +299,7 @@ function productsPage(a, i) {
       <div class="grid">${field('Durée moyenne d\'abonnement\nmois, aussi après un programme', p + '.sub.duration', a.sub.duration)}</div>
       ${check('Les abonnées gardent le prix de la phase où elles se sont abonnées', p + '.sub.lockPrice', a.sub.lockPrice)}
       <p class="muted"><a href="#calendrier" data-goto="calendrier" data-open="cal-sd" data-anchor="cal-sd">Ouverture des abonnements : Calendrier ›</a></p>
-      ${a.sub.adMode ? `<p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="acq-sd" data-anchor="acq-sd">Abonnements calculés à partir de ton budget pub : Acquisition ›</a></p>` : ''}
+      ${acqLink(a.sub, 'acq-sd', 'abonnements')}
       ${section('open-sd', 'cal', 'Rythme d\'abonnements', `${a.sub.palierMode && a.sub.paliers.length ? a.sub.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : num(a.sub.initial) + ' → ' + num(a.sub.target) + ' / sem.'}`, `${check('Paliers personnalisés (rempli par « Objectif d\'abonnées »)', p + '.sub.palierMode', a.sub.palierMode)}
         ${a.sub.palierMode ? a.sub.paliers.map((r, k) => lineEditor(r, p + '.sub.paliers.' + k, [['rate', 'Abonnées / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${p}.sub.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier, le rythme reste à l'objectif / semaine : ${num(a.sub.target)}.</p>` : fields(a.sub, p + '.sub', growth)}
 `)}
@@ -1303,6 +1303,14 @@ function chargeGroups(list, path, a, dates, scopes, keep = () => true) {
   }).join('');
 }
 
+// Lien de Produits vers Acquisition : dit d'où viennent les nouvelles clientes (rythme ici, campagnes là-bas).
+function acqLink(q, id, what) {
+  const n = (q.campaigns || []).length;
+  const txt = q.organic === false ? `Rythme non compté : les ${what} viennent seulement de ${n ? `tes ${n > 1 ? n + ' campagnes' : 'campagne'} pub` : 'campagnes pub (aucune saisie)'}`
+    : n ? `En plus de ce rythme : ${n > 1 ? n + ' campagnes' : '1 campagne'} pub` : 'Campagnes pub';
+  return `<p class="muted"><a href="#acquisition" data-goto="acquisition" data-open="${id}" data-anchor="${id}">${txt} : Acquisition ›</a></p>`;
+}
+
 // Valeur d'une nouvelle cliente sur sa durée de vie (chiffre d'affaires, avant charges), au prix de la dernière phase.
 function clientValue(a, k) {
   const lastPrice = grid => { const ph = phasesOf(grid); return ph.length ? +ph[ph.length - 1].price || 0 : 0; };
@@ -1328,32 +1336,43 @@ function acquisitionPage(a, i) {
   const acqYear = pnl.reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
   const freshYear = prods.reduce((t, x2) => t + win.reduce((u, m) => u + x2.fresh(m), 0), 0);
   const stats = prods.map(x2 => {
-    const o = x2.o, cac = +o.acq || 0, v = clientValue(a, x2.j ?? 'sub') * htK, n = win.reduce((u, m) => u + x2.fresh(m), 0);
-    const steps = (o.adSteps || []).filter(s2 => s2.start).sort((u, w) => u.start.localeCompare(w.start));
-    const budgetNow = o.adMode ? (steps.filter(s2 => s2.start <= from).at(-1)?.budget ?? 0) : cac * n / 12;
-    const price = x2.key === 'sub' ? (+phaseAt(a.sub.directPricing, from).price || 0) * htK : (+phaseAt(o.pricing, from).price || 0) * htK;
+    const o = x2.o, v = clientValue(a, x2.j ?? 'sub') * htK, n = win.reduce((u, m) => u + x2.fresh(m), 0);
+    const pubB = win.reduce((u, m) => u + campaignBudget(o, m.month), 0), pubN = win.reduce((u, m) => u + campaignClients(o, m.month), 0);
+    const now = campaignsAt(o, from), cac = pubN ? pubB / pubN : (now[0] ? +now[0].cac || 0 : 0);
+    const price = (+phaseAt(x2.key === 'sub' ? a.sub.directPricing : o.pricing, from).price || 0) * htK;
     // Délai pour rentrer dans ses frais : une abonnée rembourse son coût mois après mois ; un programme se paie d'un coup.
     const payback = !cac || !price ? null : x2.key === 'sub' ? cac / price : cac <= price ? 0 : null;
-    return { ...x2, cac, v, n, steps, budgetNow: +budgetNow || 0, ratio: cac ? v / cac : null, payback };
+    return { ...x2, cac, v, n, pubB, pubN, budgetNow: campaignBudget(o, from), ratio: cac ? v / cac : null, payback };
   });
   const best = stats.filter(x2 => x2.ratio !== null).sort((u, w) => w.ratio - u.ratio)[0];
   const list = `<div class="ucheck"><label class="uc"><input type="checkbox" data-acqall ${prods.every(shown) ? 'checked' : ''}><span>Tout</span></label>${prods.map(x2 => `<label class="uc"><input type="checkbox" data-acqshow="${esc(x2.key)}" ${shown(x2) ? 'checked' : ''}><span>${esc(x2.key === 'sub' ? soloName(a) : x2.o.name)}</span></label>`).join('')}</div>`;
   const picker = pickPop('pk-acq', 'Produits affichés', list, prods.filter(shown).map(x2 => x2.key === 'sub' ? 'Abonnement' : x2.o.name), prods.length);
   const ratioCls = st => st.ratio === null ? '' : st.ratio >= 3 ? 'ok' : st.ratio >= 1 ? 'mid' : 'bad';
+  const span = (u, w) => (+w.slice(0, 4) - +u.slice(0, 4)) * 12 + +w.slice(5) - +u.slice(5) + 1;
+  const campaign = (c, path, who) => {
+    const per = +c.cac > 0 ? (+c.budget || 0) / +c.cac : null, len = c.start && c.end && c.end >= c.start ? span(c.start, c.end) : null;
+    return `<div class="camp"><div class="lrow">${monthField('Début', path + '.start', c.start)}${monthField('Fin', path + '.end', c.end, 'sans fin')}</div>
+      <div class="lrow">${field('Budget\n€ / mois', path + '.budget', c.budget)}${field('Coût par ' + who + '\n€', path + '.cac', c.cac)}<button class="icon danger" data-remove="${esc(path)}" aria-label="Retirer cette campagne" title="Retirer cette campagne">${TRASH}</button></div>
+      ${!c.start ? '<p class="muted">Choisis le mois de début.</p>' : c.end && c.end < c.start ? '<p class="warn">La fin est avant le début.</p>' : per === null ? '<p class="muted">Indique le coût par ' + who + '.</p>'
+        : `<p class="pal-ok acq-res">${money(+c.budget || 0)} ÷ ${money(+c.cac)} = <b>${num(Math.round(per))} ${who}s par mois</b>${len ? `<br>${monthName(c.start)} → ${monthName(c.end)} : ${len} mois, ${money((+c.budget || 0) * len)} pour ${num(Math.round(per * len))} ${who}s` : `<br>dès ${monthName(c.start)}, sans fin`}</p>`}</div>`;
+  };
   const cards = stats.filter(shown).map(st => {
-    const o = st.o;
-    return `<details class="card product${st.key === 'sub' ? ' solo' : ''}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${o.adMode ? 'piloté par le budget pub' : 'rythme saisi dans Produits'}</span>
-        ${pstats([['Pub / mois', money(st.budgetNow)], ['Coût / cliente', st.cac ? money(st.cac) : '—'], ['Clientes 12 mois', num(Math.round(st.n)), 'hi'], ['LTV / CAC', st.ratio === null ? '—' : fmtN(st.ratio, 1), st.ratio !== null && st.ratio < 1 ? 'bad' : '']])}</span></summary>
-      <div class="grid">${field('Coût d\'acquisition\n€ par nouvelle ' + (st.key === 'sub' ? 'abonnée payante' : 'cliente'), st.t + '.acq', o.acq || 0)}</div>
-      ${check('Calculer les ' + (st.key === 'sub' ? 'abonnements' : 'inscriptions') + ' à partir de mon budget pub', st.t + '.adMode', o.adMode)}
-      ${o.adMode ? `<h4>Budget pub par mois</h4>
-        ${(o.adSteps || []).map((s2, k) => lineEditor(s2, `${st.t}.adSteps.${k}`, [['start', 'À partir de', 'month'], ['budget', 'Budget (€ / mois)']], 'Retirer ce budget')).join('') || '<p class="muted">Aucun budget saisi.</p>'}
-        <div class="row"><button data-add="${st.t}.adSteps">Ajouter un budget</button></div>
-        ${st.cac && st.steps.length ? `<p class="pal-ok acq-res">${st.steps.map(s2 => `Dès ${monthName(s2.start)} : ${money(+s2.budget || 0)} ÷ ${money(st.cac)} = <b>${num(Math.round((+s2.budget || 0) / st.cac))} ${st.key === 'sub' ? 'abonnées' : 'clientes'} par mois</b>`).join('<br>')}</p>` : '<p class="muted">Indique un coût par cliente et un budget pour voir le nombre de clientes.</p>'}`
-        : `<p class="muted">Le nombre de ${st.key === 'sub' ? 'nouvelles abonnées' : 'clientes'} vient du rythme saisi dans <a href="#produits" data-goto="produits" data-open="${st.key === 'sub' ? 'sd' : 'p' + st.j}" data-anchor="${st.key === 'sub' ? 'sd' : 'p' + st.j}">Produits</a>. Chacune coûte le montant ci-dessus.</p>`}
+    const o = st.o, who = st.key === 'sub' ? 'abonnée' : 'cliente', camps = o.campaigns || [];
+    const rows = win.map(m => { const b = campaignBudget(o, m.month), c = campaignClients(o, m.month), f = st.fresh(m); return `<tr><td>${monthName(m.month)}</td><td>${b ? money(b) : '—'}</td><td>${c ? num(Math.round(c)) : '—'}</td><td>${num(Math.round(Math.max(0, f - c)))}</td></tr>`; }).join('');
+    return `<details class="card product${st.key === 'sub' ? ' solo' : ''}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${camps.length ? `${camps.length} campagne${camps.length > 1 ? 's' : ''}` : 'aucune campagne'}${o.organic === false ? ' · pub seule' : ' + rythme sans pub'}</span>
+        ${pstats([['Pub / mois', money(st.budgetNow)], ['Coût / ' + who, st.cac ? money(st.cac) : '—'], ['Par la pub, 12 mois', num(Math.round(st.pubN)), 'hi'], ['LTV / CAC', st.ratio === null ? '—' : fmtN(st.ratio, 1), st.ratio !== null && st.ratio < 1 ? 'bad' : '']])}</span></summary>
+      <h4>Campagnes pub</h4>
+      ${camps.map((c, k) => campaign(c, `${st.t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>'}
+      <div class="row"><button data-add="${st.t}.campaigns">Ajouter une campagne</button></div>
+      ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
+      <h4>Sans pub</h4>
+      ${check(`Compter aussi le rythme ${st.key === 'sub' ? 'd\'abonnements' : 'd\'inscriptions'} saisi dans Produits`, st.t + '.organic', o.organic !== false)}
+      <p class="muted">${o.organic === false ? 'Seules les campagnes amènent des ' + who + 's.' : `Bouche-à-oreille, réseaux, site : ${num(Math.round(Math.max(0, st.n - st.pubN)))} ${who}s sur 12 mois.`} <a href="#produits" data-goto="produits" data-open="${st.key === 'sub' ? 'sd' : 'p' + st.j}" data-anchor="${st.key === 'sub' ? 'open-sd' : 'ins-p' + st.j}">Rythme : Produits ›</a></p>
+      ${section(st.id + '-mois', 'cal', 'Mois par mois', `${money(Math.round(st.pubB))} de pub · ${num(Math.round(st.n))} ${who}s sur 12 mois`, `<table class="acq-tab"><thead><tr><th>Mois</th><th>Pub</th><th>Par la pub</th><th>Sans pub</th></tr></thead><tbody>${rows}</tbody></table>
+        <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub », sur ces mêmes mois.</p>`)}
       <dl class="pal-sum">
-        <div><dt>Valeur d'une ${st.key === 'sub' ? 'abonnée' : 'cliente'}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
-        <div><dt>Face à son coût</dt><dd class="${ratioCls(st)}">${st.ratio === null ? 'coût à saisir' : `rapporte ${fmtN(st.ratio, 1)} ×`}<small>${st.payback === null ? (st.cac ? 'plus cher que le prix du programme' : '') : st.payback === 0 ? 'rentabilisée dès l\'achat' : `rentabilisée en ${fmtN(st.payback, 1)} mois`}</small></dd></div>
+        <div><dt>Valeur d'une ${who}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
+        <div><dt>Face à son coût</dt><dd class="${ratioCls(st)}">${st.ratio === null ? 'pas de campagne' : `rapporte ${fmtN(st.ratio, 1)} ×`}<small>${st.payback === null ? (st.cac ? 'plus cher que le prix du programme' : '') : st.payback === 0 ? 'rentabilisée dès l\'achat' : `rentabilisée en ${fmtN(st.payback, 1)} mois`}</small></dd></div>
       </dl>
       ${st.key !== 'sub' ? '<p class="muted">Les abonnées qui achètent le programme ne coûtent rien à acquérir.</p>' : ''}</details>`;
   }).join('');
@@ -1395,7 +1414,7 @@ function chargesPeriodCard(a, i, r) {
   // Lignes de charges variables : celles saisies, plus les coûts calculés (stores, acquisition, coaching).
   const variable = [
     ln(':store', 'paiement', 'Commissions App Store / Google Play', `${num(+a.channels?.store || 0)} % des ventes passent par les stores`, s.lines[':store'] || 0),
-    ln(':acq', 'marketing', 'Acquisition de nouvelles clientes', 'coût par nouvelle cliente (Produits et prix)', s.lines[':acq'] || 0),
+    ln(':acq', 'marketing', 'Campagnes pub', 'budgets des campagnes (Acquisition)', s.lines[':acq'] || 0),
     ln(':coaching', 'coaching', 'Heures de coachs', `${money(+a.coachRate || 0)} / h`, s.lines[':coaching'] || 0),
     ...appCharges.filter(c => !isFixed(c)).map(c => ln(c.id, c.category || 'autre', c.name, amountText(c, +c.amount || 0), s.lines[c.id] || 0))];
   const fixed = appCharges.filter(isFixed).map(c => ln(c.id, c.category || 'autre', c.name, `${c.type === 'unique' ? 'une fois' : money(+c.amount || 0) + ' / mois'} · démarre ${startOf(c, dates)}`, s.lines[c.id] || 0));
@@ -2194,7 +2213,10 @@ document.addEventListener('click', e => {
         if (o.type) return l ? { after: +l.after + 12, amount: +l.amount } : { after: 12, amount: +o.amount || 0 };
         return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
-      adSteps: () => { const l = o[k][o[k].length - 1]; return l ? { start: addMonths(l.start || thisMonth, 6), budget: Math.round((+l.budget || 0) * 1.5) } : { start: o.start || thisMonth, budget: 500 }; },
+      // Nouvelle campagne : elle prend la suite de la dernière, qui s'arrête alors le mois d'avant.
+      campaigns: () => { const l = o[k][o[k].length - 1]; if (!l) return { start: [o.start || thisMonth, thisMonth].sort().at(-1), end: '', budget: 500, cac: 50 };
+        const start = l.end ? addMonths(l.end, 1) : addMonths(l.start || thisMonth, 6); if (!l.end) l.end = addMonths(start, -1);
+        return { start, end: '', budget: Math.round((+l.budget || 0) * 1.5), cac: +l.cac || 0 }; },
       capacitySteps: () => { const l = o[k][o[k].length - 1]; return { date: l ? addMonths(l.date || thisMonth, 6) : thisMonth, hours: l ? +l.hours || 0 : 10, hired: l ? +l.hired || 0 : 0 }; },
       coachSteps: () => { const l = o[k][o[k].length - 1]; return { date: l ? addMonths(l.date || thisMonth, 6) : addMonths(thisMonth, 6), minutes: Math.max(0, Math.round((l ? +l.minutes : +o.coach || 0) * 0.75)) }; },
       cohorts: () => ({ name: ['Cohorte alpha', 'Deuxième cohorte', 'Troisième cohorte'][o[k].length] || `Cohorte ${o[k].length + 1}`, date: thisMonth, size: 10 }),

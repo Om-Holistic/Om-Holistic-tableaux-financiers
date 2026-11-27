@@ -6,6 +6,14 @@ const STORAGE_KEY = 'om-finance-v1';
 const PHASE_LABELS = ['Phase 1', 'Phase 2', 'Phase 3'];
 
 // Ajoute k mois à une clé "AAAA-MM".
+// Campagnes pub d'un produit : du mois de début au mois de fin (vide = sans fin), budget par mois et coût par cliente.
+// Les campagnes actives le même mois s'additionnent.
+function campaignsAt(p, month) {
+  return (p.campaigns || []).filter(c => c.start && c.start <= month && (!c.end || month <= c.end));
+}
+function campaignBudget(p, month) { return campaignsAt(p, month).reduce((t, c) => t + Math.max(0, +c.budget || 0), 0); }
+function campaignClients(p, month) { return campaignsAt(p, month).reduce((t, c) => t + (+c.cac > 0 ? Math.max(0, +c.budget || 0) / +c.cac : 0), 0); }
+
 function addMonths(month, k) {
   const [y, m] = month.split('-').map(Number);
   const d = new Date(Date.UTC(y, m - 1 + k, 1));
@@ -45,8 +53,8 @@ function program(name, start, prices, duration) {
     launch: true, launchWeeks: 12, launchRate: 2,
     initial: 2, target: 5, months: 24, step: 1,
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
-    // Inscriptions calculées à partir du budget pub : budget du mois ÷ coût d'acquisition.
-    adMode: false, adSteps: []
+    // organic : le rythme saisi ici compte (clientes venues sans pub). campaigns : campagnes pub, réglées dans Acquisition.
+    organic: true, campaigns: []
   };
 }
 
@@ -66,7 +74,7 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, adMode: false, adSteps: []
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: []
     },
     programs: []
   };
@@ -438,7 +446,16 @@ function migrate(state) {
     if (a.coachRate === undefined) a.coachRate = 0;
   }
   if (!state.shared) state.shared = defaultShared();
-  for (const a of state.apps) for (const q of [a.sub, ...(a.programs || [])]) { if (q.adMode === undefined) q.adMode = false; if (!Array.isArray(q.adSteps)) q.adSteps = []; }
+  // Budget pub par paliers (adMode / adSteps) → campagnes datées, chacune avec son coût par cliente.
+  for (const a of state.apps) for (const q of [a.sub, ...(a.programs || [])]) {
+    if (!Array.isArray(q.campaigns)) {
+      const steps = (q.adSteps || []).filter(s => s.start).sort((x, y) => x.start.localeCompare(y.start));
+      q.campaigns = q.adMode ? steps.map((s, k) => ({ start: s.start, end: steps[k + 1] ? addMonths(steps[k + 1].start, -1) : '', budget: +s.budget || 0, cac: +q.acq || 0 })) : [];
+      q.organic = !q.adMode;
+    }
+    if (q.organic === undefined) q.organic = true;
+    delete q.adMode; delete q.adSteps;
+  }
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
   for (const a of state.apps) if (!a.zones) a.zones = defaultZones();
@@ -530,4 +547,4 @@ function isValidState(x) {
   return x && Array.isArray(x.apps) && x.apps.length > 0 && x.apps.every(a => a && a.sub && Array.isArray(a.programs));
 }
 
-if (typeof module !== 'undefined') module.exports = { VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
+if (typeof module !== 'undefined') module.exports = { VAT_ZONES, defaultVat, defaultZones, defaultBench, defaultRaise, defaultRaisePlan, defaultScenarios, withScenario, defaultImplantation, CHARGE_CATEGORIES, CHARGE_ANCHORS, appDates, chargeStart, chargeAt, monthsFrom, smallAppCharges, exampleCharges, defaultShared, appStart, capacityAt, coachAt, addMonths, campaignsAt, campaignBudget, campaignClients, pricing, phasesOf, phaseAt, program, application, charge, smallApp, defaultState, migrate, isValidState, STORAGE_KEY };
