@@ -122,8 +122,9 @@ const monthsBetween = (from, to) => { const [y1, m1] = from.split('-').map(Numbe
 // Dernière année des prévisions (au moins 5 ans après le lancement de l'appli).
 const HORIZON_END = 2034;
 
-// Mois d'abonnement offerts après la fin d'un programme, convertis en semaines (0 = pas d'offre).
-const giftWeeks = p => Math.round(pos(p.giftMonths) * 52 / 12);
+// CHRYSALISS offert pendant 1 an depuis le début du programme (programme inclus) : semaines offertes après la fin.
+const GIFT_WEEKS = 52;
+const giftWeeks = p => p.gift ? Math.max(0, GIFT_WEEKS - Math.max(1, Math.floor(pos(p.duration)))) : 0;
 
 function emptyMonth(month, a) {
   return {
