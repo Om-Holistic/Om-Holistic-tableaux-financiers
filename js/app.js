@@ -245,7 +245,7 @@ function productsPage(a, i) {
   return `${banner({ label: `Produits de ${esc(a.name)}`, big: `${progs.length + 1} produit${progs.length ? 's' : ''}`,
       note: next ? `Prochaine date : ${next.text.replace(/<[^>]+>/g, '')} · ${monthName(next.date)}` : 'Aucune date à venir',
       tiles: [
-        { label: 'Abonnement', value: price(phaseAt(g, thisMonth).price), hint: 'par mois aujourd\'hui', go: { page: 'produits', open: 'sd', anchor: 'sd' } },
+        { label: 'Abonnement', mini: 'Par mois', value: price(phaseAt(g, thisMonth).price), hint: 'par mois aujourd\'hui', go: { page: 'produits', open: 'sd', anchor: 'sd' } },
         ...(progs.length ? [
           { label: 'Prix des programmes', mini: 'Programmes', value: range(prices, x => price(x)), hint: `${progs.length} programme${progs.length > 1 ? 's' : ''} actif${progs.length > 1 ? 's' : ''}`, go: { page: 'produits', open: 'p0', anchor: 'p0' } },
           { label: 'Mes heures de coaching', value: cap ? `${num(+cap.hours || 0)} h` : '—', hint: 'par semaine aujourd\'hui', go: { page: 'coaching' } },

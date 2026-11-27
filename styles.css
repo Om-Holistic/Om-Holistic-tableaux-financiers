@@ -854,3 +854,27 @@ body.modal-open { overflow: hidden; }
   background: var(--surface); border-top: 1px solid var(--line); }
 .modal-acts button { border-radius: 14px; padding: 12px; font-weight: 600; }
 .modal-acts button.primary { background: var(--sage); color: #fff; border: 0; }
+
+/* Téléphone, bandeau replié : 1re ligne = intitulé et période, 2e ligne = chiffre clé à gauche, repères alignés à côté. */
+@media (max-width: 767px) {
+  .b-sum { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; grid-template-areas: "lab lab chev" "big minis chev"; column-gap: 12px; row-gap: 6px; align-items: end; }
+  .b-head { display: contents; }
+  .b-head .b-label { grid-area: lab; gap: 4px 8px; }
+  .b-head .chip { white-space: nowrap; }
+  .b-big { grid-area: big; }
+  .b-minis { grid-area: minis; justify-self: end; align-self: end; margin-left: 0; flex-shrink: 1; max-width: 100%; gap: 8px; }
+  .b-mini { justify-content: flex-end; padding-left: 8px; }
+  .b-mini small { letter-spacing: .02em; }
+  .b-sum::after { grid-area: chev; align-self: center; margin-left: 0; }
+  details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"; }
+}
+
+/* Téléphone : même haut de page partout (comme Trésorerie). 1re ligne : le produit en pleine largeur ;
+   2e ligne : Année, Période (et Détail par) ; puis le bandeau. Marges resserrées pour la ligne en plus. */
+@media (max-width: 767px) {
+  .toolbar, .toolbar.four { grid-template-columns: repeat(2, minmax(0, 1fr)); row-gap: 4px; padding-block: 6px; }
+  .toolbar.four { grid-template-columns: minmax(0, .8fr) minmax(0, 1.3fr) minmax(0, .9fr); }
+  .toolbar .appsel, .toolbar.four .appsel { grid-column: 1 / -1; }
+  .toolbar select { padding-block: 8px; }
+  .toolbar .appsel select { padding-block: 7px; }
+}
