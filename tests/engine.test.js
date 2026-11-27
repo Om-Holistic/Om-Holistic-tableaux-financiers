@@ -152,7 +152,7 @@ test('passerelles : programme → abonnement seul, abonnement seul → programme
     const a = model.defaultState().apps[0];
     a.programs = [a.programs[0]];
     const p = a.programs[0];
-    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.shape = 'lin'; p.toSolo = 50; p.fromSolo = 0;
+    p.cohorts = []; p.start = '2027-01'; p.launch = false; p.initial = p.target = 2; p.shape = 'lin'; p.toSolo = 50; p.fromSolo = 0; p.giftMonths = 0;
     a.sub.start = '2027-01'; a.sub.initial = a.sub.target = 5; a.sub.shape = 'lin'; a.sub.duration = 0; a.sub.postDuration = 0; a.capacitySteps = [];
     return a;
   };
@@ -350,4 +350,28 @@ test('impôt sur les sociétés à deux taux', () => {
   const sas = model.defaultImplantation().scenarios.find(x => x.id === 'fr-sas');
   assert.equal(afterTax(sas, 0, 100000, 12).tax, 42500 * 0.15 + 57500 * 0.25);
   assert.equal(afterTax(sas, 0, 10000, 12).tax, 1500);
+});
+
+test('CHRYSALISS offert après un programme : utilisatrices offertes sans CA, conversion à la fin de l\'offre', () => {
+  const make = gift => {
+    const a = model.defaultState().apps[0];
+    a.programs = [a.programs[0]];
+    const p = a.programs[0];
+    p.cohorts = [{ date: '2027-01', size: 10 }]; p.start = null; p.duration = 12; p.toSolo = 50; p.fromSolo = 0; p.giftMonths = gift;
+    a.sub.start = '2027-01'; a.sub.organic = false; a.sub.campaigns = []; a.sub.duration = 0; a.capacitySteps = [];
+    return simulate(a).months;
+  };
+  // Valeur par défaut : environ 12 mois depuis le début (programme de 12 semaines → 9 mois offerts).
+  assert.equal(model.defaultState().apps[0].programs.find(p => +p.duration === 12)?.giftMonths ?? 9, 9);
+  const off = make(0), on = make(9);
+  const at = (ms, k) => ms.find(m => m.month === k);
+  // Sans offre : 5 abonnées payantes dès la fin du programme (avril 2027).
+  assert.ok(Math.abs(at(off, '2027-05').post - 5) < 1e-6);
+  // Avec 9 mois offerts : 10 utilisatrices offertes, aucune abonnée payante, pas de CA d'abonnement.
+  assert.ok(Math.abs(at(on, '2027-06').gifted - 10) < 1e-6);
+  assert.equal(at(on, '2027-06').post, 0);
+  assert.equal(at(on, '2027-06').postCA, 0);
+  // Après l'offre (début 2028) : la moitié reste en payant, l'offre est terminée.
+  assert.ok(Math.abs(at(on, '2028-03').post - 5) < 1e-6);
+  assert.ok(at(on, '2028-03').gifted < 1e-6);
 });
