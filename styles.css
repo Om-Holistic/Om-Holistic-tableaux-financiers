@@ -786,3 +786,7 @@ main, #page, .card { min-width: 0; max-width: 100%; }
 }
 @keyframes pick-fade { from { opacity: 0; } }
 @keyframes pick-pop { from { opacity: 0; transform: scale(.96); } }
+
+/* Notoriété : barre d'avancement vers l'objectif d'un canal. */
+.aud-bar { height: 8px; border-radius: 999px; background: var(--line, #e5e1f0); overflow: hidden; margin: 4px 0 12px; }
+.aud-bar i { display: block; height: 100%; background: var(--k-ins); border-radius: inherit; }
