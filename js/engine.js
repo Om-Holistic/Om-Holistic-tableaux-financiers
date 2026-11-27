@@ -3,7 +3,7 @@
 // la capacité de coaching et les abonnements, puis agrège le tout par mois.
 // Aucune dépendance au navigateur : ce fichier est aussi testé avec Node.
 
-if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, coachAt, addMonths } = require('./model.js');
+if (typeof module !== 'undefined') var { phaseAt, appStart, capacityAt, coachAt, addMonths, campaignClients } = require('./model.js');
 
 const DAY = 86400000, WEEK = 7 * DAY;
 const pos = (x, d = 0) => Number.isFinite(+x) ? Math.max(0, +x) : d;
@@ -24,15 +24,8 @@ function weekShares(d) {
 
 // Rythme d'acquisition hebdomadaire après w semaines : progression linéaire
 // par paliers de l'objectif de départ à l'objectif cible, ou paliers personnalisés.
-// Inscriptions par semaine venues de la pub : budget du mois ÷ coût d'acquisition d'une nouvelle cliente.
-function adBudget(p, month) {
-  const steps = (p.adSteps || []).filter(s => s.start && s.start <= month).sort((x, y) => x.start.localeCompare(y.start));
-  return steps.length ? pos(steps.at(-1).budget) : 0;
-}
-function adRate(p, month) {
-  const cac = pos(p.acq);
-  return cac > 0 ? adBudget(p, month) / cac * 12 / 52 : 0;
-}
+// Clientes par semaine venues de la pub : somme, sur les campagnes du mois, de budget ÷ coût par cliente.
+const adRate = (p, month) => campaignClients(p, month) * 12 / 52;
 function weeklyRate(p, w) {
   const a = Math.floor(pos(p.initial)), b = Math.floor(pos(p.target));
   const step = Math.max(1, Math.floor(pos(p.step, 1)));
@@ -44,6 +37,11 @@ function weeklyRate(p, w) {
       w -= pos(q.weeks);
     }
     return b;
+  }
+  // Courbe en S : l'appli est d'abord peu connue, la croissance s'accélère avec les avis, puis se stabilise à maturité.
+  if (p.shape === 's') {
+    const t = Math.min(1, Math.max(0, w) / duration), L = x => 1 / (1 + Math.exp(-10 * (x - 0.5)));
+    return a + (b - a) * (L(t) - L(0)) / (L(1) - L(0));
   }
   return a + Math.sign(b - a) * Math.min(Math.abs(b - a), Math.floor(Math.max(0, w) * changes / duration) * step);
 }
@@ -110,10 +108,11 @@ function simulate(a, soloStock) {
       if (commercial) {
         const w = Math.floor((d - commercial) / WEEK);
         const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
-        want += w < 0 ? 0 : p.adMode ? adRate(p, monthKey(d)) : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
+        want += w < 0 || p.organic === false ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
       }
-      // Scénario : plus ou moins d'inscriptions que prévu (1 = le plan tel que saisi).
+      // Scénario : plus ou moins d'inscriptions que prévu (1 = le plan tel que saisi). La pub dépend du budget, pas du scénario.
       want *= vol;
+      if (commercial && d >= commercial) want += adRate(p, monthKey(d));
       // Abonnées CHRYSALISS seul qui achètent ce programme (pourcentage annuel, réparti par semaine), dès son lancement.
       let fromSolo = 0;
       if (commercial && d >= commercial && pos(p.fromSolo) > 0) {
@@ -165,13 +164,13 @@ function simulate(a, soloStock) {
     // Abonnements directs : avec une période d'essai, seule une part des essais devient payante, à la fin de l'essai.
     if (subStart && d >= subStart) {
       const trial = pos(a.sub.trialDays);
-      // Budget pub : le coût d'acquisition est celui d'une abonnée payante, donc le budget donne directement les payantes.
+      // Rythme sans pub (essais convertis), plus les campagnes : leur coût est celui d'une abonnée payante.
       const conv = trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1;
-      const count = vol * (a.sub.adMode ? adRate(a.sub, monthKey(d)) : weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * conv);
+      const count = (a.sub.organic === false ? 0 : vol * weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * conv) + adRate(a.sub, monthKey(d));
       const paid = new Date(+d + trial * DAY);
       const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
       credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
-      if (trial > 0) credit(d, (mm, share) => { mm.trials += (conv ? count / vol / conv : 0) * share; });
+      if (trial > 0) credit(d, (mm, share) => { mm.trials += count / conv * share; });
     }
     // Plan avec levée : abonnées payantes apportées par la publicité, montée en charge sur quelques mois.
     const paid = a.paid;
@@ -273,4 +272,4 @@ function programGoalPlan(a, j, sim) {
   return { segs, steps: out };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, adRate, adBudget, weeklyRate, weekShares, goalPlan, programGoalPlan };
+if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, weekShares, goalPlan, programGoalPlan };

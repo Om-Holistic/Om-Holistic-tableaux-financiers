@@ -144,16 +144,18 @@ test('canaux : la part vendue par les stores paie leur commission, pas les frais
   assert.ok(Math.abs(all.result - (all.ca - all.charges)) < 1e-6 * all.ca);
 });
 
-test('acquisition : coût par nouvelle cliente, hors clientes venues de l\'abonnement', () => {
+test('acquisition : le budget des campagnes pub est une charge du produit, mois par mois', () => {
   const s = M.defaultState(), a = s.apps[0];
-  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
-  const sims = s.apps.map(x => E.simulate(x));
-  const ms = sims[0].months;
-  const expected = ms.reduce((t, m) => t + m.newDirect.reduce((x, y) => x + y, 0) * 10 + m.products.reduce((x, q) => x + (q.admissions - q.fromSolo) * 20, 0), 0);
-  const before = (() => { a.sub.acq = 0; a.programs.forEach(q => { q.acq = 0; }); return P.sumPnl(P.buildPnl(s, sims)[0]).total.variable; })();
-  a.sub.acq = 10; a.programs.forEach(q => { q.acq = 20; });
-  const after = P.sumPnl(P.buildPnl(s, sims)[0]).total.variable;
-  assert.ok(Math.abs(after - before - expected) < 1e-6 * Math.max(1, expected));
+  const sims0 = s.apps.map(x => E.simulate(x));
+  const before = P.sumPnl(P.buildPnl(s, sims0)[0]).total.variable;
+  a.sub.campaigns = [{ start: '2028-01', end: '2028-12', budget: 400, cac: 10 }];
+  a.programs[0].campaigns = [{ start: '2029-01', end: '2029-03', budget: 900, cac: 30 }];
+  const pnl = P.buildPnl(s, s.apps.map(x => E.simulate(x)))[0];
+  // Les autres charges par cliente montent aussi, puisqu'il y a plus de clientes.
+  const after = P.sumPnl(pnl).total.variable, pub = pnl.reduce((t, e) => t + (e.lines[':acq'] || 0), 0);
+  assert.ok(Math.abs(pub - (400 * 12 + 900 * 3)) < 1e-6, String(pub));
+  assert.ok(after - before >= pub);
+  assert.strictEqual(pnl.find(e => e.month === '2029-04').lines[':acq'] || 0, 0);
 });
 
 test('trésorerie : solde = apport + encaissements − charges − impôts − rémunération', () => {
