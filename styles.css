@@ -881,3 +881,13 @@ details.banner[open] .b-sum { grid-template-areas: "lab lab chev" "big big chev"
 .step-in { display: flex; flex-direction: row; align-items: center; gap: 10px; margin: 2px 0 12px; font-size: 13px; color: var(--ink-soft); }
 .step-in span { flex: none; font-size: 10.5px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; }
 .step-in select { width: auto; min-width: 150px; padding-block: 8px; background-color: var(--surface); }
+
+/* En-tête : ☰ (téléphone), puis page précédente ‹ et page suivante ›, puis le titre. */
+.hnav { display: flex; gap: 2px; flex: none; }
+.navbtn { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 40px; padding: 0; border: 0; border-radius: 12px; background: transparent; color: var(--on-forest); cursor: pointer; }
+.navbtn svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.navbtn:not(:disabled):hover, .navbtn:not(:disabled):active { background: rgba(255, 255, 255, .1); }
+.navbtn:disabled { opacity: .3; cursor: default; }
+@media (max-width: 767px) { header { gap: 4px; } .hnav { margin-right: 6px; } .head { flex: 1; } }
+@media (min-width: 768px) { .hnav { margin: -10px 0 -18px -8px; } }
+
