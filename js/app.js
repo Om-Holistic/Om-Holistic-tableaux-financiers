@@ -1274,27 +1274,27 @@ const saveAcqHidden = () => { try { localStorage.setItem('om-acq-hidden', JSON.s
 // Rythme sans pub, saisi sur la page Acquisition : abonnement puis programme.
 // Croissance sans pub : courbe en S (notoriété), paliers réguliers, ou paliers saisis à la main.
 const growthKind = q => q.palierMode ? 'manual' : q.shape === 'lin' ? 'lin' : q.shape === 'brand' ? 'brand' : 's';
-function growthEditor(q, t, unit, a) {
+const GROWTH_KINDS = [['brand', 'Part de mon vivier'], ['s', 'Courbe en S propre'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']];
+const growthPick = (q, t) => `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${GROWTH_KINDS.map(([v, l]) => `<option value="${v}" ${v === growthKind(q) ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
+// Champs du sans pub, selon sa forme : les deux taux du vivier, ou la courbe propre au produit.
+function growthFields(q, t, unit, a) {
   const kind = growthKind(q);
-  const pick = `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${[['brand', 'Part de mon vivier'], ['s', 'Courbe en S propre'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']].map(([v, l]) => `<option value="${v}" ${v === kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
   if (kind === 'brand') {
     // Le sans pub suit le vivier : nouvelles venues et vivier déjà là, chacune à son taux.
     const from = q.start || appStart(a), y1 = addMonths(from, 12), y3 = addMonths(from, 36), b = m => num(Math.round(audienceBuyers(a, q, m)));
-    return pick + `<div class="grid">${field('Nouvelles venues du mois\n% qui achètent', t + '.audienceNew', q.audienceNew)}${field('Vivier déjà là\n% qui achètent chaque mois', t + '.audienceRate', q.audienceRate)}</div>
-      <p class="muted">Une personne qui vient de découvrir ton travail achète plus facilement que celle qui te suit depuis deux ans sans acheter. Et une acheteuse sort du compte : on ne la compte pas deux fois. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard) : <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans, ${b(PLAN_END)} fin ${PLAN_END.slice(0, 4)}</b>.</p>`;
+    return `<div class="grid">${field('Nouvelles venues\n% qui achètent le mois de leur arrivée', t + '.audienceNew', q.audienceNew)}${field('Vivier déjà là\n% qui achètent chaque mois', t + '.audienceRate', q.audienceRate)}</div>
+      <p class="muted">Une personne qui vient de te découvrir achète plus facilement que celle qui te suit depuis longtemps. Avec ton <a href="#notoriete" data-goto="notoriete">vivier</a> (${num(Math.round(audienceAt(a, from)))} personnes au lancement, ${num(Math.round(audienceAt(a, y3)))} trois ans plus tard), ça donne <b>${b(addMonths(from, 1))} ${unit.toLowerCase()} par mois au début, ${b(y1)} après 1 an, ${b(y3)} après 3 ans</b>.</p>`;
   }
   const body = kind === 'manual'
     ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', unit + ' / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier : ${num(q.target)} / semaine.</p>`
     : fields(q, t, kind === 's' ? [['initial', 'Au départ : ton audience\n' + unit.toLowerCase() + ' / semaine'], ['target', 'À maturité\n' + unit.toLowerCase() + ' / semaine'], ['months', 'Temps pour y arriver\nmois']] : growth);
-  const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. Par exemple 2 000 abonnées Instagram et email, dont 1 % s'inscrivent dans le mois : 20 par mois, soit 5 par semaine. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche dans les stores, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
-  return pick + body + est;
+  const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
+  return body + est;
 }
-function subRhythm(a, p) { return growthEditor(a.sub, p + '.sub', 'Abonnées', a); }
-function progRhythm(q, t, a) {
-  return `<h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
-    ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
-    <h4>Ensuite</h4>${growthEditor(q, t, 'Clientes', a)}`;
-}
+// Étape de la carte d'un produit : un titre, son chiffre, une phrase d'aide, puis les champs à régler.
+const step = (kind, title, value, help, body) => `<section class="step sec-${kind}"><div class="step-h"><span class="step-t">${title}</span><b class="step-v">${value}</b></div>${help ? `<p class="step-help">${help}</p>` : ''}${body}</section>`;
+// Réglages secondaires d'une étape, repliés.
+const more = (id, title, body) => `<details class="more" id="${esc(id)}" ${view.open.has(id) ? 'open' : ''}><summary>${title}</summary><div class="more-b">${body}</div></details>`;
 const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.shape === 'brand' && !q.palierMode ? `part de ton vivier (${fmtN(+q.audienceNew || 0, 2)} % des nouvelles, ${fmtN(+q.audienceRate || 0, 2)} % des autres)` : q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
 // Nouvelles clientes par mois jusqu'à fin 2032, empilées : sans pub, pub, venues de l'abonnement.
 // Pic du lancement d'un programme, mois par mois : le rythme spécifique des premières semaines, à part du flux régulier.
@@ -1321,32 +1321,77 @@ function pubGapCached(a, j) {
   if (!gapCache.has(key)) { if (gapCache.size > 40) gapCache.clear(); gapCache.set(key, pubGap(a, j)); }
   return gapCache.get(key);
 }
-function goalBlock(a, st, p) {
-  const o = st.o, prog = st.key !== 'sub', g = o.goal || { steps: [] }, t = st.t;
+// Carte d'un produit, lue comme une histoire : objectif → sans pub → venues de l'abonnement → reste pour la pub → budget.
+function productStory(a, st, p, campaign) {
+  const o = st.o, prog = st.key !== 'sub', g = o.goal || { steps: [] }, t = st.t, steps = g.steps || [];
   const kind = prog ? 'year' : g.kind === 'new' ? 'new' : 'active';
-  const unit = kind === 'active' ? 'abonnées' : kind === 'new' ? 'nouvelles abonnées / an' : 'inscriptions / an';
-  const plan = pubGapCached(a, prog ? st.j : null), who = prog ? 'clientes' : 'abonnées';
-  const res = !plan ? '' : plan.segs.map((sg, k) => `<div class="gap">
-      <div class="gap-h"><span class="badge">${k + 1}</span><b>${num(sg.count)} ${unit}</b> en ${monthName(sg.at)}</div>
-      <dl class="gap-l">
-        <div><dt>Sans pub${prog ? ' et passerelles' : ''}</dt><dd>${num(Math.round(sg.free))}</dd></div>
-        <div class="${sg.count > sg.free ? 'neg' : 'pos'}"><dt>À combler par la pub</dt><dd>${num(Math.max(0, Math.round(sg.count - sg.free)))}</dd></div>
-        <div><dt>Pub nécessaire</dt><dd>${sg.budget ? `<b>${money(sg.budget)} / mois</b>` : 'aucune'}</dd></div>
-        ${sg.budget ? `<p class="gap-n">${sg.end ? `De ${monthShort(sg.start)} à ${monthShort(sg.end)}` : `Dès ${monthShort(sg.start)}`} : ${num(Math.round(sg.perMonth))} ${who} par mois × ${money(plan.cac)}</p>` : ''}
-        <div class="${sg.current + 0.5 >= sg.count ? 'pos' : 'neg'}"><dt>Avec tes campagnes</dt><dd>${num(Math.round(sg.current))} ${sg.current + 0.5 >= sg.count ? '✓' : '✗'}</dd></div>
-      </dl></div>`).join('');
-  const same = plan && JSON.stringify((o.campaigns || []).map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(plan.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
-  const sum = !(g.steps || []).length ? 'aucun : campagnes saisies à la main' : g.steps.map(x => `${num(+x.count || 0)} à ${num(+x.months || 0)} mois`).join(' · ') + (plan && !same && plan.segs.some(sg => sg.current + 0.5 < sg.count) ? ' · <b class="neg">pas atteint</b>' : '');
-  return section(st.id + '-goal', 'cal', prog ? 'Objectif d\'inscriptions' : 'Objectif d\'abonnées', sum, `
-    ${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
-    <h4>Paliers, comptés depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'})</h4>
-    ${(g.steps || []).map((x, k) => lineEditor(x, `${t}.goal.steps.${k}`, [['months', 'Au bout de (mois)'], ['count', kind === 'active' ? 'Abonnées en même temps' : kind === 'new' ? 'Nouvelles abonnées / an' : 'Inscriptions / an']], 'Supprimer ce palier')).join('')}
-    <div class="row"><button data-add="${t}.goal.steps">Ajouter un palier</button></div>
-    ${(g.steps || []).length ? `<div class="grid">${field(`Coût par ${prog ? 'cliente' : 'abonnée payante'} venue de la pub\n€, pour le calcul`, t + '.goal.cac', g.cac || plan?.cac || 50)}</div>
-    ${res}
-    ${plan ? `<div class="row"><button data-pubgap="${esc(t)}" ${same ? 'disabled' : ''}>${same ? 'Campagnes en place' : 'Créer ces campagnes pub'}</button></div>
-    <p class="muted">${same ? 'Tes campagnes correspondent à cet objectif.' : 'Remplace tes campagnes actuelles par celles qui atteignent l\'objectif. Tu pourras ensuite les modifier dans « Avec pub ».'}</p>` : ''}`
-    : '<p class="muted">Sans objectif, tu saisis toi-même tes campagnes dans « Avec pub ».</p>'}`);
+  const u = n => kind === 'active' ? `${num(Math.round(n))} abonnées` : `${num(Math.round(n))} / an`;
+  const plan = steps.length ? pubGapCached(a, prog ? st.j : null) : null, segs = plan ? plan.segs : [];
+  const who = prog ? 'cliente' : 'abonnée', camps = o.campaigns || [], orgOn = o.organic !== false, brand = o.shape === 'brand' && !o.palierMode;
+  const solo = soloName(a), at = sg => monthName(sg.at), free = sg => Math.max(0, sg.free - (sg.solo || 0));
+  const list = f => segs.length > 1 ? ` Soit ${segs.map(sg => `${u(f(sg))} en ${at(sg)}`).join(', ')}.` : segs.length ? ` Soit ${u(f(segs[0]))} en ${at(segs[0])}.` : '';
+  const s0 = segs[0];
+
+  // 1. Objectif
+  const goal = step('cal', prog ? 'Ton objectif' : 'Ton objectif d\'abonnées', s0 ? u(s0.count) : 'aucun',
+    steps.length ? `${prog ? 'Combien d\'inscriptions par an tu vises' : kind === 'active' ? 'Combien d\'abonnées en même temps tu vises' : 'Combien de nouvelles abonnées par an tu vises'}, et quand. Compté depuis ${prog ? 'le lancement' : 'l\'ouverture'} (${o.start ? monthName(o.start) : 'date à fixer'}).${segs.length ? ` Soit ${segs.map(sg => `${u(sg.count)} en ${at(sg)}`).join(', ')}.` : ''}`
+      : 'Fixe un objectif : l\'outil calcule ce qui manque et la pub qu\'il faut. Sans objectif, tu règles toi-même ta pub plus bas.',
+    `${prog ? '' : `<div class="grid">${select('Je vise', t + '.goal.kind', g.kind || 'active', [['active', 'des abonnées en même temps'], ['new', 'des nouvelles abonnées par an']]).replace('<label>', '<label class="wide">')}</div>`}
+    ${steps.map((x, k) => lineEditor(x, `${t}.goal.steps.${k}`, [['months', `Au bout de\nmois après ${prog ? 'le lancement' : 'l\'ouverture'}`], ['count', kind === 'active' ? 'Visées\nabonnées en même temps' : kind === 'new' ? 'Visées\nnouvelles abonnées par an' : 'Visées\ninscriptions par an']], 'Supprimer ce palier')).join('')}
+    <div class="row"><button data-add="${t}.goal.steps">${steps.length ? 'Ajouter une date d\'objectif' : 'Fixer un objectif'}</button></div>`);
+
+  // 2. Sans pub
+  const growth = `${check('Compter des clientes sans pub (vivier, bouche-à-oreille, site)', t + '.organic', orgOn)}
+    ${orgOn ? growthPick(o, t) : ''}
+    ${prog && orgOn ? `${check('Rythme à part pour les premières semaines', t + '.launch', o.launch)}${o.launch ? fields(o, t, [['launchWeeks', 'Pendant\nsemaines'], ['launchRate', 'Clientes\npar semaine']]) : ''}` : ''}
+    <div class="grid">${field('Effet boule de neige de la pub\n% de clientes en plus pour 100 venues de la pub', t + '.viral', o.viral ?? 20)}</div>
+    <p class="muted">Bouche-à-oreille et avis : 15 à 20 % est prudent, on voit de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans le sans pub.</p>
+    ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`;
+  const org = step('ins', brand && orgOn ? 'Sans pub, depuis ton vivier' : 'Sans pub', !orgOn ? 'non compté' : s0 ? u(free(s0)) : `${num(Math.round(st.orgN))} sur 12 mois`,
+    !orgOn ? `Aucune ${who} sans pub n'est comptée : la case est décochée dans les autres réglages ci-dessous.`
+      : `Ce qui arrive seul, sans payer.${brand ? ` Chaque mois, une petite part de ton vivier (Instagram et newsletter) achète ${esc(st.name)}.` : ''}${list(free)}`,
+    (orgOn ? growthFields(o, t, prog ? 'Clientes' : 'Abonnées', a) : '') + more(st.id + '-org', 'Autres réglages du sans pub', growth));
+
+  // 3. Venues de l'abonnement
+  const link = !prog ? '' : step('sub', `Venues de ${esc(solo)}`, s0 ? u(s0.solo || 0) : `${num(Math.round(st.soloN))} sur 12 mois`,
+    `Des abonnées de ${esc(solo)} qui achètent aussi ${esc(o.name)}. Elles ne coûtent rien à trouver.${list(sg => sg.solo || 0)}`,
+    linkFields(a, o, t));
+
+  // 4. Reste à trouver par la pub
+  const left = sg => Math.max(0, Math.round(sg.count - sg.free));
+  const gap = !segs.length ? '' : step('promo', 'Reste à trouver par la pub', left(s0) ? u(left(s0)) : 'rien',
+    'Ton objectif, moins ce qui arrive seul.',
+    segs.map(sg => `<p class="eq"><b>${at(sg)}</b> : ${u(sg.count)} visées − ${num(Math.round(free(sg)))} sans pub${prog ? ` − ${num(Math.round(sg.solo || 0))} de ${esc(solo)}` : ''} = ${left(sg) ? `<b>${num(left(sg))} à trouver par la pub</b>` : '<b class="pos">rien à trouver ✓</b>'}</p>`).join('')
+    + `<div class="grid">${field(`Coût d'une ${prog ? 'cliente' : 'abonnée payante'} venue de la pub\n€, pour calculer le budget`, t + '.goal.cac', g.cac || plan.cac || 50)}</div>`);
+
+  // 5. Budget pub
+  const same = plan && JSON.stringify(camps.map(c => [c.start, c.end || '', +c.budget, +c.cac])) === JSON.stringify(plan.campaigns.map(c => [c.start, c.end || '', c.budget, c.cac]));
+  const campList = camps.map((c, k) => campaign(c, `${t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>';
+  const campBody = `${campList}<div class="row"><button data-add="${t}.campaigns">Ajouter une campagne</button></div>
+    ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
+    <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub ».</p>`;
+  const campTitle = `Mes campagnes : ${camps.length ? `${camps.length} · ${short(st.pubB)} sur 12 mois` : 'aucune'}`;
+  const withBudget = segs.filter(sg => sg.budget);
+  const reached = segs.every(sg => sg.current + 0.5 >= sg.count);
+  const budget = !segs.length
+    ? step('promo', 'Ta pub', camps.length ? `${money(Math.round(st.pubB / 12))} / mois` : 'aucune', `Sans objectif, tu choisis toi-même tes campagnes : budget par mois et coût d'une ${who}.`, campBody)
+    : step('promo', 'Budget pub', withBudget.length ? `${money(withBudget[0].budget)} / mois` : '0 €',
+      withBudget.length ? `Ce que coûte la pub pour trouver ce qui manque.` : `Pas de pub nécessaire : ce qui arrive seul suffit.`,
+      withBudget.map(sg => `<p class="eq">${sg.end ? `De ${monthName(sg.start)} à ${monthName(sg.end)}` : `Dès ${monthName(sg.start)}`} : ${num(Math.round(sg.perMonth))} ${who}s par mois × ${money(plan.cac)} = <b>${money(sg.budget)} / mois</b></p>`).join('')
+      + `<p class="eq ${reached ? 'pos' : 'neg'}">Avec tes campagnes actuelles : ${segs.map(sg => `${u(sg.current)} en ${at(sg)}`).join(', ')} ${reached ? '✓ objectif atteint' : '✗ objectif pas atteint'}</p>`
+      + (withBudget.length || camps.length ? `<div class="row"><button data-pubgap="${esc(t)}" ${same ? 'disabled' : ''}>${same ? 'Campagnes en place' : 'Créer ces campagnes pub'}</button></div>
+      <p class="muted">${same ? 'Tes campagnes correspondent à cet objectif.' : 'Remplace tes campagnes actuelles par celles qui atteignent l\'objectif. Tu peux ensuite les modifier juste en dessous.'}</p>` : '')
+      + more(st.id + '-pub', campTitle, campBody));
+  return goal + org + link + gap + budget;
+}
+// État de l'objectif, pour la carte repliée.
+function goalStatus(a, st) {
+  const o = st.o, prog = st.key !== 'sub', g = o.goal || {};
+  if (!(g.steps || []).length) return '';
+  const plan = pubGapCached(a, prog ? st.j : null), s0 = plan && plan.segs[0];
+  if (!s0) return '';
+  const ok = plan.segs.every(sg => sg.current + 0.5 >= sg.count), unit = prog || g.kind === 'new' ? ' / an' : ' abonnées';
+  return `<br>objectif ${num(s0.count)}${unit} en ${monthName(s0.at)} : <b class="${ok ? 'pos' : 'neg'}">${ok ? 'atteint' : 'pas atteint'}</b>`;
 }
 
 // Raccourci depuis Acquisition : le vivier alimente le sans pub, et le bouton pré-remplit tous les produits.
@@ -1360,7 +1405,7 @@ function audienceLink(a, p) {
       return off.length ? `<div class="gap">${off.map(x => `<p class="warn">${esc(x.n)} n'utilise pas le vivier : ${x.q.organic === false ? 'son sans pub est décoché' : x.q.palierMode ? 'ses paliers sont saisis à la main' : 'il garde sa propre courbe'}.</p><div class="row"><button data-linkviv="${esc(x.t)}">Brancher ${esc(x.n)} sur le vivier</button></div>`).join('')}</div>` : '';
     })()}
     <div class="row"><button data-prefill="${esc(p)}">Remettre les taux conseillés pour tous les produits</button></div>
-    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux ici, dans sa partie « Sans pub ».</p>
+    <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux dans sa carte, à l'étape « Sans pub, depuis ton vivier ».</p>
   </details>`;
 }
 // ---------- Notoriété : ton vivier, et ce qui le fait grandir (relais → Instagram → newsletter, puis stores) ----------
@@ -1467,25 +1512,10 @@ function acquisitionPage(a, i) {
     const rows = win.map(m => { const c = campaignClients(o, m.month), f = st.fresh(m);
       return `<tr><td>${monthShort(m.month)}</td><td>${num(Math.round(Math.max(0, f - c)))}</td><td>${c ? num(Math.round(c)) : '—'}</td>${prog ? `<td>${num(Math.round(st.solo(m)))}</td>` : ''}<td><b>${num(Math.round(f + (prog ? st.solo(m) : 0)))}</b></td><td>${campaignBudget(o, m.month) ? short(campaignBudget(o, m.month)) : '—'}</td></tr>`; }).join('');
     const orgOn = o.organic !== false;
-    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}</span>
+    return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois${orgOn && o.shape === 'brand' && !o.palierMode ? `<br>dont ${num(Math.round(st.orgN / 12))} / mois sans pub, depuis ton vivier` : ''}${goalStatus(a, st)}</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
       ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1).filter(m => m.month <= PLAN_END).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
-      ${goalBlock(a, st, p)}
-      ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
-        ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
-        ${orgOn ? (prog ? progRhythm(o, st.t, a) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
-        <h4>Effet boule de neige de la pub</h4>
-        <div class="grid">${field('Bouche-à-oreille et avis\n% de clientes en plus pour 100 venues de la pub', st.t + '.viral', o.viral ?? 20)}</div>
-        <p class="muted">15 à 20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
-        ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`)}
-      ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
-        ${linkFields(a, o, st.t)}
-        <p class="muted">Ces clientes sont déjà abonnées : elles ne coûtent rien à acquérir et gardent leur abonnement.</p>`) : ''}
-      ${section(st.id + '-pub', 'promo', 'Avec pub', `${camps.length ? `${camps.length} campagne${camps.length > 1 ? 's' : ''} · ${short(st.pubB)} sur 12 mois` : 'aucune campagne'} · ${num(Math.round(st.pubN))} ${who}s`, `
-        ${camps.map((c, k) => campaign(c, `${st.t}.campaigns.${k}`, who)).join('') || '<p class="muted">Aucune campagne.</p>'}
-        <div class="row"><button data-add="${st.t}.campaigns">Ajouter une campagne</button></div>
-        ${camps.length > 1 ? '<p class="muted">Des campagnes sur les mêmes mois s\'additionnent.</p>' : ''}
-        <p class="muted">Le budget de chaque mois est compté dans <a href="#charges" data-goto="charges">Charges</a>, ligne « Campagnes pub ».</p>`)}
+      ${productStory(a, st, p, campaign)}
       ${section(st.id + '-mois', 'cal', 'Mois par mois', `${num(Math.round(st.all))} ${who}s · ${short(st.pubB)} de pub sur 12 mois`, `<table class="acq-tab"><thead><tr><th>Mois</th><th>Sans pub</th><th>Pub</th>${prog ? '<th>Abonnées</th>' : ''}<th>Total</th><th>Budget</th></tr></thead><tbody>${rows}</tbody></table>`)}
       <dl class="pal-sum">
         <div><dt>Valeur d'une ${who}</dt><dd>${money(st.v)}<small>sur sa durée de vie, HT</small></dd></div>
