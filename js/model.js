@@ -55,7 +55,8 @@ function program(name, start, prices, duration) {
     palierMode: false, paliers: [], promos: [], goal: defaultProgramGoal(), acq: 0, installments: 1,
     // organic : le rythme saisi ici compte (clientes venues sans pub). campaigns : campagnes pub, réglées dans Acquisition.
     // shape : forme de la croissance sans pub, 's' (en S, notoriété) ou 'lin' (paliers réguliers).
-    organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0, audienceNew: 0
+    // Sans pub par défaut : une part du vivier (page Notoriété), aux taux habituels pour ce type de produit.
+    organic: true, campaigns: [], shape: 'brand', viral: 20, audienceRate: audiencePlan(name).rate, audienceNew: audiencePlan(name).fresh
   };
 }
 
@@ -138,7 +139,7 @@ function application(name) {
       postDuration: 12,
       trialDays: 0, trialConversion: 100, goal: defaultGoal(), palierMode: false, paliers: [], acq: 0,
       directPricing: pricing('2027-01', [9.99, 9.99, 9.99]),
-      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 's', viral: 20, audienceRate: 0, audienceNew: 0
+      start: '2027-01', initial: 1, target: 3, months: 24, step: 1, duration: 12, organic: true, campaigns: [], shape: 'brand', viral: 20, audienceRate: audiencePlan('', true).rate, audienceNew: audiencePlan('', true).fresh
     },
     // Notoriété : audience par canal ; le sans pub d'un produit peut en être une part.
     audience: defaultAudience(),
@@ -527,7 +528,20 @@ function migrate(state) {
     if (q.audienceNew === undefined) q.audienceNew = 0;
     delete q.adMode; delete q.adSteps;
   }
-  for (const a of state.apps) migrateAudience(a);
+  for (const a of state.apps) {
+    migrateAudience(a);
+    // Une fois : le sans pub de chaque produit est branché sur le vivier (sauf paliers saisis à la main ou sans pub décoché).
+    if (!a.audience.linked) {
+      for (const q of [a.sub, ...a.programs]) {
+        if (q.palierMode || q.organic === false || q.shape === 'brand') continue;
+        const plan = audiencePlan(q.name || '', q === a.sub);
+        q.shape = 'brand';
+        if (!(+q.audienceRate > 0)) q.audienceRate = plan.rate;
+        if (!(+q.audienceNew > 0)) q.audienceNew = plan.fresh;
+      }
+      a.audience.linked = true;
+    }
+  }
   if (!state.vat) state.vat = { ttc: false, rate: 20 };
   for (const [k, v] of Object.entries(defaultVat(state.vat.ttc))) if (state.vat[k] === undefined) state.vat[k] = v;
   for (const a of state.apps) if (!a.zones) a.zones = defaultZones();
