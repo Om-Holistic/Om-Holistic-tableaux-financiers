@@ -1330,6 +1330,11 @@ function audienceLink(a, p) {
   const from = appStart(a), used = [a.sub, ...a.programs.filter(q => q.enabled)].filter(q => q.shape === 'brand' && !q.palierMode && q.organic !== false);
   return `<details class="card" id="acq-brand" ${view.open.has('acq-brand') ? 'open' : ''}><summary><span>Sans pub depuis ton vivier<br><span class="sum-sub">${num(Math.round(audienceAt(a, from)))} → ${num(Math.round(audienceAt(a, PLAN_END)))} personnes d'ici fin ${PLAN_END.slice(0, 4)} · ${used.length ? `utilisé par ${used.map(q => esc(q === a.sub ? soloName(a) : q.name)).join(', ')}` : 'aucun produit ne l\'utilise encore'}</span></span></summary>
     <p class="muted">Le sans pub de chaque produit vient de ton vivier (abonnées Instagram et newsletter), réglé sur la page <a href="#notoriete" data-goto="notoriete">Notoriété</a>. Un produit lancé plus tard profite du vivier déjà construit.</p>
+    ${(() => {
+      // Produits qui n'utilisent pas le vivier : on dit pourquoi, et un bouton les y branche.
+      const off = [{ q: a.sub, t: p + '.sub', n: soloName(a) }, ...a.programs.map((q, j) => ({ q, t: `${p}.programs.${j}`, n: q.name })).filter(x => x.q.enabled)].filter(x => !used.includes(x.q));
+      return off.length ? `<div class="gap">${off.map(x => `<p class="warn">${esc(x.n)} n'utilise pas le vivier : ${x.q.organic === false ? 'son sans pub est décoché' : x.q.palierMode ? 'ses paliers sont saisis à la main' : 'il garde sa propre courbe'}.</p><div class="row"><button data-linkviv="${esc(x.t)}">Brancher ${esc(x.n)} sur le vivier</button></div>`).join('')}</div>` : '';
+    })()}
     <div class="row"><button data-prefill="${esc(p)}">Remettre les taux conseillés pour tous les produits</button></div>
     <p class="muted">Nouvelles venues / vivier déjà là, en % qui achètent chaque mois : ${esc(soloName(a))} 2 % / 0,3 %, Refit 1 % / 0,15 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,4 % / 0,06 % (4 par semaine), Calm Inside 0,3 % / 0,04 % (3 par semaine), autres programmes 0,4 % / 0,06 %. Boule de neige 15 %. Chaque produit garde ses taux ici, dans sa partie « Sans pub ».</p>
   </details>`;
@@ -2235,7 +2240,14 @@ function resultatPage() {
 
 // ---------- Rendu ----------
 
+// Titre du bandeau : « Om Holistic – nom de la page », pour savoir où l'on est.
+function renderTitle() {
+  const h = document.querySelector('.head h1'), link = document.querySelector(`#tabs a[href="#${view.page}"] .l`);
+  if (h) h.innerHTML = `Om Holistic${link ? `<span class="pg"> – ${esc(link.textContent)}</span>` : ''}`;
+  document.title = `Om Holistic${link ? ' – ' + link.textContent : ''}`;
+}
 function renderToolbar() {
+  renderTitle();
   const settings = SETTINGS_PAGES.includes(view.page), levee = view.page === 'levee';
   if ((settings || levee) && view.app === 'all') view.app = String(Math.max(0, state.apps.findIndex(a => a.raisePlan?.on)));
   if (levee) {
@@ -2474,6 +2486,13 @@ document.addEventListener('click', e => {
     save();
     view.app = t.dataset.coachfix;
     if (location.hash === '#coaching') route(); else location.hash = 'coaching';
+  } else if (t.dataset.linkviv) {
+    const [o, k] = resolve(t.dataset.linkviv), q = o[k], a = state.apps[+t.dataset.linkviv.split('.')[1]];
+    const plan = audiencePlan(q.name || '', q === a.sub);
+    Object.assign(q, { organic: true, palierMode: false, shape: 'brand' });
+    if (!(+q.audienceRate > 0)) q.audienceRate = plan.rate;
+    if (!(+q.audienceNew > 0)) q.audienceNew = plan.fresh;
+    view.open.add('acq-brand'); save(); render();
   } else if (t.dataset.prefill) {
     const a = state.apps[+t.dataset.prefill.split('.')[1]];
     prefillAudience(a); view.open.add('acq-brand');

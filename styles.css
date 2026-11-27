@@ -809,3 +809,7 @@ main, #page, .card { min-width: 0; max-width: 100%; }
 .lrow > label > input, .lrow > label > select, .lrow > label > .monthpick { margin-top: auto; }
 .lrow > .icon { align-self: flex-end; }
 .grid > label.two > :nth-last-child(2), .lrow > label.two > :nth-last-child(2) { margin-bottom: 4px; }
+
+/* Titre du bandeau : le nom de la page suit « Om Holistic ». */
+.head h1 .pg { font-weight: 500; }
+@media (max-width: 767px) { .head { min-width: 0; } .head h1 { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .head h1 .pg { font-size: .85em; } }
