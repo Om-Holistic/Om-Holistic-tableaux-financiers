@@ -780,6 +780,9 @@ function rangeChip(from, to) {
   return `${monthShort(from)} – ${monthShort(to)}`;
 }
 const STEPS = [['m', 'Mois'], ['q', 'Trimestre'], ['s', 'Semestre'], ['y', 'Année']];
+// Découpage du graphique et du tableau (mois, trimestre…), choisi dans la carte elle-même et non plus en haut de page.
+// Le choix est mémorisé sur l'appareil et vaut pour Trésorerie et Utilisatrices.
+const stepPick = () => `<label class="step-in"><span>Détail par</span><select class="step-pick">${STEPS.map(([k, n]) => `<option value="${k}"${k === view.cashStep ? ' selected' : ''}>${n.toLowerCase()}</option>`).join('')}</select></label>`;
 const bucketOf = (month, step) => {
   const y = month.slice(0, 4), mo = +month.slice(5);
   return step === 'y' ? y : step === 's' ? `${y}-S${Math.ceil(mo / 6)}` : step === 'q' ? `${y}-T${Math.ceil(mo / 3)}` : month;
@@ -889,9 +892,9 @@ function usersPage() {
       note: last ? `Fin ${monthName(months[last.i])} : ${base.map(s => `${num(end(s))} ${s.kind === 'abonnées' ? 'abonnées ' + esc(s.name) : s.kind === 'offertes' ? 'avec ' + esc(s.name) : 'dans ' + esc(s.name)}`).join(' · ')}` : 'Aucun mois sur cette période',
       tiles: base.slice(0, 4).map(tile) })}
     ${bs.length ? `<details class="card" id="us-chart" ${view.open.has('us-chart') ? 'open' : ''}><summary><span>Utilisatrices par produit<br><span class="sum-sub">${first ? bucketName(first.key, view.cashStep) : ''} – ${last ? bucketName(last.key, view.cashStep) : ''} · nombre en fin de ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}</span></span></summary>
-      ${legendPop}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
+      ${stepPick()}${legendPop}${shown.length ? `<div class="chart">${usersChart(bs, shown)}</div>` : '<p class="muted">Coche au moins une courbe.</p>'}</details>
     <details class="card" id="us-table" ${view.open.has('us-table') ? 'open' : ''}><summary><span>${{ m: 'Mois', q: 'Trimestre', s: 'Semestre', y: 'Année' }[view.cashStep]} par ${{ m: 'mois', q: 'trimestre', s: 'semestre', y: 'année' }[view.cashStep]}<br><span class="sum-sub">abonnées en cours, offertes et clientes en cours de programme</span></span></summary>
-      <div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>
+      ${stepPick()}<div class="scroll"><table class="users">${table(heads, rows)}</table></div></details>
     ${inscriptionsCard(r)}` : ''}`;
 }
 // Inscriptions aux programmes sur la période : les courbes montrent les clientes en cours, ici le nombre qui s'inscrit,
@@ -956,14 +959,14 @@ function tresoreriePage() {
     ${need ? `<details class="card" id="tr-alert" ${view.open.has('tr-alert') ? 'open' : ''}><summary><span>À surveiller<br><span class="sum-sub">point bas du plan : ${short(t.low.balance)} en ${monthName(t.low.month)}${lowIn && !months.some(m => m.month === t.low.month) ? ', hors de la période affichée' : ''}</span></span></summary>
       <ul class="alerts"><li class="bad"><a href="#reglages" data-goto="reglages" data-open="st-cash" data-anchor="st-cash">Il manque ${money(need)} en ${monthName(t.low.month)} : prévois un apport ou un prêt, ou décale des charges.<span class="from">›</span></a></li></ul></details>` : ''}
     ${bs.length ? `<details class="card" id="tr-chart" ${view.open.has('tr-chart') ? 'open' : ''}><summary><span>Entrées, sorties et solde<br><span class="sum-sub">${lowIn ? `point bas de la période ${short(lowIn.balance)} en ${monthName(lowIn.month)}` : ''}</span></span></summary>
-      <div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
+      ${stepPick()}<div class="legend"><span><i style="background:var(--good)"></i>Encaissements</span><span><i style="background:var(--sage)"></i>Sorties</span><span><i style="background:var(--clay)"></i>Solde</span></div>
       <div class="chart">${cashChart(bs)}</div></details>
     <details class="card" id="tr-table" ${view.open.has('tr-table') ? 'open' : ''}><summary><span>Par ${STEPS.find(x => x[0] === view.cashStep)[1].toLowerCase()}<br><span class="sum-sub">${rangeName} · touche une ligne pour le détail</span></span></summary>
-      ${ledger}
+      ${stepPick()}${ledger}
       <p class="muted">Encaissements : l'argent reçu (les ventes payées en plusieurs fois arrivent sur plusieurs mois), hors TVA. Impôts et cotisations selon l'implantation choisie, comptés chaque mois (en réalité, une partie se paie l'année suivante).</p></details>
     <details class="card" id="tr-range" ${view.open.has('tr-range') ? 'open' : ''}><summary><span>Plage de mois<br><span class="sum-sub">${view.cashFrom || view.cashTo ? 'personnalisée : ' : 'celle choisie en haut : '}${rangeName}</span></span></summary>
       <div class="grid"><label>Du<select id="cashFrom">${opts(from)}</select></label><label>Au<select id="cashTo">${opts(to)}</select></label></div>
-      ${view.cashFrom || view.cashTo ? '<div class="row"><button id="cashReset">Revenir à la période du haut</button></div>' : '<p class="muted">Pour voir par exemple de juin 2027 à mai 2028. Le découpage (mois, trimestre…) se choisit en haut.</p>'}</details>
+      ${view.cashFrom || view.cashTo ? '<div class="row"><button id="cashReset">Revenir à la période du haut</button></div>' : '<p class="muted">Pour voir par exemple de juin 2027 à mai 2028. Le découpage (mois, trimestre…) se choisit dans le graphique et le tableau.</p>'}</details>
     ${apps.length ? `<details class="card" id="tr-apps" ${view.open.has('tr-apps') ? 'open' : ''}><summary><span>Par application<br><span class="sum-sub">${apps.map(x => `${esc(x.name)} ${short(x.result)}`).join(' · ')}</span></span></summary>
       <div class="scroll"><table>${table(['Application', 'Chiffre d\'affaires HT', 'Charges', 'Apport à la trésorerie'], apps.map(x => [esc(x.name), money(x.ca), money(-x.charges), signed(x.result)]), [])}</table></div>
       <p class="muted">${rangeName}. Avant impôts, cotisations et ta rémunération, qui se calculent pour toute la société.</p></details>` : ''}` : '<p class="muted">Aucun mois dans cette période.</p>'}
@@ -2216,8 +2219,6 @@ function renderToolbar() {
     $('app').innerHTML = state.apps.map((a, i) => `<option value="${i}">${esc(a.name)}</option>`).join('');
     $('app').value = view.app;
     document.querySelectorAll('.period-only').forEach(el => { el.hidden = true; });
-    $('step').parentElement.hidden = true;
-    document.querySelector('.toolbar').classList.remove('four');
     document.querySelectorAll('#tabs a').forEach(a => a.classList.toggle('current', a.hash === '#' + view.page));
     return;
   }
@@ -2227,9 +2228,6 @@ function renderToolbar() {
   if (view.plan === 'avec' && (view.app === 'all' || !state.apps[+view.app]?.raisePlan?.on || (settings && view.page !== 'charges'))) view.plan = 'sans';
   $('app').value = view.app + (view.plan === 'avec' ? '+' : '');
   document.querySelectorAll('.period-only').forEach(el => { el.hidden = settings && view.page !== 'charges'; });
-  $('step').parentElement.hidden = !['tresorerie', 'utilisatrices'].includes(view.page);
-  document.querySelector('.toolbar').classList.toggle('four', ['tresorerie', 'utilisatrices'].includes(view.page));
-  $('step').value = view.cashStep;
   const y0 = Math.min(...state.apps.map(a => +appStart(a).slice(0, 4))), y1 = Math.max(HORIZON_END, ...state.apps.map(a => +appStart(a).slice(0, 4) + 5));
   const years = []; for (let y = y0; y <= y1; y++) years.push(y);
   if (!years.includes(view.year)) view.year = years[0];
@@ -2357,7 +2355,7 @@ document.addEventListener('change', async e => {
   } else if (t.id === 'app') { if (view.page !== 'levee') view.plan = t.value.endsWith('+') ? 'avec' : 'sans'; view.app = t.value.replace('+', ''); render(true); }
   else if (t.id === 'year') { view.year = +t.value; view.cashFrom = view.cashTo = ''; render(); }
   else if (t.id === 'period') { view.period = +t.value; view.cashFrom = view.cashTo = ''; render(); }
-  else if (t.id === 'step') {
+  else if (t.classList.contains('step-pick')) {
     view.cashStep = t.value;
     try { localStorage.setItem('om-cash-step', view.cashStep); } catch { /* stockage indisponible */ }
     render();
