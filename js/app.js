@@ -72,8 +72,8 @@ const view = { page: 'synthese', app: '0', year: new Date().getFullYear() + 1, p
 // Découpage de la page Trésorerie (mois, trimestre, semestre, année), mémorisé sur l'appareil.
 view.plan = 'sans';
 view.cashStep = (() => { try { return localStorage.getItem('om-cash-step') || 'm'; } catch { return 'm'; } })();
-const PAGES = ['synthese', 'previsionnel', 'calendrier', 'utilisatrices', 'acquisition', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
-const SETTINGS_PAGES = ['calendrier', 'acquisition', 'charges', 'produits', 'reglages'];
+const PAGES = ['synthese', 'previsionnel', 'calendrier', 'utilisatrices', 'notoriete', 'acquisition', 'coaching', 'resultat', 'tresorerie', 'levee', 'charges', 'produits', 'reglages'];
+const SETTINGS_PAGES = ['calendrier', 'notoriete', 'acquisition', 'charges', 'produits', 'reglages'];
 
 // ---------- Champs de formulaire liés à l'état par un chemin "apps.0.programs.1.name" ----------
 
@@ -1249,30 +1249,44 @@ const acqHidden = (() => { try { return new Set(JSON.parse(localStorage.getItem(
 const saveAcqHidden = () => { try { localStorage.setItem('om-acq-hidden', JSON.stringify([...acqHidden])); } catch { /* stockage indisponible */ } };
 // Rythme sans pub, saisi sur la page Acquisition : abonnement puis programme.
 // Croissance sans pub : courbe en S (notoriété), paliers réguliers, ou paliers saisis à la main.
-const growthKind = q => q.palierMode ? 'manual' : q.shape === 'lin' ? 'lin' : 's';
-function growthEditor(q, t, unit) {
+const growthKind = q => q.palierMode ? 'manual' : q.shape === 'lin' ? 'lin' : q.shape === 'brand' ? 'brand' : 's';
+function growthEditor(q, t, unit, a) {
   const kind = growthKind(q);
-  const pick = `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${[['s', 'En S (notoriété)'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']].map(([v, l]) => `<option value="${v}" ${v === kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
+  const pick = `<div class="grid one"><label>Forme de la croissance<select data-growth="${esc(t)}">${[['brand', 'Part de ma notoriété'], ['s', 'Courbe en S propre'], ['lin', 'Régulière'], ['manual', 'Paliers à la main']].map(([v, l]) => `<option value="${v}" ${v === kind ? 'selected' : ''}>${l}</option>`).join('')}</select></label></div>`;
+  if (kind === 'brand') {
+    // Le sans pub suit l'audience : au lancement du produit, puis 3 ans plus tard.
+    const from = q.start || appStart(a), rate = +q.audienceRate || 0, at = m => audienceAt(a, m), r = m => num(Math.round(at(m) * rate / 100));
+    return pick + `<div class="grid one">${field('Part de ton audience touchée qui achète\n% par mois', t + '.audienceRate', q.audienceRate)}</div>
+      <p class="muted">Au lancement (${monthName(from)}), ta <a href="#notoriete" data-goto="notoriete">notoriété</a> touche ${num(Math.round(at(from)))} personnes par mois ; ${fmtN(rate, 2)} % d'entre elles : <b>${r(from)} ${unit.toLowerCase()} par mois</b>. Trois ans plus tard : ${num(Math.round(at(addMonths(from, 36))))} personnes, soit <b>${r(addMonths(from, 36))} par mois</b>. Plus ta notoriété grandit, plus ce chiffre monte.</p>`;
+  }
   const body = kind === 'manual'
     ? q.paliers.map((r, k) => lineEditor(r, t + '.paliers.' + k, [['rate', unit + ' / semaine'], ['weeks', 'Pendant (semaines)']], 'Supprimer le palier')).join('') + `<div class="row"><button data-add="${t}.paliers">Ajouter un palier</button></div><p class="muted">Après le dernier palier : ${num(q.target)} / semaine.</p>`
     : fields(q, t, kind === 's' ? [['initial', 'Au départ : ton audience\n' + unit.toLowerCase() + ' / semaine'], ['target', 'À maturité\n' + unit.toLowerCase() + ' / semaine'], ['months', 'Temps pour y arriver\nmois']] : growth);
   const est = kind === 's' ? `<p class="muted"><b>Au départ</b> : ce que ta communauté apporte seule. Par exemple 2 000 abonnées Instagram et email, dont 1 % s'inscrivent dans le mois : 20 par mois, soit 5 par semaine. <b>À maturité</b> : ce que l'appli attire seule une fois connue (avis, recherche dans les stores, articles). La courbe passe de l'un à l'autre lentement au début, plus vite ensuite.${+q.initial > 0 ? ` Ici : ${num(Math.round(+q.initial * 52 / 12))} → ${num(Math.round(+q.target * 52 / 12))} par mois.` : ''}</p>` : '';
   return pick + body + est;
 }
-function subRhythm(a, p) { return growthEditor(a.sub, p + '.sub', 'Abonnées'); }
-function progRhythm(q, t) {
+function subRhythm(a, p) { return growthEditor(a.sub, p + '.sub', 'Abonnées', a); }
+function progRhythm(q, t, a) {
   return `<h4>Premières semaines</h4>${check('Rythme spécifique au démarrage', t + '.launch', q.launch)}
     ${q.launch ? fields(q, t, [['launchWeeks', 'Pendant (semaines)'], ['launchRate', 'Clientes / semaine']]) : ''}
-    <h4>Ensuite</h4>${growthEditor(q, t, 'Clientes')}`;
+    <h4>Ensuite</h4>${growthEditor(q, t, 'Clientes', a)}`;
 }
-const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
+const rhythmSummary = q => `${q.launch ? `${num(q.launchRate)} / sem. pendant ${num(q.launchWeeks)} sem., puis ` : ''}${q.shape === 'brand' && !q.palierMode ? `${fmtN(+q.audienceRate || 0, 2)} % de ton audience / mois` : q.palierMode && q.paliers.length ? q.paliers.map(r => num(r.rate)).join(' → ') + ' / sem. (paliers)' : `${num(q.initial)} → ${num(q.target)} / sem. en ${num(q.months)} mois${q.shape === 'lin' ? '' : ', en S'}`}`;
 // Nouvelles clientes par mois sur 3 ans, empilées : sans pub, pub, venues de l'abonnement.
+// Pic du lancement d'un programme, mois par mois : le rythme spécifique des premières semaines, à part du flux régulier.
+function launchByMonth(a, q) {
+  const out = {};
+  if (!q.launch || !q.start || q.organic === false) return out;
+  const d0 = firstMonday(monthDate(q.start)), vol = Number.isFinite(+a.volume) && +a.volume > 0 ? +a.volume : 1;
+  for (let w = 0; w < Math.max(0, +q.launchWeeks || 0); w++) for (const [m, sh] of weekShares(addWeeks(d0, w))) out[m] = (out[m] || 0) + Math.floor(Math.max(0, +q.launchRate || 0)) * sh * vol;
+  return out;
+}
 function acqChart(rows) {
-  const W = 320, H = 120, T = 14, n = rows.length, bw = W / n, max = Math.max(1, ...rows.map(r => r.org + r.pub + r.solo));
-  const bars = rows.map((r, k) => { let y = H; return [['org', 'var(--k-ins)'], ['pub', 'var(--k-promo)'], ['solo', 'var(--k-sub)']].map(([key, col]) => { const h = r[key] / max * (H - T); y -= h; return h > 0 ? `<rect x="${(k * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>` : ''; }).join(''); }).join('');
+  const W = 320, H = 120, T = 14, n = rows.length, bw = W / n, max = Math.max(1, ...rows.map(r => r.org + (r.launch || 0) + r.pub + r.solo));
+  const bars = rows.map((r, k) => { let y = H; return [['org', 'var(--k-ins)'], ['launch', 'var(--k-cal)'], ['pub', 'var(--k-promo)'], ['solo', 'var(--k-sub)']].map(([key, col]) => { const h = (r[key] || 0) / max * (H - T); y -= h; return h > 0 ? `<rect x="${(k * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${col}"/>` : ''; }).join(''); }).join('');
   const ticks = rows.map((r, k) => r.month.endsWith('-01') ? `<text x="${(k * bw + 1).toFixed(1)}" y="${H + 12}" font-size="9" fill="var(--ink-soft)">${r.month.slice(0, 4)}</text>` : '').join('');
   return `<figure class="acq-chart"><svg viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Nouvelles clientes par mois">${bars}${ticks}<text x="${W}" y="10" font-size="9" text-anchor="end" fill="var(--ink-soft)">max ${num(Math.round(max))} / mois</text></svg>
-    <figcaption><span><i style="background:var(--k-ins)"></i>Sans pub</span><span><i style="background:var(--k-promo)"></i>Pub</span>${rows.some(r => r.solo) ? '<span><i style="background:var(--k-sub)"></i>Abonnées</span>' : ''}</figcaption></figure>`;
+    <figcaption><span><i style="background:var(--k-ins)"></i>Sans pub</span>${rows.some(r => r.launch) ? '<span><i style="background:var(--k-cal)"></i>Lancement</span>' : ''}<span><i style="background:var(--k-promo)"></i>Pub</span>${rows.some(r => r.solo) ? '<span><i style="background:var(--k-sub)"></i>Abonnées</span>' : ''}</figcaption></figure>`;
 }
 
 // Objectif total d'un produit, toutes sources confondues : le sans pub et les passerelles d'abord, la pub comble l'écart.
@@ -1311,6 +1325,72 @@ function goalBlock(a, st, p) {
     : '<p class="muted">Sans objectif, tu saisis toi-même tes campagnes dans « Avec pub ».</p>'}`);
 }
 
+// Raccourci depuis Acquisition : la notoriété alimente le sans pub, et le bouton pré-remplit tous les produits.
+function audienceLink(a, p) {
+  const from = appStart(a), used = [a.sub, ...a.programs.filter(q => q.enabled)].filter(q => q.shape === 'brand' && !q.palierMode && q.organic !== false);
+  return `<details class="card" id="acq-brand" ${view.open.has('acq-brand') ? 'open' : ''}><summary><span>Sans pub depuis ta notoriété<br><span class="sum-sub">${num(Math.round(audienceAt(a, from)))} → ${num(Math.round(audienceAt(a, addMonths(from, 36))))} personnes touchées / mois · ${used.length} produit${used.length > 1 ? 's' : ''} branché${used.length > 1 ? 's' : ''}</span></span></summary>
+    <p class="muted">Le sans pub de chaque produit peut être une part de ton audience, réglée sur la page <a href="#notoriete" data-goto="notoriete">Notoriété</a>. Un produit lancé plus tard profite de l'audience déjà construite.</p>
+    <div class="row"><button data-prefill="${esc(p)}">Pré-remplir tous les produits</button></div>
+    <p class="muted">Part de l'audience touchée qui achète chaque mois : ${esc(soloName(a))} 0,4 %, Refit 0,25 % (lancement : 10 par semaine pendant 4 semaines), Better Sleep 0,1 % (4 par semaine), Calm Inside 0,07 % (3 par semaine), autres programmes 0,1 %. Boule de neige 15 %. Tout reste modifiable.</p>
+  </details>`;
+}
+// ---------- Notoriété : l'audience de la marque, canal par canal ----------
+const AUD_COLORS = ['var(--k-ins)', 'var(--k-sub)', 'var(--k-promo)', 'var(--k-cal)', 'var(--k-price)'];
+const lastActual = c => { const k = Object.keys(c.actuals || {}).filter(m => (c.actuals[m] ?? '') !== '').sort().at(-1); return k ? [k, +c.actuals[k]] : null; };
+function audienceChart(a, from) {
+  const cs = a.audience.channels, rows = []; for (let k = 0; k <= 36; k++) rows.push(addMonths(from, k));
+  const W = 320, H = 120, T = 14, bw = W / rows.length, tot = m => cs.reduce((t, c) => t + channelAt(c, m) * pos0(c.reach) / 100, 0), max = Math.max(1, ...rows.map(tot));
+  const bars = rows.map((m, k) => { let y = H; return cs.map((c, ci) => { const h = channelAt(c, m) * pos0(c.reach) / 100 / max * (H - T); y -= h; return h > 0 ? `<rect x="${(k * bw + 0.5).toFixed(1)}" y="${y.toFixed(1)}" width="${Math.max(1, bw - 1).toFixed(1)}" height="${h.toFixed(1)}" fill="${AUD_COLORS[ci % AUD_COLORS.length]}"/>` : ''; }).join(''); }).join('');
+  // Les vrais chiffres relevés : un point par mois saisi.
+  const dots = rows.map((m, k) => { const has = cs.some(c => c.actuals?.[m] !== undefined && c.actuals[m] !== ''), v = cs.reduce((t, c) => t + (c.actuals?.[m] !== undefined && c.actuals[m] !== '' ? +c.actuals[m] : channelAt(c, m)) * pos0(c.reach) / 100, 0); return has ? `<circle cx="${(k * bw + bw / 2).toFixed(1)}" cy="${(H - v / max * (H - T)).toFixed(1)}" r="3" fill="var(--ink)"/>` : ''; }).join('');
+  const ticks = rows.map((m, k) => m.endsWith('-01') ? `<text x="${(k * bw + 1).toFixed(1)}" y="${H + 12}" font-size="9" fill="var(--ink-soft)">${m.slice(0, 4)}</text>` : '').join('');
+  return `<figure class="acq-chart"><svg viewBox="0 0 ${W} ${H + 16}" role="img" aria-label="Audience par mois">${bars}${dots}${ticks}<text x="${W}" y="10" font-size="9" text-anchor="end" fill="var(--ink-soft)">max ${num(Math.round(max))}</text></svg>
+    <figcaption>${cs.map((c, ci) => `<span><i style="background:${AUD_COLORS[ci % AUD_COLORS.length]}"></i>${esc(c.name)}</span>`).join('')}</figcaption></figure>`;
+}
+const pos0 = x => Math.max(0, +x || 0);
+function notorietePage(a, i) {
+  if (!a.audience) a.audience = defaultAudience();
+  const p = `apps.${i}.audience`, cs = a.audience.channels;
+  const from = cs.map(c => c.from).filter(Boolean).sort()[0] || thisMonth, end = cs.map(c => c.by).filter(Boolean).sort().at(-1) || addMonths(from, 36);
+  const now = [thisMonth, from].sort().at(-1);
+  // Tout se compte en personnes touchées chaque mois (audience × part touchée) : c'est ce qui fait les ventes sans pub.
+  const reach = c => pos0(c.reach) / 100;
+  const plan0 = cs.reduce((t, c) => t + pos0(c.count) * reach(c), 0), planEnd = cs.reduce((t, c) => t + pos0(c.target) * reach(c), 0), planNow = cs.reduce((t, c) => t + channelAt(c, now) * reach(c), 0);
+  // Où tu en es : vrais chiffres relevés (sinon le point de départ) face au plan du même mois et à l'objectif.
+  const real = cs.reduce((t, c) => t + (lastActual(c)?.[1] ?? channelAt(c, now)) * reach(c), 0), hasReal = cs.some(lastActual);
+  const prog = planEnd > plan0 ? Math.max(0, Math.min(100, (real - plan0) / (planEnd - plan0) * 100)) : 100;
+  const vsPlan = planNow ? real / planNow * 100 : 100;
+  const cards = cs.map((c, k) => {
+    const t = `${p}.channels.${k}`, id = 'au-' + k, la = lastActual(c), cur = la ? la[1] : pos0(c.count), goal = pos0(c.target);
+    const pc = goal > pos0(c.count) ? Math.max(0, Math.min(100, (cur - pos0(c.count)) / (goal - pos0(c.count)) * 100)) : 100;
+    return `<details class="card product" id="${id}" ${view.open.has(id) ? 'open' : ''}><summary><span>${esc(c.name || 'Canal')}<br><span class="sum-sub">${num(pos0(c.count))} → ${num(goal)} ${c.by ? 'en ' + monthName(c.by) : ''}</span>
+        ${pstats([['Aujourd\'hui', num(Math.round(cur))], ['Avancement', `${num(Math.round(pc))} %`], ['Touchées', `${num(c.reach)} %`]])}</span></summary>
+      <div class="aud-bar" role="img" aria-label="Avancement vers l'objectif : ${Math.round(pc)} %"><i style="width:${pc.toFixed(1)}%"></i></div>
+      <div class="grid">${field('Nom du canal', t + '.name', c.name, 'text')}${field('Touchées chaque mois\n% de cette audience', t + '.reach', c.reach)}</div>
+      <h4>Point de départ</h4>
+      <div class="lrow">${field('Abonnées ou contacts', t + '.count', c.count)}${monthField('Au mois de', t + '.from', c.from)}</div>
+      <h4>Objectif</h4>
+      <div class="lrow">${field('Abonnées ou contacts', t + '.target', c.target)}${monthField('Échéance', t + '.by', c.by)}</div>
+      <h4>Vrai chiffre</h4>
+      <div class="grid one">${field(`En ${monthName(thisMonth)}\nrelevé à la main`, `${t}.actuals.${thisMonth}`, c.actuals?.[thisMonth] ?? '')}</div>
+      <p class="muted">${la ? `Dernier relevé : ${num(la[1])} en ${monthName(la[0])}, pour ${num(Math.round(channelAt(c, la[0])))} prévues.` : 'Pas encore de relevé.'} Branchement automatique (Instagram, newsletter) : à venir.</p>
+      <div class="row"><button class="danger" data-remove="${t}">Retirer ce canal</button></div>
+    </details>`;
+  }).join('');
+  return `${banner({ label: `Touchées / mois · ${esc(a.name)}`, big: num(Math.round(real)),
+      note: `Personnes que tu touches chaque mois, tous canaux : objectif ${num(Math.round(planEnd))} en ${monthName(end)}. ${hasReal ? 'D\'après tes derniers relevés.' : 'Saisis tes vrais chiffres chaque mois pour suivre ta progression.'}`,
+      tiles: [
+        { label: 'Vers l\'objectif', mini: 'Objectif', value: `${num(Math.round(prog))} %`, hint: `du chemin vers ${num(Math.round(planEnd))}` },
+        { label: 'Face au plan', mini: 'Plan', value: hasReal ? `${num(Math.round(vsPlan))} %` : '—', cls: hasReal ? (vsPlan >= 100 ? 'ok' : 'bad') : '', hint: `plan de ${monthName(now)} : ${num(Math.round(planNow))}` },
+        { label: 'Audience totale', mini: false, value: num(Math.round(cs.reduce((t, c) => t + (lastActual(c)?.[1] ?? channelAt(c, now)), 0))), hint: 'abonnées et contacts' }
+      ] })}
+    <details class="card" id="au-chart" ${view.open.has('au-chart') ? 'open' : ''}><summary><span>Courbe de notoriété<br><span class="sum-sub">${num(Math.round(plan0))} → ${num(Math.round(planEnd))} touchées / mois · ${monthName(from)} → ${monthName(end)}</span></span></summary>
+      ${audienceChart(a, from)}
+      <p class="muted">Personnes touchées chaque mois, canal par canal. Chaque canal grandit en S de son point de départ à son objectif. Les points noirs viennent de tes vrais chiffres. Le sans pub de chaque produit est une part des personnes touchées chaque mois (page <a href="#acquisition" data-goto="acquisition" data-open="acq-brand" data-anchor="acq-brand">Acquisition</a>).</p>
+    </details>
+    ${cards}
+    <div class="row"><button data-add="${p}.channels">Ajouter un canal</button></div>`;
+}
 function acquisitionPage(a, i) {
   prodSim = simulate(a);
   const p = 'apps.' + i, ch = a.channels || { store: 0, storeRate: 15 }, dates = appDates([a]);
@@ -1354,14 +1434,14 @@ function acquisitionPage(a, i) {
     const orgOn = o.organic !== false;
     return `<details class="card product${prog ? '' : ' solo'}" id="${st.id}" ${view.open.has(st.id) ? 'open' : ''}><summary><span>${esc(st.name)}<br><span class="sum-sub">${num(Math.round(st.all))} nouvelles ${who}s sur 12 mois</span>
         ${pstats([['Sans pub', pct(st.orgN, st.all)], ['Pub', pct(st.pubN, st.all), 'hi'], prog ? [`Via ${soloName(a).replace(/ seul$/, '')}`, pct(st.soloN, st.all)] : null, ['Pub moy. / mois', money(Math.round(st.pubB / 12))]])}</span></summary>
-      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))); return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); return { month: m.month, pub: Math.min(c, f), org: Math.max(0, f - c), solo: prog ? st.solo(m) : 0 }; })); })()}
+      ${(() => { const k1 = Math.max(0, ms.findIndex(m => m.month >= (prog ? o.start || from : a.sub.start || from))), launch = prog ? launchByMonth(a, o) : {}; return acqChart(ms.slice(k1, k1 + 36).map(m => { const c = campaignClients(o, m.month), f = st.fresh(m); const l = Math.min(Math.max(0, f - c), launch[m.month] || 0); return { month: m.month, pub: Math.min(c, f), launch: l, org: Math.max(0, f - c - l), solo: prog ? st.solo(m) : 0 }; })); })()}
       ${goalBlock(a, st, p)}
       ${section(st.id + '-org', 'ins', 'Sans pub', `${orgOn ? rhythmSummary(o) : 'non compté'} · ${num(Math.round(st.orgN))} sur 12 mois`, `
         ${check(`Compter un rythme sans pub (bouche-à-oreille, réseaux, site)`, st.t + '.organic', orgOn)}
-        ${orgOn ? (prog ? progRhythm(o, st.t) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
+        ${orgOn ? (prog ? progRhythm(o, st.t, a) : subRhythm(a, p)) : `<p class="muted">Seules les campagnes${prog ? ` et les abonnées de ${esc(soloName(a))}` : ''} amènent des ${who}s. Ton rythme reste enregistré : recoche la case pour le retrouver.</p>`}
         <h4>Effet boule de neige de la pub</h4>
         <div class="grid">${field('Bouche-à-oreille et avis\n% de clientes en plus pour 100 venues de la pub', st.t + '.viral', o.viral ?? 20)}</div>
-        <p class="muted">20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
+        <p class="muted">15 à 20 % est une hypothèse prudente : on voit couramment de 10 à 50 %. Ces clientes arrivent sans coût et comptent dans « Sans pub ».</p>
         ${prog && (o.cohorts || []).length ? `<p class="muted">Les cohortes de test se règlent dans <a href="#calendrier" data-goto="calendrier" data-open="calp-${st.j}" data-anchor="calp-${st.j}">Calendrier</a> et comptent ici.</p>` : ''}`)}
       ${prog ? section(st.id + '-link', 'sub', `Venues de ${soloName(a)}`, `${num(o.fromSolo)} % des abonnées / an · ${num(Math.round(st.soloN))} sur 12 mois`, `
         ${linkFields(a, o, st.t)}
@@ -1385,6 +1465,7 @@ function acquisitionPage(a, i) {
         { label: 'Coût moyen', mini: false, value: pubAll ? money(acqYear / pubAll) : '—', hint: 'par cliente venue de la pub' }
       ] })}
     ${picker}
+    ${audienceLink(a, p)}
     ${cards}
     <details class="card" id="acq-fixed" ${view.open.has('acq-fixed') ? 'open' : ''}><summary><span>Publicité fixe<br><span class="sum-sub">${pubFixed.length ? `${pubFixed.length} charge${pubFixed.length > 1 ? 's' : ''} · ${money(Math.round(fixedYear))} sur 12 mois` : 'aucune'}</span></span></summary>
       ${pubFixed.length ? `<ul class="where">${pubFixed.map(c => `<li>${esc(c.name)} : ${money(Math.round(win.reduce((u, m) => u + (chargeAt(c, m.month, dates) || 0), 0)))} sur 12 mois</li>`).join('')}</ul>` : ''}
@@ -2185,7 +2266,7 @@ function render(fresh = false) {
   view.open = view.goto ? new Set([view.goto.open, view.goto.anchor]) : fresh ? new Set() : new Set([...document.querySelectorAll('#page details[open]')].map(d => d.id));
   renderToolbar();
   const i = +view.app || 0, a = state.apps[i];
-  const pages = { acquisition: () => acquisitionPage(a, i), calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
+  const pages = { notoriete: () => notorietePage(a, i), acquisition: () => acquisitionPage(a, i), calendrier: () => calendarPage(a, i), synthese: synthesePage, utilisatrices: usersPage, coaching: coachingPage, resultat: resultatPage, previsionnel: previsionnelPage, tresorerie: tresoreriePage, levee: leveePage, charges: () => chargesPage(a, i), produits: () => productsPage(a, i), reglages: () => settingsPage(a, i) };
   const due = backupDue();
   $('page').innerHTML = (newVersion ? '<button class="update-strip" id="updateApp">Nouvelle version de l\'appli disponible · touche ici pour la charger</button>' : '') + syncStrip() + (due && view.page !== 'reglages' ? `<a class="backup-strip" href="#reglages" data-goto="reglages" data-open="st-save" data-anchor="st-save">${due} · exporte tes paramètres ›</a>` : '') + pages[view.page]();
 }
@@ -2266,6 +2347,7 @@ document.addEventListener('change', async e => {
   } else if (t.dataset.path) {
     const [o, k] = resolve(t.dataset.path);
     if (k === 'estimate_ok') o.estimate = !t.checked;
+    else if (t.dataset.path.includes('.actuals.') && t.value === '') delete o[k];
     else o[k] = t.type === 'checkbox' ? t.checked : t.type === 'number' ? (t.dataset.path.startsWith('scenarios.') ? Math.max(-100, +t.value || 0) : Math.max(0, +t.value || 0)) : t.value;
     save();
     // On redessine après que le focus est passé au champ suivant, puis on lui rend le focus,
@@ -2321,6 +2403,7 @@ document.addEventListener('click', e => {
       steps: () => { const l = o[k][o[k].length - 1];
         if (o.type) return l ? { after: +l.after + 12, amount: +l.amount } : { after: 12, amount: +o.amount || 0 };
         return l ? { months: +l.months + 12, count: +l.count * 3 } : { months: 6, count: 100 }; },
+      channels: () => audienceChannel('Nouveau canal', 0, 1000, thisMonth, addMonths(thisMonth, 36), 20),
       promos: () => ({ start: thisMonth, end: thisMonth, price: 100 }),
       // Nouvelle campagne : elle prend la suite de la dernière, qui s'arrête alors le mois d'avant.
       campaigns: () => { const l = o[k][o[k].length - 1]; if (!l) return { start: [o.start || thisMonth, thisMonth].sort().at(-1), end: '', budget: 500, cac: 50 };
@@ -2384,6 +2467,10 @@ document.addEventListener('click', e => {
     save();
     view.app = t.dataset.coachfix;
     if (location.hash === '#coaching') route(); else location.hash = 'coaching';
+  } else if (t.dataset.prefill) {
+    const a = state.apps[+t.dataset.prefill.split('.')[1]];
+    prefillAudience(a); view.open.add('acq-brand');
+    save(); render();
   } else if (t.dataset.pubgap) {
     const [o, k] = resolve(t.dataset.pubgap), q = o[k], a = state.apps[+t.dataset.pubgap.split('.')[1]];
     const plan = pubGap(a, q === a.sub ? null : a.programs.indexOf(q));

@@ -47,6 +47,21 @@ function weeklyRate(p, w) {
   return a + Math.sign(b - a) * Math.min(Math.abs(b - a), Math.floor(Math.max(0, w) * changes / duration) * step);
 }
 
+// Notoriété : audience d'un canal pour un mois, en S entre son chiffre de départ et son objectif.
+function channelAt(c, month) {
+  const n0 = pos(c.count), n1 = pos(c.target, n0);
+  if (!c.from || month <= c.from) return n0;
+  const span = c.by && c.by > c.from ? monthsBetween(c.from, c.by) : 0;
+  if (!span || month >= c.by) return n1;
+  const t = monthsBetween(c.from, month) / span, L = x => 1 / (1 + Math.exp(-10 * (x - 0.5)));
+  return n0 + (n1 - n0) * (L(t) - L(0)) / (L(1) - L(0));
+}
+// Personnes vraiment touchées ce mois-ci, tous canaux : audience × part touchée.
+const audienceAt = (a, month) => (a.audience?.channels || []).reduce((t, c) => t + channelAt(c, month) * pos(c.reach, 100) / 100, 0);
+// Rythme sans pub d'un produit pour la semaine d : une part de l'audience touchée, ou sa propre courbe.
+// Un produit lancé plus tard profite de l'audience déjà construite.
+const organicRate = (a, p, d, w) => p.shape === 'brand' && !p.palierMode ? audienceAt(a, monthKey(d)) * pos(p.audienceRate) / 100 * 12 / 52 : weeklyRate(p, w);
+
 // Taux de survie mensuel d'un abonnement : résiliation mensuelle = 1 / durée moyenne.
 const survival = months => pos(months) > 0 ? 1 - Math.min(1, 1 / pos(months)) : 1;
 
@@ -110,7 +125,7 @@ function simulate(a, soloStock) {
       if (commercial) {
         const w = Math.floor((d - commercial) / WEEK);
         const inLaunch = p.launch && w >= 0 && w < pos(p.launchWeeks);
-        want += w < 0 || p.organic === false ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : weeklyRate(p, w - (p.launch ? pos(p.launchWeeks) : 0));
+        want += w < 0 || p.organic === false ? 0 : inLaunch ? Math.floor(pos(p.launchRate)) : organicRate(a, p, d, w - (p.launch ? pos(p.launchWeeks) : 0));
       }
       // Scénario : plus ou moins d'inscriptions que prévu (1 = le plan tel que saisi). La pub dépend du budget, pas du scénario.
       want *= vol;
@@ -168,7 +183,7 @@ function simulate(a, soloStock) {
       const trial = pos(a.sub.trialDays);
       // Rythme sans pub (essais convertis), plus les campagnes : leur coût est celui d'une abonnée payante.
       const conv = trial > 0 ? Math.min(100, pos(a.sub.trialConversion, 100)) / 100 : 1;
-      const count = (a.sub.organic === false ? 0 : vol * weeklyRate(a.sub, Math.floor((d - subStart) / WEEK)) * conv) + adRate(a.sub, monthKey(d));
+      const count = (a.sub.organic === false ? 0 : vol * organicRate(a, a.sub, d, Math.floor((d - subStart) / WEEK)) * conv) + adRate(a.sub, monthKey(d));
       const paid = new Date(+d + trial * DAY);
       const phase = phaseAt(a.sub.directPricing, monthKey(paid)).index;
       credit(paid, (mm, share) => { mm.newDirect[phase] += count * share; });
@@ -314,4 +329,4 @@ function pubGap(a, j) {
   return { kind, cac, segs, campaigns: cq.campaigns };
 }
 
-if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, weekShares, goalPlan, programGoalPlan, pubGap };
+if (typeof module !== 'undefined') module.exports = { simulate, adRate, weeklyRate, channelAt, audienceAt, weekShares, goalPlan, programGoalPlan, pubGap };
