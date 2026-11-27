@@ -1353,7 +1353,10 @@ function productStory(a, st, p, campaign) {
   const org = step('ins', brand && orgOn ? 'Sans pub, depuis ton vivier' : 'Sans pub', !orgOn ? 'non compté' : s0 ? u(free(s0)) : `${num(Math.round(st.orgN))} sur 12 mois`,
     !orgOn ? `Aucune ${who} sans pub n'est comptée : la case est décochée dans les autres réglages ci-dessous.`
       : `Ce qui arrive seul, sans payer.${brand ? ` Chaque mois, une petite part de ton vivier (Instagram et newsletter) achète ${esc(st.name)}.` : ''}${list(free)}`,
-    (orgOn ? growthFields(o, t, prog ? 'Clientes' : 'Abonnées', a) : '') + more(st.id + '-org', 'Autres réglages du sans pub', growth));
+    (orgOn && !brand ? `<div class="notice"><p><b>${o.palierMode ? 'Tu as saisi des paliers à la main' : 'Ce produit suit sa propre courbe'}</b> : ton vivier n'est pas utilisé, les chiffres ci-dessous sont ceux que tu as tapés.</p>
+      <div class="row"><button class="primary" data-linkviv="${esc(t)}">Utiliser mon vivier à la place</button></div>
+      <p class="muted">${o.palierMode ? 'Tes paliers restent enregistrés' : 'Ta courbe reste enregistrée'} : tu peux y revenir dans « Autres réglages du sans pub ».</p></div>` : '')
+    + (orgOn ? growthFields(o, t, prog ? 'Clientes' : 'Abonnées', a) : '') + more(st.id + '-org', 'Autres réglages du sans pub', growth));
 
   // 3. Venues de l'abonnement
   const link = !prog ? '' : step('sub', `Venues de ${esc(solo)}`, s0 ? u(s0.solo || 0) : `${num(Math.round(st.soloN))} sur 12 mois`,
@@ -2491,7 +2494,8 @@ document.addEventListener('click', e => {
     Object.assign(q, { organic: true, palierMode: false, shape: 'brand' });
     if (!(+q.audienceRate > 0)) q.audienceRate = plan.rate;
     if (!(+q.audienceNew > 0)) q.audienceNew = plan.fresh;
-    view.open.add('acq-brand'); save(); render();
+    if (!t.closest('.step')) view.open.add('acq-brand');
+    save(); render();
   } else if (t.dataset.prefill) {
     const a = state.apps[+t.dataset.prefill.split('.')[1]];
     prefillAudience(a); view.open.add('acq-brand');

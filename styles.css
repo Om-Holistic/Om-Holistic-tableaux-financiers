@@ -338,6 +338,10 @@ details.more > summary::-webkit-details-marker { display: none; }
 details.more > summary::after { content: ""; width: 6px; height: 6px; border-right: 2px solid var(--k); border-bottom: 2px solid var(--k); transform: rotate(45deg); transition: transform .2s; margin-top: -3px; }
 details.more[open] > summary::after { transform: rotate(225deg); margin-top: 2px; }
 .more-b { display: flex; flex-direction: column; gap: 10px; padding-top: 10px; }
+.step .notice { background: var(--surface); border: 2px solid var(--k); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.step .notice p { margin: 0; font-size: 14px; }
+.step .notice .muted { font-size: 13px; }
+.step .notice button.primary { background: var(--k); color: var(--surface); border-color: var(--k); font-weight: 600; }
 label.file { position: relative; display: inline-flex; align-items: center; cursor: pointer; padding: 10px 14px; border-radius: 12px; background: var(--sage-tint); font-weight: 500; color: var(--ink); font-size: 15px; }
 label.file input { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; padding: 0; }
 .goal-cap { margin-top: 6px; padding: 8px 10px; border-radius: 10px; font-size: 13px; line-height: 1.4; }
